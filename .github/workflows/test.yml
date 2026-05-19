@@ -1,42 +1,129 @@
-name: Test
+# .github/workflows/test.yml
+name: Python Test and Coverage with Firebird
 
 on:
   push:
-    branches: [ main, master, develop ]
+    branches:
+      - main
+      - 'release/v**'
+      - 'maint/**'
   pull_request:
-    branches: [ main, master ]
+    branches:
+      - main
+      - 'release/v**'
+      - 'maint/**'
+
+permissions:
+  contents: read
 
 jobs:
   test:
+    name: Python ${{ matrix.python-version }} / Firebird ${{ matrix.firebird-version }}
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
-        python-version: ["3.8", "3.9", "3.10", "3.11", "3.12", "3.13", "3.14"]
+        include:
+          - { python-version: '3.13', firebird-version: '5-snapshot', port: 3050 }
+          - { python-version: '3.14', firebird-version: '5-snapshot', port: 3051 }
+          - { python-version: '3.13', firebird-version: '6-snapshot', port: 3052 }
+          - { python-version: '3.14', firebird-version: '6-snapshot', port: 3053 }
+
+    services:
+      firebird:
+        image: firebirdsql/firebird:${{ matrix.firebird-version }}
+        env:
+          FIREBIRD_ROOT_PASSWORD: password
+          FIREBIRD_USE_LEGACY_AUTH: "true"
+          FIREBIRD_DATABASE: /var/lib/firebird/data/test_db
+        options: >-
+          --health-cmd "bash -c 'fbsvcmgr localhost service_mgr action_svc_get_fb_version 2>&1 | head -1'"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+        ports:
+          - ${{ matrix.port }}:3050
 
     steps:
-    - uses: actions/checkout@v4
+      - name: Check out the repository
+        uses: actions/checkout@v6
 
-    - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v5
-      with:
-        python-version: ${{ matrix.python-version }}
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python-version }}
 
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install -e ".[test]"
+      - name: Install firebird client library
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libfbclient2
 
-    - name: Lint with ruff
-      run: |
-        pip install ruff
-        ruff check src/
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install -r requirements-dev.txt
 
-    - name: Test with pytest
-      run: |
-        pytest -v --cov=src/ --cov-report=xml
+      - name: Install activerecord and testsuite
+        run: |
+          pip install git+https://github.com/rhosocial/python-activerecord.git@release/v1.0.0.dev27
+          pip install git+https://github.com/rhosocial/python-activerecord-testsuite.git@release/v1.0.0.dev14
 
-    - name: Upload coverage
-      uses: codecov/codecov-action@v4
-      with:
-        file: ./coverage.xml
-        fail_ci_if_error: false
+      - name: Create and test database
+        run: |
+          python -c "
+          import firebird.driver as fdb
+          conn = fdb.connect(
+              database='127.0.0.1/${{ matrix.port }}:/var/lib/firebird/data/test_db',
+              user='SYSDBA',
+              password='password',
+              charset='UTF8',
+          )
+          cur = conn.cursor()
+          cur.execute('SELECT rdb\$get_context(\"SYSTEM\", \"ENGINE_VERSION\") FROM rdb\$database')
+          ver = cur.fetchone()[0]
+          cur.execute('SELECT 1 FROM rdb\$database')
+          result = cur.fetchone()
+          print(f'Firebird ${{ matrix.firebird-version }} (v{ver}) connectivity test passed')
+          cur.close()
+          conn.close()
+          "
+
+      - name: Create Firebird scenario config
+        run: |
+          cat > firebird_scenarios.yaml << EOF
+          scenarios:
+            firebird_default:
+              host: 127.0.0.1
+              port: ${{ matrix.port }}
+              database: /var/lib/firebird/data/test_db
+              username: SYSDBA
+              password: password
+              charset: UTF8
+              autocommit: false
+          EOF
+          echo "FIREBIRD_SCENARIOS_CONFIG_PATH=$(pwd)/firebird_scenarios.yaml" >> $GITHUB_ENV
+
+      - name: Run tests (skip for Firebird 6-snapshot)
+        if: matrix.firebird-version != '6-snapshot'
+        run: |
+          export PYTHONPATH=src:tests
+          python -m pytest tests/ --tb=short
+
+      - name: Run tests with coverage (only for Firebird 6-snapshot)
+        if: matrix.firebird-version == '6-snapshot'
+        run: |
+          export PYTHONPATH=src:tests
+          pip install codecov
+          coverage run --source=src -m pytest tests/ --tb=short
+          coverage xml
+          coverage report
+
+      - name: Upload coverage to Codecov
+        if: matrix.firebird-version == '6-snapshot'
+        uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: ./coverage.xml
+          flags: unittests,python-${{ matrix.python-version }},firebird-${{ matrix.firebird-version }}
+          name: codecov-firebird-${{ matrix.python-version }}-${{ matrix.firebird-version }}
+          fail_ci_if_error: false
