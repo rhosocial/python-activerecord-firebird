@@ -1,0 +1,208 @@
+# pyproject.toml
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "rhosocial-activerecord-firebird"
+version = "1.0.0.dev1"
+description = "Firebird backend implementation for rhosocial-activerecord, providing robust Firebird database support."
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.8"
+authors = [
+    { name = "vistart", email = "i@vistart.me" }
+]
+keywords = ["activerecord", "orm", "database", "firebird"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Programming Language :: Python :: 3 :: Only",
+    "Framework :: Pydantic",
+    "Framework :: Pydantic :: 2",
+    "Intended Audience :: Developers",
+    "Topic :: Database",
+    "Topic :: Database :: Front-Ends",
+    "Topic :: Software Development :: Libraries",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+dependencies = [
+    "rhosocial-activerecord>=1.0.0.dev0,<2.0.0",
+    "firebird-driver>=2.0.0"
+]
+
+[project.optional-dependencies]
+pooling = [
+    "DBUtils>=3.0.0",
+]
+test = [
+    "pytest>=7.0.0",
+    "coverage>=7.0.0",
+    "pytest-cov>=4.0.0",
+    "pytest-xdist>=3.6.1",
+    "pytest-mock",
+    "pyyaml>=6.0.2",
+]
+dev = [
+    "black>=23.0.0",
+    "isort>=5.0.0",
+    "mypy>=1.0.0",
+    "ruff>=0.1.0",
+    "pre-commit>=3.0.0",
+    "towncrier>=23.0.0",
+]
+docs = [
+    "sphinx>=7.0.0",
+    "sphinx-rtd-theme>=1.0.0",
+    "myst-parser>=2.0.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/rhosocial/python-activerecord-firebird"
+Documentation = "https://docs.python-activerecord.dev.rho.social"
+Repository = "https://github.com/rhosocial/python-activerecord-firebird.git"
+Issues = "https://github.com/rhosocial/python-activerecord-firebird/issues"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+namespaces = true
+
+[tool.pytest.ini_options]
+minversion = "7.0"
+testpaths = ["tests"]
+addopts = "-ra -q"
+python_files = ["test_*.py", "*_test.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+markers = [
+    "firebird: marks tests specific to Firebird backend",
+    "backend: marks tests as backend-specific tests",
+    "basic: marks tests for basic CRUD operations",
+    "query: marks tests for query functionality",
+    "transaction: marks tests for transaction handling",
+    "requires_capability: marks tests requiring specific backend capabilities",
+]
+
+[tool.coverage.run]
+source = ["rhosocial"]
+branch = true
+omit = [
+    "*/tests/*",
+    "*/test_*",
+    "*/__pycache__/*",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "if self.debug:",
+    "if settings.DEBUG",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if 0:",
+    "if __name__ == .__main__.:",
+    "class .*\\bProtocol\\):",
+    "@(abc\\.)?abstractmethod",
+    "pass",
+    "raise ImportError",
+]
+
+[tool.black]
+line-length = 100
+target-version = ["py38"]
+include = '\.pyi?$'
+
+[tool.isort]
+profile = "black"
+multi_line_output = 3
+line_length = 100
+
+[tool.ruff]
+line-length = 120
+target-version = "py38"
+
+[tool.ruff.lint]
+select = ["E", "F", "B"]
+ignore = ["B024"]
+
+[tool.mypy]
+python_version = "3.8"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+check_untyped_defs = true
+
+[tool.pyright]
+include = ["src"]
+exclude = ["**/__pycache__", "**/tests", "**/test_*"]
+venvPath = "."
+venv = ".venv3.8"
+pythonVersion = "3.8"
+typeCheckingMode = "standard"
+useLibraryCodeForTypes = true
+
+[tool.towncrier]
+package = "rhosocial.activerecord.backend.impl.firebird"
+package_dir = "src"
+filename = "CHANGELOG.md"
+directory = "changelog.d"
+title_format = "## [{version}] - {project_date}"
+template = "changelog.d/template.md"
+start_string = "<!-- towncrier release notes start -->\n"
+underlines = ["", "", ""]
+issue_format = "[#{issue}](https://github.com/rhosocial/python-activerecord-firebird/issues/{issue})"
+
+[[tool.towncrier.type]]
+directory = "security"
+name = "Security"
+showcontent = true
+
+[[tool.towncrier.type]]
+directory = "removed"
+name = "Removed"
+showcontent = true
+
+[[tool.towncrier.type]]
+directory = "deprecated"
+name = "Deprecated"
+showcontent = true
+
+[[tool.towncrier.type]]
+directory = "added"
+name = "Added"
+showcontent = true
+
+[[tool.towncrier.type]]
+directory = "changed"
+name = "Changed"
+showcontent = true
+
+[[tool.towncrier.type]]
+directory = "fixed"
+name = "Fixed"
+showcontent = true
+
+[[tool.towncrier.type]]
+directory = "performance"
+name = "Performance"
+showcontent = true
+
+[[tool.towncrier.type]]
+directory = "docs"
+name = "Documentation"
+showcontent = true
+
+[[tool.towncrier.type]]
+directory = "internal"
+name = "Internal"
+showcontent = true

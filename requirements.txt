@@ -1,0 +1,2 @@
+rhosocial-activerecord>=1.0.0.dev0,<2.0.0
+firebird-driver>=2.0.0

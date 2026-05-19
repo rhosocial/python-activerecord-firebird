@@ -1,0 +1,6 @@
+global-exclude *.pyc
+global-exclude __pycache__
+recursive-exclude * *.pyc
+recursive-include src/rhosocial/activerecord/backend/impl/firebird *
+include LICENSE
+include README.md

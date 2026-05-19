@@ -1,0 +1,1 @@
+# src/rhosocial/activerecord/backend/impl/firebird/examples/__init__.py
