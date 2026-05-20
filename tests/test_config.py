@@ -58,7 +58,7 @@ class TestFirebirdConnectionConfig:
         assert d["password"] == "masterkey"
         assert d["charset"] == "UTF8"
 
-    def test_from_env(monkeypatch):
+    def test_from_env(self, monkeypatch):
         monkeypatch.setenv("FIREBIRD_HOST", "firebird.example.com")
         monkeypatch.setenv("FIREBIRD_PORT", "3051")
         monkeypatch.setenv("FIREBIRD_DATABASE", "/db/test.fdb")
@@ -78,7 +78,7 @@ class TestFirebirdConnectionConfig:
         assert config.autocommit is True
         assert config.role == "APP_ROLE"
 
-    def test_custom_prefix(monkeypatch):
+    def test_custom_prefix(self, monkeypatch):
         monkeypatch.setenv("FB_HOST", "fb.local")
         config = FirebirdConnectionConfig.from_env(prefix="FB_")
         assert config.host == "fb.local"

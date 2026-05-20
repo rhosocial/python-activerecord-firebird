@@ -8,3 +8,5 @@ isort>=5.0.0
 mypy>=1.0.0
 ruff>=0.1.0
 towncrier>=23.0.0
+email-validator>=2.0.0
+pyyaml>=6.0.2

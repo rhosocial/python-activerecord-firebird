@@ -1,16 +1,23 @@
 import os
 import sys
 import logging
-from typing import Type, List
+from typing import Type, List, Tuple
 
 from rhosocial.activerecord.model import ActiveRecord
+
 from rhosocial.activerecord.testsuite.utils import select_fixture
 
 from rhosocial.activerecord.testsuite.feature.query.fixtures.models import (
-    User as QueryUserBase, Post as QueryPostBase, Comment as QueryCommentBase,
+    User as UserBase, JsonUser as JsonUserBase,
+    Order as OrderBase, OrderItem as OrderItemBase,
+    Post as PostBase, Comment as CommentBase,
+    MappedUser as MappedUserBase, MappedPost as MappedPostBase, MappedComment as MappedCommentBase,
 )
 from rhosocial.activerecord.testsuite.feature.query.fixtures.cte_models import (
     Node as CteNodeBase,
+)
+from rhosocial.activerecord.testsuite.feature.query.fixtures.extended_models import (
+    User as ExtUserBase, ExtendedOrder, ExtendedOrderItem,
 )
 
 from rhosocial.activerecord.testsuite.feature.query.interfaces import IQueryProvider
@@ -25,10 +32,17 @@ def _select_model_class(base_cls, py312_cls, py311_cls, py310_cls, name):
     return select_fixture(*candidates)
 
 
-QueryUser = _select_model_class(QueryUserBase, None, None, None, "QueryUser")
-QueryPost = _select_model_class(QueryPostBase, None, None, None, "QueryPost")
-QueryComment = _select_model_class(QueryCommentBase, None, None, None, "QueryComment")
+User = _select_model_class(UserBase, None, None, None, "User")
+JsonUser = _select_model_class(JsonUserBase, None, None, None, "JsonUser")
+Order = _select_model_class(OrderBase, None, None, None, "Order")
+OrderItem = _select_model_class(OrderItemBase, None, None, None, "OrderItem")
+Post = _select_model_class(PostBase, None, None, None, "Post")
+Comment = _select_model_class(CommentBase, None, None, None, "Comment")
+MappedUser = _select_model_class(MappedUserBase, None, None, None, "MappedUser")
+MappedPost = _select_model_class(MappedPostBase, None, None, None, "MappedPost")
+MappedComment = _select_model_class(MappedCommentBase, None, None, None, "MappedComment")
 CteNode = _select_model_class(CteNodeBase, None, None, None, "CteNode")
+ExtUser = _select_model_class(ExtUserBase, None, None, None, "ExtUser")
 
 
 class QueryProvider(IQueryProvider, WorkerTestProtocol):
@@ -84,24 +98,98 @@ class QueryProvider(IQueryProvider, WorkerTestProtocol):
         return tuple(result)
 
     def setup_user_model(self, scenario_name):
-        return self._setup_model(QueryUser, scenario_name, "users")
+        return self._setup_model(User, scenario_name, "users")
 
     def setup_post_model(self, scenario_name):
-        return self._setup_model(QueryPost, scenario_name, "posts")
+        return self._setup_model(Post, scenario_name, "posts")
 
     def setup_comment_model(self, scenario_name):
-        return self._setup_model(QueryComment, scenario_name, "comments")
+        return self._setup_model(Comment, scenario_name, "comments")
 
     def setup_tree_fixtures(self, scenario_name):
         return self._setup_model(CteNode, scenario_name, "nodes")
 
     def setup_user_comment_models(self, scenario_name):
         return self._setup_multiple_models([
-            (QueryUser, "users"), (QueryComment, "comments")
+            (User, "users"), (Comment, "comments")
         ], scenario_name)
 
+    def setup_order_fixtures(self, scenario_name):
+        return self._setup_multiple_models([
+            (User, "users"),
+            (Order, "orders"),
+            (OrderItem, "order_items"),
+        ], scenario_name)
+
+    def setup_blog_fixtures(self, scenario_name):
+        return self._setup_multiple_models([
+            (User, "users"),
+            (Post, "posts"),
+            (Comment, "comments"),
+        ], scenario_name)
+
+    def setup_json_user_fixtures(self, scenario_name):
+        json_user_model = self._setup_model(JsonUser, scenario_name, "json_users")
+        return (json_user_model,)
+
+    def setup_extended_order_fixtures(self, scenario_name):
+        return self._setup_multiple_models([
+            (ExtUser, "users"),
+            (ExtendedOrder, "extended_orders"),
+            (ExtendedOrderItem, "extended_order_items"),
+        ], scenario_name)
+
+    def setup_combined_fixtures(self, scenario_name):
+        return self._setup_multiple_models([
+            (User, "users"),
+            (Order, "orders"),
+            (OrderItem, "order_items"),
+            (Post, "posts"),
+            (Comment, "comments"),
+        ], scenario_name)
+
+    def setup_annotated_query_fixtures(self, scenario_name):
+        from rhosocial.activerecord.testsuite.feature.query.fixtures.annotated_adapter_models import SearchableItem
+        return self._setup_multiple_models([
+            (SearchableItem, "searchable_items"),
+        ], scenario_name)
+
+    def setup_mapped_models(self, scenario_name):
+        return self._setup_multiple_models([
+            (MappedUser, "users"),
+            (MappedPost, "posts"),
+            (MappedComment, "comments"),
+        ], scenario_name)
+
+    async def setup_async_order_fixtures(self, scenario_name):
+        raise NotImplementedError("Firebird backend does not support async")
+
+    async def setup_async_blog_fixtures(self, scenario_name):
+        raise NotImplementedError("Firebird backend does not support async")
+
+    async def setup_async_json_user_fixtures(self, scenario_name):
+        raise NotImplementedError("Firebird backend does not support async")
+
+    async def setup_async_tree_fixtures(self, scenario_name):
+        raise NotImplementedError("Firebird backend does not support async")
+
+    async def setup_async_extended_order_fixtures(self, scenario_name):
+        raise NotImplementedError("Firebird backend does not support async")
+
+    async def setup_async_combined_fixtures(self, scenario_name):
+        raise NotImplementedError("Firebird backend does not support async")
+
+    async def setup_async_annotated_query_fixtures(self, scenario_name):
+        raise NotImplementedError("Firebird backend does not support async")
+
+    async def setup_async_mapped_models(self, scenario_name):
+        raise NotImplementedError("Firebird backend does not support async")
+
     def cleanup_after_test(self, scenario_name):
-        tables = ["users", "posts", "comments", "nodes"]
+        tables = ["users", "posts", "comments", "nodes",
+                  "orders", "order_items", "json_users",
+                  "extended_orders", "extended_order_items",
+                  "searchable_items"]
         for b in self._active_backends:
             try:
                 for t in tables:
@@ -115,6 +203,9 @@ class QueryProvider(IQueryProvider, WorkerTestProtocol):
                 except Exception:
                     pass
         self._active_backends.clear()
+
+    async def cleanup_after_test_async(self, scenario_name):
+        raise NotImplementedError("Firebird backend does not support async")
 
     def get_worker_connection_params(self, scenario_name, fixture_type=None):
         from .scenarios import SCENARIO_MAP

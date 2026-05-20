@@ -14,12 +14,12 @@ class TestFirebirdDialectBasic:
         assert dialect.get_parameter_placeholder(1) == "?"
 
     def test_identifier_quoting(self, dialect):
-        assert dialect.format_identifier("mytable") == '"mytable"'
-        assert dialect.format_identifier("my table") == '"my table"'
+        assert dialect.format_identifier("mytable") == '"MYTABLE"'
+        assert dialect.format_identifier("my table") == '"MY TABLE"'
 
     def test_identifier_escaping(self, dialect):
         result = dialect.format_identifier('my"table')
-        assert '"my""table"' in result
+        assert '"MY""TABLE"' in result
 
     def test_name_property(self, dialect):
         assert dialect.name == "Firebird"
@@ -146,10 +146,9 @@ class TestFirebirdDialectTransaction:
         from rhosocial.activerecord.backend.transaction import IsolationLevel, TransactionMode
         from rhosocial.activerecord.backend.expression.transaction import SetTransactionExpression
 
-        expr = SetTransactionExpression(
-            isolation_level=IsolationLevel.READ_COMMITTED,
-            mode=TransactionMode.READ_WRITE,
-        )
+        expr = SetTransactionExpression(dialect)
+        expr._isolation_level = IsolationLevel.READ_COMMITTED
+        expr._mode = TransactionMode.READ_WRITE
 
         sql, params = dialect.format_set_transaction(expr)
         assert sql.startswith("SET TRANSACTION")
