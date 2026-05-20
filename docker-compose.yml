@@ -1,0 +1,36 @@
+services:
+  firebird-5:
+    image: registry.cn-shanghai.aliyuncs.com/vistart_public/firebird:5
+    container_name: firebird-5
+    ports:
+      - "19582:3050"
+    environment:
+      FIREBIRD_ROOT_PASSWORD: password
+      FIREBIRD_USE_LEGACY_AUTH: "true"
+      FIREBIRD_USER: root
+      FIREBIRD_PASSWORD: password
+      FIREBIRD_DATABASE: test_db
+      FIREBIRD_DATABASE_PAGE_SIZE: 16384
+    volumes:
+      - firebird-5-data:/var/lib/firebird/data
+    restart: unless-stopped
+
+  firebird-6:
+    image: registry.cn-shanghai.aliyuncs.com/vistart_public/firebird:6-snapshot
+    container_name: firebird-6
+    ports:
+      - "19583:3050"
+    environment:
+      FIREBIRD_ROOT_PASSWORD: password
+      FIREBIRD_USE_LEGACY_AUTH: "true"
+      FIREBIRD_USER: root
+      FIREBIRD_PASSWORD: password
+      FIREBIRD_DATABASE: test_db
+      FIREBIRD_DATABASE_PAGE_SIZE: 16384
+    volumes:
+      - firebird-6-data:/var/lib/firebird/data
+    restart: unless-stopped
+
+volumes:
+  firebird-5-data:
+  firebird-6-data:

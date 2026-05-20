@@ -1,6 +1,7 @@
 # tests/conftest.py
 """Pytest configuration for Firebird backend tests."""
 
+import os
 from typing import Optional
 
 import pytest
@@ -9,6 +10,11 @@ from rhosocial.activerecord.backend.impl.firebird import (
     FirebirdBackend,
     FirebirdConnectionConfig,
     FirebirdDialect,
+)
+
+os.environ.setdefault(
+    "TESTSUITE_PROVIDER_REGISTRY",
+    "tests.providers.registry:provider_registry"
 )
 
 
@@ -40,11 +46,11 @@ def fb4_dialect():
 def backend_config():
     """Create a minimal backend configuration for testing."""
     return FirebirdConnectionConfig(
-        host="localhost",
-        port=3050,
-        database="test.fdb",
-        username="SYSDBA",
-        password="masterkey",
+        host="127.0.0.1",
+        port=19583,
+        database="/var/lib/firebird/data/test_db",
+        username="root",
+        password="password",
         charset="UTF8",
     )
 

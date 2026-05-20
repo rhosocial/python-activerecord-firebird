@@ -1,11 +1,15 @@
 # src/rhosocial/activerecord/backend/impl/firebird/backend.py
 """Firebird synchronous backend implementation."""
 
-from typing import Any, Dict, List, Optional, Tuple, Type
+from typing import Any, Dict, List, Optional, Tuple, Type, Union
 
 from rhosocial.activerecord.backend.base import StorageBackend
 from rhosocial.activerecord.backend.result import QueryResult
-from rhosocial.activerecord import errors as exc
+from rhosocial.activerecord.backend.options import (
+    ExecutionOptions, InsertOptions, UpdateOptions, DeleteOptions,
+)
+from rhosocial.activerecord.backend.schema import StatementType
+from rhosocial.activerecord.backend import errors as exc
 
 from .mixins import FirebirdBackendMixin, FirebirdConcurrencyMixin
 from .config import FirebirdConnectionConfig
@@ -35,58 +39,52 @@ class FirebirdBackend(
     """
 
     def __init__(self, **kwargs) -> None:
-        """Initialize Firebird backend.
-
-        Args:
-            **kwargs: Configuration parameters for FirebirdConnectionConfig
-        """
         super().__init__(**kwargs)
-
         self._connection = None
         self._cursor = None
         self._transaction_manager = FirebirdTransactionManager(self)
         self._is_connected = False
-
         self._register_firebird_adapters()
 
+    def _ensure_client_library(self) -> None:
+        import os
+        lib_path = os.environ.get('FIREBIRD_CLIENT_LIBRARY')
+        if lib_path:
+            from pathlib import Path
+            from firebird.driver.fbapi import load_api, has_api
+            if not has_api():
+                load_api(filename=Path(lib_path))
+
     def connect(self) -> None:
-        """Establish connection to Firebird database.
-
-        Raises:
-            ConnectionError: If connection fails
-        """
+        self._ensure_client_library()
         import firebird.driver as fdb
-
         try:
             config = self.config
-
+            if config.host and config.port and config.database:
+                dsn = f"{config.host}/{config.port}:{config.database}"
+            elif config.database:
+                dsn = config.database
+            else:
+                raise exc.ConnectionError("No database specified in config")
             connect_params = {
-                'host': config.host,
-                'port': config.port,
-                'database': config.database,
+                'database': dsn,
                 'user': config.username or config.user,
                 'password': config.password,
                 'charset': config.charset,
             }
-
             if config.role:
                 connect_params['role'] = config.role
             if config.page_size:
                 connect_params['page_size'] = config.page_size
-            if config.wire_compression:
-                connect_params['wire_compression'] = config.wire_compression
             if config.timeout:
                 connect_params['timeout'] = config.timeout
-
             self._connection = fdb.connect(**connect_params)
             self._cursor = self._connection.cursor()
             self._is_connected = True
-
         except Exception as e:
             self._handle_error(e)
 
     def disconnect(self) -> None:
-        """Close the database connection."""
         try:
             if self._cursor:
                 try:
@@ -104,14 +102,6 @@ class FirebirdBackend(
             self._is_connected = False
 
     def ping(self, reconnect: bool = True) -> bool:
-        """Check if connection is still alive.
-
-        Args:
-            reconnect: If True, attempt to reconnect on failure
-
-        Returns:
-            True if connection is valid
-        """
         if not self._is_connected or self._connection is None:
             if reconnect:
                 try:
@@ -120,7 +110,6 @@ class FirebirdBackend(
                 except Exception:
                     return False
             return False
-
         try:
             self._cursor.execute("SELECT 1 FROM RDB$DATABASE")
             self._cursor.fetchone()
@@ -136,128 +125,80 @@ class FirebirdBackend(
             return False
 
     def _get_cursor(self):
-        """Get or create a database cursor with health check.
-
-        Returns:
-            Database cursor
-
-        Raises:
-            ConnectionError: If connection is lost and cannot be re-established
-        """
         if not self._is_connected or self._connection is None:
             raise exc.ConnectionError("Not connected to Firebird database")
-        if self._cursor is None or self._cursor.closed:
+        if self._cursor is None:
             self._cursor = self._connection.cursor()
         return self._cursor
 
     def _prepare_sql_and_params(self, sql: str, params: Optional[Tuple] = None) -> Tuple[str, Optional[Tuple]]:
-        """Prepare SQL and parameters for execution.
-
-        Handles RETURNING clause by removing INTO clause from SQL
-        and converting Firebird-specific parameter syntax.
-
-        Args:
-            sql: SQL statement
-            params: Optional parameters tuple
-
-        Returns:
-            Tuple of (prepared_sql, prepared_params)
-        """
         return sql, params
 
-    def execute(self, sql: str, params: Optional[Tuple] = None,
-                fetch: bool = False, returning: bool = False) -> QueryResult:
-        """Execute a SQL statement.
+    def _detect_statement_type(self, sql: str) -> StatementType:
+        sql_upper = sql.strip().upper()
+        if sql_upper.startswith(('SELECT', 'WITH', 'EXECUTE BLOCK')):
+            return StatementType.DQL
+        if sql_upper.startswith(('INSERT', 'UPDATE', 'DELETE', 'MERGE', 'UPDATE OR INSERT')):
+            return StatementType.DML
+        if sql_upper.startswith(('EXECUTE', 'CALL')):
+            return StatementType.DQL
+        return StatementType.DDL
 
-        Args:
-            sql: SQL statement to execute
-            params: Optional positional parameters
-            fetch: If True, fetch and return result rows
-            returning: If True, execute as RETURNING query
-
-        Returns:
-            QueryResult with data and/or affected rows
-        """
-        cursor = self._get_cursor()
-
+    def execute(
+        self,
+        sql: str,
+        params: Optional[Tuple] = None,
+        *,
+        options: Optional[ExecutionOptions] = None,
+        **kwargs,
+    ) -> QueryResult:
+        if options is None:
+            stmt_type = kwargs.get('stmt_type') or self._detect_statement_type(sql)
+            column_adapters = kwargs.get('column_adapters')
+            column_mapping = kwargs.get('column_mapping')
+            process_result_set = kwargs.get('process_result_set')
+            options = ExecutionOptions(
+                stmt_type=stmt_type,
+                column_adapters=column_adapters,
+                column_mapping=column_mapping,
+                process_result_set=process_result_set,
+            )
         try:
-            prepared_sql, prepared_params = self._prepare_sql_and_params(sql, params)
-
-            cursor.execute(prepared_sql, prepared_params)
-
-            result = QueryResult()
-            result.affected_rows = cursor.rowcount
-
-            if fetch or returning:
-                try:
-                    rows = cursor.fetchall()
-                    if rows:
-                        result.data = rows
-                except Exception:
-                    pass
-
-            return result
-
+            return super().execute(sql, params, options=options)
         except Exception as e:
             self._handle_error(e)
 
-    def execute_many(self, sql: str, params_list: List[Tuple]) -> QueryResult:
-        """Execute a SQL statement with multiple parameter sets.
-
-        Args:
-            sql: SQL statement to execute
-            params_list: List of parameter tuples
-
-        Returns:
-            QueryResult with aggregated affected_rows
-
-        Raises:
-            DatabaseError: If execution fails
-        """
-        cursor = self._get_cursor()
-        total_affected = 0
-
+    def _handle_auto_commit(self) -> None:
         try:
-            prepared_sql, _ = self._prepare_sql_and_params(sql, None)
+            self._connection.commit()
+        except Exception:
+            pass
 
-            for params in params_list:
-                cursor.execute(prepared_sql, params)
-                total_affected += cursor.rowcount
-
-            return QueryResult(affected_rows=total_affected)
-
+    def execute_many(self, sql: str, params_list: List[Tuple]) -> QueryResult:
+        is_dml = sql.strip().upper().startswith(('INSERT', 'UPDATE', 'DELETE', 'MERGE'))
+        try:
+            result = super().execute_many(sql, params_list)
+            if result and result.affected_rows < 0 and len(params_list) > 0:
+                result.affected_rows = len(params_list)
+            if is_dml:
+                self._handle_auto_commit_if_needed()
+            return result
         except Exception as e:
             self._handle_error(e)
 
     def executescript(self, sql: str) -> QueryResult:
-        """Execute a multi-statement SQL script.
-
-        Args:
-            sql: SQL script with multiple statements
-
-        Returns:
-            QueryResult
-
-        Raises:
-            DatabaseError: If execution fails
-        """
         cursor = self._get_cursor()
-
         try:
             cursor.execute(sql)
-            return QueryResult(affected_rows=cursor.rowcount or 0)
+            result = QueryResult(affected_rows=cursor.rowcount or 0)
+            self._handle_auto_commit_if_needed()
+            return result
         except Exception as e:
             self._handle_error(e)
 
     def get_server_version(self) -> Tuple[int, int, int]:
-        """Get Firebird server version.
-
-        Queries RDB$DATABASE for version string like
-        'LI-V3.0.5.33220' or 'FB 4.0.1.2692'.
-
-        Returns:
-            Version tuple (major, minor, patch)
-        """
+        if not self._is_connected:
+            self.connect()
         cursor = self._get_cursor()
         try:
             cursor.execute("SELECT RDB$GET_CONTEXT('SYSTEM', 'ENGINE_VERSION') FROM RDB$DATABASE")
@@ -277,153 +218,123 @@ class FirebirdBackend(
                 version_str = str(cursor.description[0][0]) if cursor.description else "3.0.0"
             except Exception:
                 return (3, 0, 0)
-
         import re
         match = re.search(r'(\d+)\.(\d+)\.(\d+)', version_str)
         if match:
             return (int(match.group(1)), int(match.group(2)), int(match.group(3)))
-
         return (3, 0, 0)
 
     def introspect_and_adapt(self) -> None:
-        """Introspect server and adapt dialect.
-
-        Detects Firebird server version and configures dialect accordingly.
-        Also registers appropriate type adapters based on version.
-        """
+        if not self._is_connected:
+            self.connect()
         version = self.get_server_version()
         self.dialect.version = version
-
         if hasattr(self.config, 'version') and self.config.version is None:
             self.config.version = version
-
         if version < (3, 0, 0):
             from .adapters import FirebirdBooleanAdapter
             bool_adapter = FirebirdBooleanAdapter(use_char=True)
-            self._adapter_registry.register(bool_adapter, bool, bool, allow_override=True)
-            self._adapter_registry.register(bool_adapter, bool, str, allow_override=True)
+            self.adapter_registry.register(bool_adapter, bool, bool, allow_override=True)
+            self.adapter_registry.register(bool_adapter, bool, str, allow_override=True)
 
     def _create_introspector(self):
-        """Create a Firebird introspector instance.
-
-        Returns:
-            SyncFirebirdIntrospector instance
-        """
         from .introspection.introspector import SyncFirebirdIntrospector
         return SyncFirebirdIntrospector(self)
 
+    def _process_result_set(self, cursor, is_select, column_adapters=None, column_mapping=None):
+        if not is_select:
+            return None
+        try:
+            rows = cursor.fetchall()
+            if not rows:
+                return []
+            # Firebird returns uppercase column names; lowercase for case-insensitive matching
+            column_names = [desc[0].strip('"').lower() for desc in cursor.description]
+            final_results = []
+            adapters = column_adapters or {}
+            mapping = column_mapping or {}
+            for row in rows:
+                row_dict = dict(zip(column_names, row))
+                adapted_row = self._adapt_row_types(row_dict, adapters)
+                final_row = self._remap_row_columns(adapted_row, mapping)
+                final_results.append(final_row)
+            return final_results
+        except Exception as e:
+            self.logger.error(f"Error processing result set: {str(e)}", exc_info=True)
+            raise
+
+    def _build_query_result(self, cursor, data, duration):
+        affected = getattr(cursor, "rowcount", 0)
+        if affected < 0:
+            if data:
+                affected = len(data)
+            else:
+                affected = 0
+        return QueryResult(
+            data=data,
+            affected_rows=affected,
+            last_insert_id=getattr(cursor, "lastrowid", None),
+            duration=duration,
+        )
+
     def _parse_explain_result(self, result: QueryResult) -> Any:
-        """Parse EXPLAIN result.
-
-        Args:
-            result: QueryResult from EXPLAIN execution
-
-        Returns:
-            Parsed explain result
-        """
         from .explain.types import FirebirdExplainResult
         rows = result.data or []
         plan_text = " ".join(str(row[0]) for row in rows) if rows else ""
         return FirebirdExplainResult(plan_text=plan_text)
 
-    def insert(self, table_name: str, values: Dict[str, Any],
-               returning_columns: Optional[List[str]] = None) -> QueryResult:
-        """Insert a row with optional RETURNING.
+    def insert(self, table_name, values=None, returning_columns=None):
+        if isinstance(table_name, InsertOptions):
+            return super().insert(table_name)
+        options = InsertOptions(
+            table=table_name,
+            data=values or {},
+            returning_columns=returning_columns,
+        )
+        return super().insert(options)
 
-        Args:
-            table_name: Target table
-            values: Column name -> value mapping
-            returning_columns: Optional columns to RETURN
-
-        Returns:
-            QueryResult with last_insert_id and optional RETURNING data
-        """
-        columns = list(values.keys())
-        placeholders = [self.dialect.get_parameter_placeholder() for _ in values]
-        params = tuple(values.values())
-
-        cols_str = ', '.join(self.dialect.format_identifier(c) for c in columns)
-        vals_str = ', '.join(placeholders)
-
-        sql = f"INSERT INTO {self.dialect.format_identifier(table_name)} ({cols_str}) VALUES ({vals_str})"
-
-        if returning_columns:
-            ret_str = ', '.join(self.dialect.format_identifier(c) for c in returning_columns)
-            sql += f" RETURNING {ret_str}"
-            return self.execute(sql, params, returning=True)
-
-        return self.execute(sql, params)
-
-    def update(self, table_name: str, values: Dict[str, Any],
-               where_clause: Optional[Tuple[str, tuple]] = None,
-               returning_columns: Optional[List[str]] = None) -> QueryResult:
-        """Update rows with optional RETURNING.
-
-        Args:
-            table_name: Target table
-            values: Column name -> value mapping
-            where_clause: Optional (where_sql, where_params) tuple
-            returning_columns: Optional columns to RETURN
-
-        Returns:
-            QueryResult with affected_rows and optional RETURNING data
-        """
+    def update(self, table_name, values=None, where_clause=None, returning_columns=None):
+        if isinstance(table_name, UpdateOptions):
+            return super().update(table_name)
+        values = values or {}
+        all_params = list(values.values())
+        if where_clause:
+            where_sql, where_params = where_clause
+            all_params.extend(where_params)
         set_clauses = []
-        all_params = []
-
-        for col, val in values.items():
+        for col in values:
             set_clauses.append(f"{self.dialect.format_identifier(col)} = {self.dialect.get_parameter_placeholder()}")
-            all_params.append(val)
-
-        sql = f"UPDATE {self.dialect.format_identifier(table_name)} SET {', '.join(set_clauses)}"
-
-        if where_clause:
-            where_sql, where_params = where_clause
-            sql += f" WHERE {where_sql}"
-            all_params.extend(where_params)
-
+        where_sql = where_clause[0] if where_clause else "1=1"
+        sql = f"UPDATE {self.dialect.format_identifier(table_name)} SET {', '.join(set_clauses)} WHERE {where_sql}"
         if returning_columns:
             ret_str = ', '.join(self.dialect.format_identifier(c) for c in returning_columns)
             sql += f" RETURNING {ret_str}"
-            return self.execute(sql, tuple(all_params), returning=True)
+            return self.execute(sql, tuple(all_params), options=ExecutionOptions(
+                stmt_type=StatementType.DML, process_result_set=True))
+        return self.execute(sql, tuple(all_params), options=ExecutionOptions(stmt_type=StatementType.DML))
 
-        return self.execute(sql, tuple(all_params))
-
-    def delete(self, table_name: str,
-               where_clause: Optional[Tuple[str, tuple]] = None,
-               returning_columns: Optional[List[str]] = None) -> QueryResult:
-        """Delete rows with optional RETURNING.
-
-        Args:
-            table_name: Target table
-            where_clause: Optional (where_sql, where_params) tuple
-            returning_columns: Optional columns to RETURN
-
-        Returns:
-            QueryResult with affected_rows and optional RETURNING data
-        """
-        sql = f"DELETE FROM {self.dialect.format_identifier(table_name)}"
+    def delete(self, table_name, where_clause=None, returning_columns=None):
+        if isinstance(table_name, DeleteOptions):
+            return super().delete(table_name)
         all_params = []
-
+        sql = f"DELETE FROM {self.dialect.format_identifier(table_name)}"
         if where_clause:
             where_sql, where_params = where_clause
             sql += f" WHERE {where_sql}"
             all_params.extend(where_params)
-
         if returning_columns:
             ret_str = ', '.join(self.dialect.format_identifier(c) for c in returning_columns)
             sql += f" RETURNING {ret_str}"
-            return self.execute(sql, tuple(all_params), returning=True)
-
-        return self.execute(sql, tuple(all_params))
+            return self.execute(sql, tuple(all_params) if all_params else None,
+                                options=ExecutionOptions(stmt_type=StatementType.DML, process_result_set=True))
+        return self.execute(sql, tuple(all_params) if all_params else None,
+                            options=ExecutionOptions(stmt_type=StatementType.DML))
 
     @property
     def transaction_manager(self) -> FirebirdTransactionManager:
-        """Get the transaction manager."""
         return self._transaction_manager
 
     def __del__(self):
-        """Clean up connection on garbage collection."""
         try:
             self.disconnect()
         except Exception:

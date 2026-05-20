@@ -24,9 +24,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { python-version: '3.13', firebird-version: '5-snapshot', port: 3050 }
-          - { python-version: '3.14', firebird-version: '5-snapshot', port: 3051 }
-          - { python-version: '3.13', firebird-version: '6-snapshot', port: 3052 }
+          - { python-version: '3.11', firebird-version: '5', port: 3050 }
+          - { python-version: '3.12', firebird-version: '6-snapshot', port: 3051 }
+          - { python-version: '3.13', firebird-version: '5', port: 3052 }
           - { python-version: '3.14', firebird-version: '6-snapshot', port: 3053 }
 
     services:
@@ -37,7 +37,7 @@ jobs:
           FIREBIRD_USE_LEGACY_AUTH: "true"
           FIREBIRD_DATABASE: /var/lib/firebird/data/test_db
         options: >-
-          --health-cmd "bash -c 'fbsvcmgr localhost service_mgr action_svc_get_fb_version 2>&1 | head -1'"
+          --health-cmd "bash -c 'fbsvcmgr localhost:service_mgr user SYSDBA password password info_server_version 2>/dev/null | head -1'"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 10
@@ -68,25 +68,40 @@ jobs:
           pip install git+https://github.com/rhosocial/python-activerecord.git@release/v1.0.0.dev27
           pip install git+https://github.com/rhosocial/python-activerecord-testsuite.git@release/v1.0.0.dev14
 
-      - name: Create and test database
+      - name: Verify Firebird connection and create test user
         run: |
-          python -c "
+          python << 'PYEOF'
           import firebird.driver as fdb
-          conn = fdb.connect(
-              database='127.0.0.1/${{ matrix.port }}:/var/lib/firebird/data/test_db',
-              user='SYSDBA',
-              password='password',
-              charset='UTF8',
-          )
+          dsn = '127.0.0.1/${{ matrix.port }}:/var/lib/firebird/data/test_db'
+          conn = fdb.connect(database=dsn, user='SYSDBA', password='password', charset='UTF8')
           cur = conn.cursor()
-          cur.execute('SELECT rdb\$get_context(\"SYSTEM\", \"ENGINE_VERSION\") FROM rdb\$database')
+          cur.execute("SELECT rdb$get_context('SYSTEM', 'ENGINE_VERSION') FROM rdb$database")
           ver = cur.fetchone()[0]
-          cur.execute('SELECT 1 FROM rdb\$database')
-          result = cur.fetchone()
-          print(f'Firebird ${{ matrix.firebird-version }} (v{ver}) connectivity test passed')
+          cur.execute("SELECT 1 FROM rdb$database")
+          cur.fetchone()
+          print(f'Firebird {ver} connectivity test passed')
+          cur.execute("SELECT current_user, current_role FROM rdb$database")
+          u, r = cur.fetchone()
+          print(f'Connected as {u}, role: {r}')
+          cur.execute("CREATE OR ALTER USER root PASSWORD 'password' GRANT ADMIN ROLE")
+          conn.commit()
+          print('Test user "root" created/verified')
           cur.close()
           conn.close()
-          "
+          PYEOF
+
+      - name: Verify root user login
+        run: |
+          python << 'PYEOF'
+          import firebird.driver as fdb
+          dsn = '127.0.0.1/${{ matrix.port }}:/var/lib/firebird/data/test_db'
+          conn = fdb.connect(database=dsn, user='root', password='password', charset='UTF8')
+          cur = conn.cursor()
+          cur.execute("SELECT current_user FROM rdb$database")
+          print(f'Root login verified: {cur.fetchone()[0]}')
+          cur.close()
+          conn.close()
+          PYEOF
 
       - name: Create Firebird scenario config
         run: |
@@ -103,14 +118,13 @@ jobs:
           EOF
           echo "FIREBIRD_SCENARIOS_CONFIG_PATH=$(pwd)/firebird_scenarios.yaml" >> $GITHUB_ENV
 
-      - name: Run tests (skip for Firebird 6-snapshot)
-        if: matrix.firebird-version != '6-snapshot'
+      - name: Run tests
         run: |
           export PYTHONPATH=src:tests
           python -m pytest tests/ --tb=short
 
-      - name: Run tests with coverage (only for Firebird 6-snapshot)
-        if: matrix.firebird-version == '6-snapshot'
+      - name: Run tests with coverage (3.14 + 6-snapshot only)
+        if: matrix.python-version == '3.14' && matrix.firebird-version == '6-snapshot'
         run: |
           export PYTHONPATH=src:tests
           pip install codecov
@@ -119,7 +133,7 @@ jobs:
           coverage report
 
       - name: Upload coverage to Codecov
-        if: matrix.firebird-version == '6-snapshot'
+        if: matrix.python-version == '3.14' && matrix.firebird-version == '6-snapshot'
         uses: codecov/codecov-action@v5
         with:
           token: ${{ secrets.CODECOV_TOKEN }}

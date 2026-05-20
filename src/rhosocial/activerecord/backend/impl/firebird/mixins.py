@@ -10,7 +10,7 @@ from typing import Any, Dict, List, Optional, Tuple, Type
 
 from rhosocial.activerecord.backend import errors as exc
 from rhosocial.activerecord.backend.base import TypeAdaptionMixin
-from rhosocial.activerecord.backend.type_adapter import BaseSQLTypeAdapter
+from rhosocial.activerecord.backend.type_adapter import BaseSQLTypeAdapter, SQLTypeAdapter
 
 from .adapters import (
     FirebirdBlobAdapter, FirebirdBooleanAdapter, FirebirdDateAdapter,
@@ -111,6 +111,7 @@ class FirebirdBackendMixin:
     }
 
     _dialect = None
+    _default_suggestions_cache = None
 
     @property
     def dialect(self):
@@ -132,7 +133,7 @@ class FirebirdBackendMixin:
 
     def _register_firebird_adapters(self):
         """Register Firebird-specific type adapters."""
-        registry = self._adapter_registry
+        registry = self.adapter_registry
         for adapter_class, py_type, db_type in firebird_adapters:
             adapter = adapter_class()
             if isinstance(py_type, tuple):
@@ -208,19 +209,36 @@ class FirebirdBackendMixin:
 
         raise exc.DatabaseError(error_msg) from error
 
-    def get_default_adapter_suggestions(self) -> Dict[Type, str]:
-        """Return default Python type to Firebird type mappings."""
-        return {
-            int: "INTEGER",
-            float: "DOUBLE PRECISION",
-            str: "VARCHAR(255)",
-            bytes: "BLOB SUB_TYPE BINARY",
-            bool: "BOOLEAN",
-            "datetime.datetime": "TIMESTAMP",
-            "datetime.date": "DATE",
-            "datetime.time": "TIME",
-            "decimal.Decimal": "DECIMAL(18, 4)",
-        }
+    def get_default_adapter_suggestions(self) -> Dict[Type, Tuple[SQLTypeAdapter, Type]]:
+        """Provides default type adapter suggestions for Firebird."""
+        if self._default_suggestions_cache is not None:
+            return self._default_suggestions_cache
+
+        import datetime as dt
+        from decimal import Decimal
+
+        suggestions: Dict[Type, Tuple[SQLTypeAdapter, Type]] = {}
+        type_mappings = [
+            (int, int),
+            (float, float),
+            (str, str),
+            (bytes, bytes),
+            (bool, bool),
+            (dt.datetime, dt.datetime),
+            (dt.date, dt.date),
+            (dt.time, dt.time),
+            (Decimal, Decimal),
+            (dict, str),
+            (list, str),
+        ]
+
+        for py_type, db_type in type_mappings:
+            adapter = self.adapter_registry.get_adapter(py_type, db_type)
+            if adapter:
+                suggestions[py_type] = (adapter, db_type)
+
+        self._default_suggestions_cache = suggestions
+        return suggestions
 
     def _check_returning_compatibility(self, returning_columns):
         """Check if RETURNING clause is compatible with this backend."""
@@ -292,56 +310,52 @@ class FirebirdDMLOperationMixin:
         """
         all_params: List[Any] = []
 
-        parts = ["INSERT INTO"]
-        parts.append(self.format_identifier(expr.table_name))
+        table_sql, table_params = expr.into.to_sql()
+        all_params.extend(table_params)
 
+        columns_sql = ""
         if expr.columns:
-            cols_str = ', '.join(self.format_identifier(c) for c in expr.columns)
-            parts.append(f"({cols_str})")
+            columns_sql = "(" + ", ".join(self.format_identifier(c) for c in expr.columns) + ")"
 
-        if expr.values:
-            val_strs = []
-            for val in expr.values:
-                if hasattr(val, 'to_sql'):
-                    val_sql, val_params = val.to_sql()
-                    val_strs.append(val_sql)
-                    all_params.extend(val_params)
-                else:
-                    all_params.append(val)
-                    val_strs.append(self.get_parameter_placeholder())
-            parts.append(f"VALUES ({', '.join(val_strs)})")
-        elif expr.default_values:
-            parts.append("DEFAULT VALUES")
-        elif expr.query:
-            query_sql, query_params = expr.query.to_sql()
-            parts.append(query_sql)
-            all_params.extend(query_params)
+        from rhosocial.activerecord.backend.expression.statements import DefaultValuesSource, ValuesSource, SelectSource
 
-        returning = getattr(expr, 'returning', None)
-        if returning and hasattr(returning, 'expressions') and returning.expressions:
-            ret_sql, ret_params = self.format_returning_clause(returning)
-            parts.append(ret_sql)
-            all_params.extend(ret_params)
+        source_sql = ""
+        if isinstance(expr.source, DefaultValuesSource):
+            source_sql = "DEFAULT VALUES"
+        elif isinstance(expr.source, ValuesSource):
+            all_rows_sql = []
+            for row in expr.source.values_list:
+                row_sql, row_params = [], []
+                for val in row:
+                    s, p = val.to_sql()
+                    row_sql.append(s)
+                    row_params.extend(p)
+                all_rows_sql.append(f"({', '.join(row_sql)})")
+                all_params.extend(row_params)
+            source_sql = "VALUES " + ", ".join(all_rows_sql)
+        elif isinstance(expr.source, SelectSource):
+            s_sql, s_params = expr.source.select_query.to_sql()
+            source_sql = s_sql
+            all_params.extend(s_params)
 
-        return ' '.join(parts), tuple(all_params)
+        sql = f"INSERT INTO {table_sql} {columns_sql} {source_sql}".strip()
+
+        if expr.returning:
+            returning_sql, returning_params = self.format_returning_clause(expr.returning)
+            sql += f" {returning_sql}"
+            all_params.extend(returning_params)
+
+        return sql, tuple(all_params)
 
     def format_update_statement(self, expr) -> Tuple[str, tuple]:
-        """Format UPDATE statement with optional RETURNING for Firebird.
-
-        Args:
-            expr: UpdateExpression instance
-
-        Returns:
-            Tuple of (SQL string, parameters tuple)
-        """
+        """Format UPDATE statement with optional RETURNING for Firebird."""
         all_params: List[Any] = []
 
-        parts = ["UPDATE"]
-        parts.append(self.format_identifier(expr.table_name))
-        parts.append("SET")
+        table_sql, table_params = expr.table.to_sql()
+        all_params.extend(table_params)
 
         set_parts = []
-        for col, val in expr.values:
+        for col, val in expr.assignments.items():
             col_str = self.format_identifier(col)
             if hasattr(val, 'to_sql'):
                 val_sql, val_params = val.to_sql()
@@ -351,61 +365,40 @@ class FirebirdDMLOperationMixin:
                 all_params.append(val)
                 set_parts.append(f"{col_str} = {self.get_parameter_placeholder()}")
 
-        parts.append(', '.join(set_parts))
+        sql = f"UPDATE {table_sql} SET {', '.join(set_parts)}"
 
-        if expr.where_clause:
-            where_sql, where_params = expr.where_clause.to_sql()
-            parts.append(f"WHERE {where_sql}")
+        if expr.where:
+            where_sql, where_params = expr.where.to_sql()
+            sql += f" {where_sql}"
             all_params.extend(where_params)
 
-        order_by = getattr(expr, 'order_by', None)
-        if order_by:
-            order_sql, order_params = order_by.to_sql()
-            parts.append(order_sql)
-            all_params.extend(order_params)
+        if expr.returning:
+            returning_sql, returning_params = self.format_returning_clause(expr.returning)
+            sql += f" {returning_sql}"
+            all_params.extend(returning_params)
 
-        rows = getattr(expr, 'rows', None)
-        if rows:
-            parts.append(f"ROWS {rows[0]} TO {rows[1] if len(rows) > 1 else rows[0]}")
-
-        returning = getattr(expr, 'returning', None)
-        if returning and hasattr(returning, 'expressions') and returning.expressions:
-            ret_sql, ret_params = self.format_returning_clause(returning)
-            parts.append(ret_sql)
-            all_params.extend(ret_params)
-
-        return ' '.join(parts), tuple(all_params)
+        return sql, tuple(all_params)
 
     def format_delete_statement(self, expr) -> Tuple[str, tuple]:
-        """Format DELETE statement with optional RETURNING for Firebird.
-
-        Args:
-            expr: DeleteExpression instance
-
-        Returns:
-            Tuple of (SQL string, parameters tuple)
-        """
+        """Format DELETE statement with optional RETURNING for Firebird."""
         all_params: List[Any] = []
 
-        parts = ["DELETE FROM"]
-        parts.append(self.format_identifier(expr.table_name))
+        table_sql, table_params = expr.tables[0].to_sql()
+        all_params.extend(table_params)
 
-        if expr.where_clause:
-            where_sql, where_params = expr.where_clause.to_sql()
-            parts.append(f"WHERE {where_sql}")
+        sql = f"DELETE FROM {table_sql}"
+
+        if expr.where:
+            where_sql, where_params = expr.where.to_sql()
+            sql += f" {where_sql}"
             all_params.extend(where_params)
 
-        rows = getattr(expr, 'rows', None)
-        if rows:
-            parts.append(f"ROWS {rows[0]} TO {rows[1] if len(rows) > 1 else rows[0]}")
+        if expr.returning:
+            returning_sql, returning_params = self.format_returning_clause(expr.returning)
+            sql += f" {returning_sql}"
+            all_params.extend(returning_params)
 
-        returning = getattr(expr, 'returning', None)
-        if returning and hasattr(returning, 'expressions') and returning.expressions:
-            ret_sql, ret_params = self.format_returning_clause(returning)
-            parts.append(ret_sql)
-            all_params.extend(ret_params)
-
-        return ' '.join(parts), tuple(all_params)
+        return sql, tuple(all_params)
 
     def format_returning_clause(self, clause) -> Tuple[str, tuple]:
         """Format RETURNING clause for Firebird.

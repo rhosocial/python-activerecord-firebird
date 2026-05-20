@@ -1,0 +1,21 @@
+CREATE TABLE type_cases (
+    id CHAR(36) CHARACTER SET OCTETS NOT NULL PRIMARY KEY,
+    username VARCHAR(255) NOT NULL,
+    email VARCHAR(255) NOT NULL,
+    tiny_int SMALLINT,
+    small_int SMALLINT,
+    big_int BIGINT,
+    float_val FLOAT,
+    double_val DOUBLE PRECISION,
+    decimal_val DECIMAL(18,4),
+    char_val CHAR(100),
+    varchar_val VARCHAR(255),
+    text_val BLOB SUB_TYPE TEXT,
+    date_val DATE,
+    time_val TIME,
+    timestamp_val TIMESTAMP,
+    blob_val BLOB SUB_TYPE BINARY,
+    json_val BLOB SUB_TYPE TEXT,
+    array_val BLOB SUB_TYPE TEXT,
+    is_active BOOLEAN DEFAULT TRUE
+)

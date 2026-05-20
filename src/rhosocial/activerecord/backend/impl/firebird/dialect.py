@@ -266,8 +266,10 @@ class FirebirdDialect(
         """Format identifier using Firebird's double-quote quoting.
 
         Firebird by default folds identifiers to uppercase unless quoted.
+        This uppercases the identifier so that quoted and unquoted references
+        are consistent with Firebird's default behavior.
         """
-        escaped = identifier.replace('"', '""')
+        escaped = identifier.upper().replace('"', '""')
         return f'"{escaped}"'
 
     # region Version-based feature detection
@@ -967,6 +969,25 @@ class FirebirdDialect(
 
     def format_delete_statement(self, expr) -> Tuple[str, tuple]:
         return FirebirdDMLOperationMixin.format_delete_statement(self, expr)
+
+    def format_limit_offset_clause(self, clause) -> Tuple[str, tuple]:
+        """Format LIMIT/OFFSET clause for Firebird using ROWS/FETCH syntax."""
+        all_params = []
+        if clause.limit is None and clause.offset is None:
+            return "", ()
+
+        if self.version >= (4, 0, 0):
+            parts = []
+            if clause.offset is not None:
+                parts.append(f"OFFSET {clause.offset} ROWS")
+            if clause.limit is not None:
+                parts.append(f"FETCH NEXT {clause.limit} ROWS ONLY")
+            return " ".join(parts), tuple(all_params)
+        else:
+            limit = clause.limit or 999999999
+            if clause.offset is not None and clause.offset > 0:
+                return f"ROWS {clause.offset + 1} TO {clause.offset + limit}", tuple(all_params)
+            return f"ROWS 1 TO {limit}", tuple(all_params)
 
     # endregion
 
