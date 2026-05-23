@@ -1,9 +1,11 @@
 CREATE TABLE type_tests (
     id CHAR(36) CHARACTER SET OCTETS NOT NULL PRIMARY KEY,
-    name VARCHAR(255) NOT NULL,
-    optional_name VARCHAR(255),
-    optional_age INT,
-    last_login TIMESTAMP,
-    type_tester VARCHAR(255),
-    status VARCHAR(50) DEFAULT 'pending'
+    string_field VARCHAR(255) DEFAULT 'test string',
+    int_field INT DEFAULT 42,
+    float_field DOUBLE PRECISION DEFAULT 3.14,
+    decimal_field DECIMAL(18,2) DEFAULT 10.99,
+    bool_field BOOLEAN DEFAULT TRUE,
+    datetime_field TIMESTAMP,
+    json_field BLOB SUB_TYPE TEXT,
+    nullable_field VARCHAR(255)
 )
