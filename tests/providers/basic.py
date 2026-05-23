@@ -122,8 +122,7 @@ class BasicProvider(IBasicProvider, WorkerTestProtocol):
             (MixedAnnotationModel, "mixed_annotation_items")
         ], scenario_name)
 
-    def setup_type_adapter_model_and_schema(self) -> Type[ActiveRecord]:
-        scenario_name = self.get_test_scenarios()[0]
+    def setup_type_adapter_model_and_schema(self, scenario_name: str) -> Type[ActiveRecord]:
         return self._setup_model(TypeAdapterTest, scenario_name, "type_adapter_tests")
 
     def get_yes_no_adapter(self):
