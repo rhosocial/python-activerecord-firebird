@@ -8,7 +8,7 @@ jobs:
   changelog:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v6
     - name: Check for changelog entry
       run: |
         if [ -z "$(ls -A changelog.d/ 2>/dev/null | grep -v '\.gitkeep\|README\.md\|template\.md')" ]; then
