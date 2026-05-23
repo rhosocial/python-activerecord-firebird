@@ -21,9 +21,10 @@ os.environ.setdefault(
 def pytest_collection_modifyitems(items):
     """Mark known Firebird-incompatible tests as xfail."""
     for item in items:
+        func_name = getattr(getattr(item, 'function', None), '__name__', '')
         node_path = str(item.nodeid)
         # Async tests - not supported by Firebird backend
-        if "Async" in node_path or "async" in node_path:
+        if "Async" in func_name or "async" in func_name or "Async" in node_path or "async" in node_path:
             item.add_marker(pytest.mark.xfail(
                 reason="Firebird backend does not support async operations",
                 strict=False,
@@ -47,47 +48,44 @@ def pytest_collection_modifyitems(items):
                 strict=False,
             ))
         # Aggregate type inference issues in Firebird backend
-        if ("test_sum_simple" in node_path or "test_sum_with_column" in node_path
-            or "test_aggregate_with_where" in node_path
-            or "test_aggregate_complex" in node_path
-            or "test_aggregate_multiple_fields" in node_path
-            or "test_aggregate_with_conditions" in node_path
-            or "test_sync_aggregate_operations" in node_path
-            or "test_parallel_aggregate_queries" in node_path
-            or "test_common_sql_standard_features" in node_path
-            or "test_aggregation_compatibility" in node_path):
+        if func_name in ("test_sum_simple", "test_sum_with_column",
+            "test_aggregate_with_where", "test_aggregate_complex",
+            "test_aggregate_multiple_fields", "test_aggregate_with_conditions",
+            "test_sync_aggregate_operations", "test_parallel_aggregate_queries",
+            "test_common_sql_standard_features", "test_aggregation_compatibility"):
             item.add_marker(pytest.mark.xfail(
                 reason="Firebird backend aggregate type inference issue",
                 strict=False,
             ))
         # CTE LIMIT assertion - Firebird uses FETCH NEXT, tests expect LIMIT
-        if ("basic_orders_cte" in node_path or "test_cte_with_range_conditions" in node_path
-            or "joined_orders_cte" in node_path
-            or "union_orders_cte" in node_path):
+        if func_name in ("basic_orders_cte", "test_cte_with_range_conditions",
+            "joined_orders_cte", "union_orders_cte"):
             item.add_marker(pytest.mark.xfail(
                 reason="Firebird CTE syntax differs from test expectations",
                 strict=False,
             ))
         # TIMESTAMP precision - Firebird has 100μs, tests expect 1μs
-        if "test_datetime_field" in node_path or "test_soft_delete_basic" in node_path:
+        if func_name in ("test_datetime_field", "test_soft_delete_basic"):
             item.add_marker(pytest.mark.xfail(
                 reason="Firebird TIMESTAMP precision is 100μs vs test's 1μs",
                 strict=False,
             ))
         # Optimistic lock - lock_version handling issue
-        if "test_optimistic_lock" in node_path or "test_version_increment" in node_path or "test_version_initializes" in node_path or "test_version_events" in node_path:
+        if func_name in ("test_optimistic_lock", "test_version_increment",
+            "test_version_initializes_to_one_on_insert", "test_version_events_separation"):
             item.add_marker(pytest.mark.xfail(
                 reason="Firebird backend lock_version handling needs fix",
                 strict=False,
             ))
         # Combined articles with locking
-        if "test_combined_update" in node_path or "test_combined_delete" in node_path or "test_combined_concurrent_update" in node_path:
+        if func_name in ("test_combined_update", "test_combined_delete",
+            "test_combined_concurrent_update"):
             item.add_marker(pytest.mark.xfail(
                 reason="Firebird backend combined mixin locking issue",
                 strict=False,
             ))
         # Special character handling
-        if "test_special_character_full_matrix" in node_path:
+        if func_name == "test_special_character_full_matrix":
             item.add_marker(pytest.mark.xfail(
                 reason="Firebird CHAR padding behavior differs",
                 strict=False,
