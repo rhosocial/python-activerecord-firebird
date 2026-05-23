@@ -78,6 +78,8 @@ class FirebirdBackend(
                 connect_params['page_size'] = config.page_size
             if config.timeout:
                 connect_params['timeout'] = config.timeout
+            if config.timezone:
+                connect_params['session_time_zone'] = config.timezone
             self._connection = fdb.connect(**connect_params)
             self._cursor = self._connection.cursor()
             self._is_connected = True
