@@ -119,6 +119,12 @@ jobs:
               timezone: UTC
           EOF
           echo "FIREBIRD_SCENARIOS_CONFIG_PATH=$(pwd)/firebird_scenarios.yaml" >> $GITHUB_ENV
+          echo "FIREBIRD_HOST=127.0.0.1" >> $GITHUB_ENV
+          echo "FIREBIRD_PORT=${{ matrix.port }}" >> $GITHUB_ENV
+          echo "FIREBIRD_DATABASE=/var/lib/firebird/data/test_db" >> $GITHUB_ENV
+          echo "FIREBIRD_USERNAME=SYSDBA" >> $GITHUB_ENV
+          echo "FIREBIRD_PASSWORD=password" >> $GITHUB_ENV
+          echo "FIREBIRD_CHARSET=UTF8" >> $GITHUB_ENV
 
       - name: Run tests
         run: |

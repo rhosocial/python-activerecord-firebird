@@ -1,3 +1,4 @@
+import os
 import pytest
 from rhosocial.activerecord.backend.impl.firebird import (
     FirebirdBackend,
@@ -5,8 +6,24 @@ from rhosocial.activerecord.backend.impl.firebird import (
 )
 
 
-@pytest.fixture
-def fb_config():
+def _load_fb_config() -> FirebirdConnectionConfig:
+    """Load config from scenario YAML, env vars, or fallback defaults."""
+    config_path = os.getenv("FIREBIRD_SCENARIOS_CONFIG_PATH")
+    if config_path and os.path.exists(config_path):
+        try:
+            import yaml
+            with open(config_path, 'r', encoding='utf-8') as f:
+                data = yaml.safe_load(f)
+            scenarios = (data or {}).get("scenarios") or {}
+            if scenarios:
+                first = next(iter(scenarios.values()))
+                return FirebirdConnectionConfig(**first)
+        except Exception:
+            pass
+    try:
+        return FirebirdConnectionConfig.from_env()
+    except Exception:
+        pass
     return FirebirdConnectionConfig(
         host="127.0.0.1",
         port=19583,
@@ -15,6 +32,11 @@ def fb_config():
         password="password",
         charset="UTF8",
     )
+
+
+@pytest.fixture
+def fb_config():
+    return _load_fb_config()
 
 
 @pytest.fixture

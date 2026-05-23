@@ -18,6 +18,34 @@ os.environ.setdefault(
 )
 
 
+def _load_backend_config() -> FirebirdConnectionConfig:
+    """Load backend config from scenario YAML, env vars, or fallback defaults."""
+    config_path = os.getenv("FIREBIRD_SCENARIOS_CONFIG_PATH")
+    if config_path and os.path.exists(config_path):
+        try:
+            import yaml
+            with open(config_path, 'r', encoding='utf-8') as f:
+                data = yaml.safe_load(f)
+            scenarios = (data or {}).get("scenarios") or {}
+            if scenarios:
+                first = next(iter(scenarios.values()))
+                return FirebirdConnectionConfig(**first)
+        except Exception:
+            pass
+    try:
+        return FirebirdConnectionConfig.from_env()
+    except Exception:
+        pass
+    return FirebirdConnectionConfig(
+        host="127.0.0.1",
+        port=19583,
+        database="/var/lib/firebird/data/test_db",
+        username="root",
+        password="password",
+        charset="UTF8",
+    )
+
+
 @pytest.fixture
 def dialect():
     """Create a FirebirdDialect with version 3.0."""
@@ -45,14 +73,7 @@ def fb4_dialect():
 @pytest.fixture
 def backend_config():
     """Create a minimal backend configuration for testing."""
-    return FirebirdConnectionConfig(
-        host="127.0.0.1",
-        port=19583,
-        database="/var/lib/firebird/data/test_db",
-        username="root",
-        password="password",
-        charset="UTF8",
-    )
+    return _load_backend_config()
 
 
 @pytest.fixture
