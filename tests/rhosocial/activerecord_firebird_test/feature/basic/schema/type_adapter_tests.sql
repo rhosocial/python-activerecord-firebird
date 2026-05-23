@@ -5,5 +5,7 @@ CREATE TABLE type_adapter_tests (
     optional_age INT,
     last_login TIMESTAMP,
     is_premium BOOLEAN DEFAULT FALSE,
-    unsupported_union VARCHAR(255) DEFAULT '0'
+    unsupported_union VARCHAR(255) DEFAULT '0',
+    custom_bool VARCHAR(3) DEFAULT NULL,
+    optional_custom_bool VARCHAR(3) DEFAULT NULL
 )
