@@ -17,6 +17,13 @@ from rhosocial.activerecord.testsuite.feature.basic.fixtures.models import (
     MappedComment as MappedCommentBase,
     ColumnMappingModel as ColumnMappingModelBase,
     MixedAnnotationModel as MixedAnnotationModelBase,
+    PydanticValidatedModel as PydanticValidatedModelBase,
+)
+from rhosocial.activerecord.testsuite.feature.basic.fixtures.models import (
+    AsyncPydanticValidatedModel as AsyncPydanticValidatedModelBase,
+)
+from rhosocial.activerecord.testsuite.feature.basic.fixtures.models import (
+    BulkUser as BulkUserBase, AsyncBulkUser as AsyncBulkUserBase
 )
 
 from rhosocial.activerecord.testsuite.feature.basic.interfaces import IBasicProvider
@@ -42,6 +49,10 @@ MappedPost = _select_model_class(MappedPostBase, None, None, None, "MappedPost")
 MappedComment = _select_model_class(MappedCommentBase, None, None, None, "MappedComment")
 ColumnMappingModel = _select_model_class(ColumnMappingModelBase, None, None, None, "ColumnMappingModel")
 MixedAnnotationModel = _select_model_class(MixedAnnotationModelBase, None, None, None, "MixedAnnotationModel")
+PydanticValidatedModel = _select_model_class(PydanticValidatedModelBase, None, None, None, "PydanticValidatedModel")
+AsyncPydanticValidatedModel = _select_model_class(AsyncPydanticValidatedModelBase, None, None, None, "AsyncPydanticValidatedModel")
+BulkUser = BulkUserBase
+AsyncBulkUser = AsyncBulkUserBase
 
 
 class BasicProvider(IBasicProvider, WorkerTestProtocol):
@@ -111,6 +122,12 @@ class BasicProvider(IBasicProvider, WorkerTestProtocol):
     def setup_validated_user_model(self, scenario_name):
         return self._setup_model(ValidatedUser, scenario_name, "validated_users")
 
+    def setup_pydantic_validated_model(self, scenario_name):
+        return self._setup_model(PydanticValidatedModel, scenario_name, "pydantic_validated_models")
+
+    async def setup_async_pydantic_validated_model(self, scenario_name: str):
+        raise NotImplementedError("Firebird backend does not support async")
+
     def setup_mapped_models(self, scenario_name):
         return self._setup_multiple_models([
             (MappedUser, "users"), (MappedPost, "posts"), (MappedComment, "comments")
@@ -124,6 +141,14 @@ class BasicProvider(IBasicProvider, WorkerTestProtocol):
 
     def setup_type_adapter_model_and_schema(self, scenario_name: str) -> Type[ActiveRecord]:
         return self._setup_model(TypeAdapterTest, scenario_name, "type_adapter_tests")
+
+    def setup_bulk_user_model(self, scenario_name: str) -> Type[ActiveRecord]:
+        """Sets up the database for the `BulkUser` model tests."""
+        return self._setup_model(BulkUser, scenario_name, "bulk_users")
+
+    async def setup_async_bulk_user_model(self, scenario_name: str) -> Type[ActiveRecord]:
+        """Sets up the database for the `AsyncBulkUser` model tests."""
+        return await self._setup_async_model(AsyncBulkUser, scenario_name, "bulk_users")
 
     def get_yes_no_adapter(self):
         return YesOrNoBooleanAdapter()
@@ -158,7 +183,8 @@ class BasicProvider(IBasicProvider, WorkerTestProtocol):
     def cleanup_after_test(self, scenario_name):
         tables = ["users", "type_cases", "type_tests", "validated_field_users",
                   "validated_users", "type_adapter_tests", "posts", "comments",
-                  "column_mapping_items", "mixed_annotation_items"]
+                  "column_mapping_items", "mixed_annotation_items",
+                  "pydantic_validated_models"]
         for b in self._active_backends:
             try:
                 for t in tables:
