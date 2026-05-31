@@ -20,6 +20,21 @@ def _load_fb_config() -> FirebirdConnectionConfig:
                 return FirebirdConnectionConfig(**first)
         except Exception:
             pass
+    default_path = os.path.join(
+        os.path.dirname(__file__), "..", "..", "..", "..", "config", "firebird_scenarios.yaml"
+    )
+    default_path = os.path.normpath(default_path)
+    if os.path.exists(default_path):
+        try:
+            import yaml
+            with open(default_path, 'r', encoding='utf-8') as f:
+                data = yaml.safe_load(f)
+            scenarios = (data or {}).get("scenarios") or {}
+            if scenarios:
+                first = next(iter(scenarios.values()))
+                return FirebirdConnectionConfig(**first)
+        except Exception:
+            pass
     try:
         return FirebirdConnectionConfig.from_env()
     except Exception:
@@ -28,7 +43,7 @@ def _load_fb_config() -> FirebirdConnectionConfig:
         host="127.0.0.1",
         port=19583,
         database="/var/lib/firebird/data/test_db",
-        username="root",
+        username="SYSDBA",
         password="password",
         charset="UTF8",
     )
