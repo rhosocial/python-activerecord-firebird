@@ -16,6 +16,7 @@ from .backend import FirebirdBackend
 from .dialect import FirebirdDialect
 from .transaction import FirebirdTransactionManager
 from .config import FirebirdConnectionConfig
+from .collation import FirebirdCollation
 from .types import FirebirdBlobType, FirebirdArrayType, FirebirdDomainType
 from .explain.types import FirebirdExplainResult
 
@@ -39,6 +40,7 @@ __all__ = [
     'FirebirdBackend',
     'FirebirdConnectionConfig',
     'FirebirdDialect',
+    'FirebirdCollation',
     'FIREBIRD_VERSION_BOUNDARIES',
     'FirebirdTransactionManager',
     'FirebirdTransactionMixin',

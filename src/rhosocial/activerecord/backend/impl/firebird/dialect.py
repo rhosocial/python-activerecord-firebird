@@ -17,6 +17,7 @@ from typing import Any, Dict, List, Optional, Tuple, TYPE_CHECKING
 
 from rhosocial.activerecord.backend.dialect.base import SQLDialectBase
 from rhosocial.activerecord.backend.dialect.protocols import (
+    CollationSupport,
     CTESupport,
     WindowFunctionSupport,
     JSONSupport,
@@ -51,6 +52,7 @@ from rhosocial.activerecord.backend.dialect.protocols import (
     FunctionSupport,
 )
 from rhosocial.activerecord.backend.dialect.mixins import (
+    CollationMixin,
     CTEMixin,
     WindowFunctionMixin,
     JSONMixin,
@@ -83,6 +85,7 @@ from rhosocial.activerecord.backend.dialect.mixins import (
 )
 from rhosocial.activerecord.backend.dialect.exceptions import UnsupportedFeatureError
 
+from .collation import validate_firebird_collation_name
 from .mixins import (
     FirebirdDMLOperationMixin,
     FirebirdLockingMixin,
@@ -147,6 +150,7 @@ class FirebirdDialect(
     FirebirdSequenceMixin,
     FirebirdBlobMixin,
     FirebirdIntrospectionMixin,
+    CollationMixin,
     CTEMixin,
     WindowFunctionMixin,
     JSONMixin,
@@ -176,6 +180,7 @@ class FirebirdDialect(
     ViewMixin,
     FunctionMixin,
     IntrospectionMixin,
+    CollationSupport,
     CTESupport,
     WindowFunctionSupport,
     JSONSupport,
@@ -261,6 +266,16 @@ class FirebirdDialect(
     def get_parameter_placeholder(self, position: int = 0) -> str:
         """Firebird uses ? as positional parameter placeholder."""
         return "?"
+
+    def supports_collate_expression(self) -> bool:
+        """Firebird supports expression-level COLLATE."""
+        return True
+
+    def format_collation_name(self, collation) -> str:
+        """Format Firebird collation names as validated bare tokens."""
+        if collation.schema is not None or collation.keyword is not None:
+            raise UnsupportedFeatureError(self.name, "schema-qualified or keyword COLLATE")
+        return validate_firebird_collation_name(collation.name, getattr(self, "version", None))
 
     def format_identifier(self, identifier: str) -> str:
         """Format identifier using Firebird's double-quote quoting.
