@@ -6,7 +6,6 @@ Tests for expression-level COLLATE support on Firebird.
 import pytest
 
 from rhosocial.activerecord.backend.expression import Column, Literal
-from rhosocial.activerecord.backend.expression.collation import CollationName
 from rhosocial.activerecord.backend.impl.firebird import FirebirdCollation, FirebirdDialect
 
 
@@ -66,9 +65,9 @@ class TestFirebirdCollationExpression:
         assert params == ("Alice",)
 
     def test_rejects_schema_qualified_collation(self, dialect):
-        expr = Column(dialect, "name").collate(CollationName("UNICODE_CI", schema="PUBLIC"))
+        expr = Column(dialect, "name").collate("UNICODE_CI", schema="PUBLIC")
 
-        with pytest.raises(Exception, match="schema-qualified or keyword COLLATE"):
+        with pytest.raises(Exception, match="COLLATE options: schema"):
             expr.to_sql()
 
     def test_rejects_unsupported_collation(self, dialect):

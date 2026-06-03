@@ -128,7 +128,7 @@ from .protocols import (
 
 if TYPE_CHECKING:
     from rhosocial.activerecord.backend.expression import bases
-    from rhosocial.activerecord.backend.expression.collation import CollationName
+    from rhosocial.activerecord.backend.expression.collation import CollateExpression
     from rhosocial.activerecord.backend.expression.statements import ReturningClause, CreateTableExpression
 
 _SUGGESTION_ARRAY = "Firebird does not support array types. Use separate tables or BLOB."
@@ -272,11 +272,12 @@ class FirebirdDialect(
         """Firebird supports expression-level COLLATE."""
         return True
 
-    def validate_collation_name(self, collation: "CollationName") -> str:
+    def validate_collation_name(self, expr: "CollateExpression") -> str:
         """Validate Firebird collation names and return their SQL representation."""
-        if collation.schema is not None or collation.keyword is not None:
-            raise UnsupportedFeatureError(self.name, "schema-qualified or keyword COLLATE")
-        return validate_firebird_collation_name(collation.name, getattr(self, "version", None))
+        if expr.collation_options:
+            unsupported = ", ".join(sorted(expr.collation_options))
+            raise UnsupportedFeatureError(self.name, f"COLLATE options: {unsupported}")
+        return validate_firebird_collation_name(expr.collation_name, getattr(self, "version", None))
 
     def format_identifier(self, identifier: str) -> str:
         """Format identifier using Firebird's double-quote quoting.
