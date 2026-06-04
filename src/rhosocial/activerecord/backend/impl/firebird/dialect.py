@@ -894,9 +894,25 @@ class FirebirdDialect(
 
     def supports_functions(self) -> Dict[str, bool]:
         from rhosocial.activerecord.backend.expression.functions import __all__ as core_functions
+        expression_constructors = {
+            "xmlagg",
+            "xmlattributes",
+            "xmlcomment",
+            "xmlconcat",
+            "xmlelement",
+            "xmlexists",
+            "xmlforest",
+            "xmlparse",
+            "xmlpi",
+            "xmlquery",
+            "xmlroot",
+            "xmlserialize",
+            "xmltable",
+        }
         result = {}
         for func_name in core_functions:
-            result[func_name] = True
+            if func_name not in expression_constructors:
+                result[func_name] = True
         for func_name, (min_ver, max_ver) in self._FIREBIRD_FUNCTION_VERSIONS.items():
             result[func_name] = self._is_firebird_function_supported(func_name)
         return result

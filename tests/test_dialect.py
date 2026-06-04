@@ -167,3 +167,13 @@ class TestFirebirdDialectFunctions:
     def test_gen_uuid_supported(self, dialect):
         result = dialect.supports_functions()
         assert "gen_uuid" in result
+
+    def test_sqlxml_constructors_are_not_plain_functions(self, dialect):
+        result = dialect.supports_functions()
+        sqlxml_constructors = [
+            "xmlparse", "xmlserialize", "xmlelement", "xmlattributes",
+            "xmlforest", "xmlconcat", "xmlcomment", "xmlpi", "xmlroot",
+            "xmlagg", "xmlquery", "xmlexists", "xmltable",
+        ]
+        for func in sqlxml_constructors:
+            assert func not in result
