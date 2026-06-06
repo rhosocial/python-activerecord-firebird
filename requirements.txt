@@ -1,2 +1,6 @@
-rhosocial-activerecord>=1.0.0.dev0,<2.0.0
+# requirements.txt
+# Backend-specific dependencies only
+# Core dependency (rhosocial-activerecord) is installed via CI workflow from git
+
+# Firebird driver
 firebird-driver>=2.0.0
