@@ -24,6 +24,7 @@ from .mixins import (
     FIREBIRD_VERSION_BOUNDARIES,
     FirebirdTransactionMixin,
     FirebirdBackendMixin,
+    FirebirdConcurrencyMixin,
     FirebirdDMLOperationMixin,
     FirebirdLockingMixin,
     FirebirdTableMixin,
@@ -31,31 +32,58 @@ from .mixins import (
     FirebirdSequenceMixin,
     FirebirdBlobMixin,
     FirebirdIntrospectionMixin,
-    FirebirdConcurrencyMixin,
+    FirebirdTypeSupportMixin,
 )
 
 from .function_versions import FIREBIRD_FUNCTION_VERSIONS
 
+from .expression.types import (
+    FirebirdDecimalType,
+    FirebirdFloatType,
+    FirebirdDoubleType,
+    FirebirdBlobSubType,
+)
+
+from .schema import FirebirdSchemaDiffer
+
+from .type_compatibility import (
+    DIRECT_COMPATIBLE_CASTS,
+    check_cast_compatibility,
+    get_compatible_types,
+)
+
 __all__ = [
-    'FirebirdBackend',
-    'FirebirdConnectionConfig',
-    'FirebirdDialect',
-    'FirebirdCollation',
-    'FIREBIRD_VERSION_BOUNDARIES',
-    'FirebirdTransactionManager',
-    'FirebirdTransactionMixin',
-    'FirebirdBackendMixin',
-    'FirebirdDMLOperationMixin',
-    'FirebirdLockingMixin',
-    'FirebirdTableMixin',
-    'FirebirdTriggerMixin',
-    'FirebirdSequenceMixin',
-    'FirebirdBlobMixin',
-    'FirebirdIntrospectionMixin',
-    'FirebirdConcurrencyMixin',
-    'FIREBIRD_FUNCTION_VERSIONS',
-    'FirebirdBlobType',
-    'FirebirdArrayType',
-    'FirebirdDomainType',
-    'FirebirdExplainResult',
+    "FirebirdBackend",
+    "FirebirdConnectionConfig",
+    "FirebirdDialect",
+    "FirebirdCollation",
+    "FIREBIRD_VERSION_BOUNDARIES",
+    "FirebirdTransactionManager",
+    "FirebirdTransactionMixin",
+    "FirebirdBackendMixin",
+    "FirebirdConcurrencyMixin",
+    "FirebirdDMLOperationMixin",
+    "FirebirdLockingMixin",
+    "FirebirdTableMixin",
+    "FirebirdTriggerMixin",
+    "FirebirdSequenceMixin",
+    "FirebirdBlobMixin",
+    "FirebirdIntrospectionMixin",
+    "FirebirdTypeSupportMixin",
+    "FIREBIRD_FUNCTION_VERSIONS",
+    "FirebirdBlobType",
+    "FirebirdArrayType",
+    "FirebirdDomainType",
+    "FirebirdExplainResult",
+    # DDL DataType subclasses
+    "FirebirdDecimalType",
+    "FirebirdFloatType",
+    "FirebirdDoubleType",
+    "FirebirdBlobSubType",
+    # Schema differ
+    "FirebirdSchemaDiffer",
+    # Type compatibility
+    "DIRECT_COMPATIBLE_CASTS",
+    "check_cast_compatibility",
+    "get_compatible_types",
 ]
