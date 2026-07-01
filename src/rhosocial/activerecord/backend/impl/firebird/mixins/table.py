@@ -7,6 +7,14 @@ from typing import Any, List, Tuple
 class FirebirdTableMixin:
 
     def format_create_table_statement(self, expr) -> Tuple[str, tuple]:
+        if getattr(expr, 'partition', None) is not None:
+            from rhosocial.activerecord.backend.dialect.exceptions import UnsupportedFeatureError
+            raise UnsupportedFeatureError(
+                self.name,
+                "PARTITION BY clause",
+                "Firebird does not support table partitioning.",
+            )
+
         all_params: List[Any] = []
 
         parts = ["CREATE TABLE"]

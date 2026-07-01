@@ -73,6 +73,7 @@ from rhosocial.activerecord.backend.dialect.mixins import (
     QualifyClauseMixin,
     OrderedSetAggregationMixin,
     GraphMixin,
+    PartitionMixin,
     TableMixin,
     TruncateMixin,
     SchemaMixin,
@@ -94,6 +95,8 @@ from .mixins import (
     FirebirdSequenceMixin,
     FirebirdBlobMixin,
     FirebirdIntrospectionMixin,
+    FirebirdPartitionMixin,
+    FirebirdTypeSupportMixin,
 )
 from .protocols import (
     FirebirdDMLOperationSupport,
@@ -172,6 +175,7 @@ class FirebirdDialect(
     QualifyClauseMixin,
     OrderedSetAggregationMixin,
     GraphMixin,
+    PartitionMixin,
     TableMixin,
     TruncateMixin,
     SchemaMixin,
@@ -242,6 +246,8 @@ class FirebirdDialect(
     FirebirdCollationSupport,
     FirebirdExceptionSupport,
     FirebirdContextVariableSupport,
+    FirebirdPartitionMixin,
+    FirebirdTypeSupportMixin,
 ):
     """Firebird dialect implementation that adapts to Firebird version.
 
@@ -473,13 +479,7 @@ class FirebirdDialect(
     def supports_execute_block(self) -> bool:
         return True
 
-    def supports_create_sequence(self) -> bool:
-        return True
-
     def supports_create_generator(self) -> bool:
-        return True
-
-    def supports_alter_sequence(self) -> bool:
         return True
 
     def supports_blob(self) -> bool:
@@ -569,17 +569,8 @@ class FirebirdDialect(
     def supports_database_triggers(self) -> bool:
         return self.version >= (3, 0, 0)
 
-    def supports_window_functions(self) -> bool:
-        return self.version >= (3, 0, 0)
-
     def supports_cte(self) -> bool:
         return self.version >= (3, 0, 0)
-
-    def supports_recursive_cte(self) -> bool:
-        return self.version >= (3, 0, 0)
-
-    def supports_fulltext_index(self) -> bool:
-        return False
 
     def supports_udf(self) -> bool:
         return True
@@ -719,9 +710,6 @@ class FirebirdDialect(
         return False
 
     def supports_index_tablespace(self) -> bool:
-        return False
-
-    def supports_fulltext_index(self) -> bool:
         return False
 
     def supports_fulltext_boolean_mode(self) -> bool:

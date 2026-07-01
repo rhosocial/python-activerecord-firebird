@@ -11,6 +11,7 @@ from .sequence import FirebirdSequenceMixin
 from .blob import FirebirdBlobMixin
 from .introspection import FirebirdIntrospectionMixin
 from .types import FirebirdTypeSupportMixin
+from .partition import FirebirdPartitionMixin
 
 __all__ = [
     "FIREBIRD_VERSION_BOUNDARIES",
@@ -25,4 +26,5 @@ __all__ = [
     "FirebirdBlobMixin",
     "FirebirdIntrospectionMixin",
     "FirebirdTypeSupportMixin",
+    "FirebirdPartitionMixin",
 ]

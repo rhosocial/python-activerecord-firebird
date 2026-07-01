@@ -57,3 +57,32 @@ def format_csv(rows: List[Dict[str, Any]]) -> str:
         lines.append(",".join(f'"{v}"' for v in values))
 
     return "\n".join(lines)
+
+
+def create_provider(output_format: str, ascii_borders: bool = False):
+    """Factory function to get the correct output provider."""
+    from rhosocial.activerecord.backend.output import (
+        JsonOutputProvider, CsvOutputProvider, TsvOutputProvider
+    )
+
+    try:
+        from rhosocial.activerecord.backend.output_rich import RichOutputProvider
+        rich_available = True
+    except ImportError:
+        rich_available = False
+        RichOutputProvider = None
+
+    if output_format == "table" and not rich_available:
+        output_format = "json"
+
+    if output_format == "table" and rich_available:
+        from rich.console import Console
+        return RichOutputProvider(console=Console(), ascii_borders=ascii_borders)
+    if output_format == "json":
+        return JsonOutputProvider()
+    if output_format == "csv":
+        return CsvOutputProvider()
+    if output_format == "tsv":
+        return TsvOutputProvider()
+
+    return JsonOutputProvider()

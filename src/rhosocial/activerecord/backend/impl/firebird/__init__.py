@@ -50,11 +50,13 @@ For version-dependent function availability, see
 FirebirdDialect.supports_functions() and FIREBIRD_FUNCTION_VERSIONS.
 """
 
-__version__ = "1.0.0.dev1"
+__version__ = "1.0.0.dev2"
 
 from .backend import FirebirdBackend
+from .async_backend import AsyncFirebirdBackend
 from .dialect import FirebirdDialect
 from .transaction import FirebirdTransactionManager
+from .async_transaction import AsyncFirebirdTransactionManager
 from .config import FirebirdConnectionConfig
 from .collation import FirebirdCollation
 from .types import FirebirdBlobType, FirebirdArrayType, FirebirdDomainType
@@ -73,6 +75,7 @@ from .mixins import (
     FirebirdBlobMixin,
     FirebirdIntrospectionMixin,
     FirebirdTypeSupportMixin,
+    FirebirdPartitionMixin,
 )
 
 from .function_versions import FIREBIRD_FUNCTION_VERSIONS
@@ -94,11 +97,13 @@ from .type_compatibility import (
 
 __all__ = [
     "FirebirdBackend",
+    "AsyncFirebirdBackend",
     "FirebirdConnectionConfig",
     "FirebirdDialect",
     "FirebirdCollation",
     "FIREBIRD_VERSION_BOUNDARIES",
     "FirebirdTransactionManager",
+    "AsyncFirebirdTransactionManager",
     "FirebirdTransactionMixin",
     "FirebirdBackendMixin",
     "FirebirdConcurrencyMixin",
@@ -110,6 +115,7 @@ __all__ = [
     "FirebirdBlobMixin",
     "FirebirdIntrospectionMixin",
     "FirebirdTypeSupportMixin",
+    "FirebirdPartitionMixin",
     "FIREBIRD_FUNCTION_VERSIONS",
     "FirebirdBlobType",
     "FirebirdArrayType",
