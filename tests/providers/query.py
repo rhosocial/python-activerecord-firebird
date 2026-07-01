@@ -161,6 +161,13 @@ class QueryProvider(IQueryProvider, WorkerTestProtocol):
             (MappedComment, "comments"),
         ], scenario_name)
 
+    def setup_profile_fixtures(self, scenario_name):
+        Profile = User.get_relation('profile').get_related_model(User)
+        return self._setup_multiple_models([
+            (User, "users"),
+            (Profile, "profiles"),
+        ], scenario_name)
+
     async def setup_async_order_fixtures(self, scenario_name):
         raise NotImplementedError("Firebird backend does not support async")
 
@@ -185,11 +192,14 @@ class QueryProvider(IQueryProvider, WorkerTestProtocol):
     async def setup_async_mapped_models(self, scenario_name):
         raise NotImplementedError("Firebird backend does not support async")
 
+    async def setup_async_profile_fixtures(self, scenario_name):
+        raise NotImplementedError("Firebird backend does not support async")
+
     def cleanup_after_test(self, scenario_name):
         tables = ["users", "posts", "comments", "nodes",
                   "orders", "order_items", "json_users",
                   "extended_orders", "extended_order_items",
-                  "searchable_items"]
+                  "searchable_items", "profiles"]
         for b in self._active_backends:
             try:
                 for t in tables:
