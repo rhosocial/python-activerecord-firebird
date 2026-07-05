@@ -1,7 +1,8 @@
 import pytest
-from rhosocial.activerecord.testsuite.feature.basic.test_crud import *
+from rhosocial.activerecord.testsuite.feature.basic.test_crud import (
+    TestSyncCRUD
+)
 
-TestAsyncCRUD.__test__ = False
 
 # Skip test_update_user due to Firebird TIMESTAMP precision limitation
 # Firebird TIMESTAMP stores with 100μs (0.0001s) precision, but the test

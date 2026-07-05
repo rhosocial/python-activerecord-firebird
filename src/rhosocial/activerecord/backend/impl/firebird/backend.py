@@ -74,10 +74,6 @@ class FirebirdBackend(
             }
             if config.role:
                 connect_params['role'] = config.role
-            if config.page_size:
-                connect_params['page_size'] = config.page_size
-            if config.timeout:
-                connect_params['timeout'] = config.timeout
             if config.timezone:
                 connect_params['session_time_zone'] = config.timezone
             self._connection = fdb.connect(**connect_params)
@@ -213,18 +209,18 @@ class FirebirdBackend(
                 if row and row[0]:
                     version_str = str(row[0])
                 else:
-                    return (3, 0, 0)
+                    return (2, 5, 0)
         except Exception:
             try:
                 cursor.execute("SELECT * FROM RDB$DATABASE")
-                version_str = str(cursor.description[0][0]) if cursor.description else "3.0.0"
+                version_str = str(cursor.description[0][0]) if cursor.description else "2.5.0"
             except Exception:
-                return (3, 0, 0)
+                return (2, 5, 0)
         import re
         match = re.search(r'(\d+)\.(\d+)\.(\d+)', version_str)
         if match:
             return (int(match.group(1)), int(match.group(2)), int(match.group(3)))
-        return (3, 0, 0)
+        return (2, 5, 0)
 
     def introspect_and_adapt(self) -> None:
         if not self._is_connected:
@@ -284,6 +280,24 @@ class FirebirdBackend(
         rows = result.data or []
         plan_text = " ".join(str(row[0]) for row in rows) if rows else ""
         return FirebirdExplainResult(plan_text=plan_text)
+
+    def bulk_insert(self, options) -> QueryResult:
+        """Firebird does not support multi-row VALUES, so insert rows individually."""
+        results = []
+        affected = 0
+        returning = options.returning_columns or []
+        for row in options.rows:
+            row_dict = dict(zip(options.columns, row)) if options.columns else {}
+            if returning:
+                res = self.insert(options.table, values=row_dict, returning_columns=returning)
+            else:
+                res = self.insert(options.table, values=row_dict)
+            if res and res.data:
+                results.append(res.data[0])
+            affected += res.affected_rows if res else 1
+        if returning:
+            return QueryResult(data=results, affected_rows=affected)
+        return QueryResult(data=[], affected_rows=affected)
 
     def insert(self, table_name, values=None, returning_columns=None):
         if isinstance(table_name, InsertOptions):

@@ -111,10 +111,6 @@ class AsyncFirebirdBackend(
             }
             if config.role:
                 connect_params['role'] = config.role
-            if config.page_size:
-                connect_params['page_size'] = config.page_size
-            if getattr(config, 'timeout', None):
-                connect_params['timeout'] = config.timeout
             if getattr(config, 'timezone', None):
                 connect_params['session_time_zone'] = config.timezone
 
@@ -194,7 +190,7 @@ class AsyncFirebirdBackend(
                 if row and row[0]:
                     version_str = str(row[0])
                 else:
-                    return (3, 0, 0)
+                    return (2, 5, 0)
         except Exception:
             try:
                 await loop.run_in_executor(
@@ -202,14 +198,14 @@ class AsyncFirebirdBackend(
                     lambda: cursor.execute("SELECT * FROM RDB$DATABASE"),
                 )
                 desc = cursor.description
-                version_str = str(desc[0][0]) if desc else "3.0.0"
+                version_str = str(desc[0][0]) if desc else "2.5.0"
             except Exception:
-                return (3, 0, 0)
+                return (2, 5, 0)
         import re
         match = re.search(r'(\d+)\.(\d+)\.(\d+)', version_str)
         if match:
             return (int(match.group(1)), int(match.group(2)), int(match.group(3)))
-        return (3, 0, 0)
+        return (2, 5, 0)
 
     async def introspect_and_adapt(self) -> None:
         """Introspect the Firebird database and adapt type mappings."""
@@ -326,6 +322,24 @@ class AsyncFirebirdBackend(
     # ------------------------------------------------------------------
     # High-level operations
     # ------------------------------------------------------------------
+
+    async def bulk_insert(self, options) -> QueryResult:
+        """Firebird does not support multi-row VALUES, so insert rows individually."""
+        results = []
+        affected = 0
+        returning = options.returning_columns or []
+        for row in options.rows:
+            row_dict = dict(zip(options.columns, row)) if options.columns else {}
+            if returning:
+                res = await self.insert(options.table, values=row_dict, returning_columns=returning)
+            else:
+                res = await self.insert(options.table, values=row_dict)
+            if res and res.data:
+                results.append(res.data[0])
+            affected += res.affected_rows if res else 1
+        if returning:
+            return QueryResult(data=results, affected_rows=affected)
+        return QueryResult(data=[], affected_rows=affected)
 
     async def insert(self, table_name, values=None, returning_columns=None):
         if isinstance(table_name, InsertOptions):

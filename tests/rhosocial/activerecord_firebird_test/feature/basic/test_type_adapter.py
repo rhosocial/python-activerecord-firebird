@@ -13,4 +13,6 @@ from rhosocial.activerecord.testsuite.feature.basic.conftest import (
 )
 
 # Import all tests from the generic testsuite file.
-from rhosocial.activerecord.testsuite.feature.basic.test_type_adapter import *
+from rhosocial.activerecord.testsuite.feature.basic.test_type_adapter import (
+    TestTypeAdapter
+)

@@ -83,6 +83,15 @@ from rhosocial.activerecord.backend.dialect.mixins import (
     ViewMixin,
     FunctionMixin,
     IntrospectionMixin,
+    # Core infrastructure mixins (shared by all modern backends)
+    IdentifierMixin,
+    PredicateMixin,
+    ExpressionMixin,
+    DateTimeMixin,
+    DQLMixin,
+    DMLMixin,
+    DDLColumnMixin,
+    TransactionControlMixin,
 )
 from rhosocial.activerecord.backend.dialect.exceptions import UnsupportedFeatureError
 
@@ -147,22 +156,31 @@ _SUGGESTION_TEMPORAL = "Firebird does not support temporal tables."
 
 class FirebirdDialect(
     SQLDialectBase,
-    FirebirdDMLOperationMixin,
-    FirebirdLockingMixin,
-    FirebirdTableMixin,
-    FirebirdTriggerMixin,
-    FirebirdSequenceMixin,
+    # Core infrastructure mixins (shared by all modern backends)
+    IdentifierMixin,
+    PredicateMixin,
+    ExpressionMixin,
+    DateTimeMixin,
+    DQLMixin,
+    DDLColumnMixin,
+    TransactionControlMixin,
+    # Firebird-specific overrides (before generic mixins to take precedence)
+    FirebirdDMLOperationMixin,  # Must be before DMLMixin
+    FirebirdLockingMixin,       # Must be before LockingMixin
+    FirebirdTableMixin,         # Must be before TableMixin
+    FirebirdTriggerMixin,       # Must be before TriggerMixin
+    FirebirdSequenceMixin,      # Must be before SequenceMixin
     FirebirdBlobMixin,
-    FirebirdIntrospectionMixin,
+    FirebirdIntrospectionMixin, # Must be before IntrospectionMixin
+    # Core feature mixins (no duplicates)
+    DMLMixin,
     CollationMixin,
     CTEMixin,
     WindowFunctionMixin,
     JSONMixin,
     ReturningMixin,
     SetOperationMixin,
-    SequenceMixin,
     UpsertMixin,
-    LockingMixin,
     ExplainMixin,
     JoinMixin,
     ILIKEMixin,
@@ -176,11 +194,9 @@ class FirebirdDialect(
     OrderedSetAggregationMixin,
     GraphMixin,
     PartitionMixin,
-    TableMixin,
     TruncateMixin,
     SchemaMixin,
     IndexMixin,
-    TriggerMixin,
     GeneratedColumnMixin,
     ViewMixin,
     FunctionMixin,
@@ -269,6 +285,77 @@ class FirebirdDialect(
         super().__init__()
         if version is not None:
             self.version = version
+
+    _PY_TYPE_TO_FIREBIRD_SQL = {
+        int: "INTEGER",
+        float: "DOUBLE PRECISION",
+        bool: "SMALLINT",
+        str: "VARCHAR(255)",
+        bytes: "BLOB",
+    }
+
+    @staticmethod
+    def _python_type_to_firebird_sql(value: Any) -> Optional[str]:
+        """Map a Python value to its Firebird SQL type for explicit CAST.
+
+        Returns None for types that don't need explicit casting (e.g. None).
+        """
+        if value is None:
+            return None
+        import datetime, decimal
+        if isinstance(value, bool):
+            return "SMALLINT"
+        if isinstance(value, int):
+            return "INTEGER"
+        if isinstance(value, float):
+            return "DOUBLE PRECISION"
+        if isinstance(value, str):
+            return "VARCHAR(255)"
+        if isinstance(value, bytes):
+            return "BLOB"
+        if isinstance(value, datetime.date):
+            return "DATE"
+        if isinstance(value, datetime.datetime):
+            return "TIMESTAMP"
+        if isinstance(value, decimal.Decimal):
+            return "DECIMAL(18, 4)"
+        return None
+
+    def format_case_expression(
+        self,
+        value_sql: Optional[str],
+        value_params: Optional[tuple],
+        conditions_results: List[Tuple[str, str, tuple, tuple]],
+        else_result_sql: Optional[str],
+        else_result_params: Optional[tuple],
+        alias: Optional[str] = None,
+    ) -> Tuple[str, Tuple]:
+        wrapped_conditions = []
+        for cond_sql, res_sql, cond_params, res_params in conditions_results:
+            if res_sql.strip() == self.get_parameter_placeholder() and res_params:
+                fb_type = self._python_type_to_firebird_sql(res_params[0])
+                if fb_type:
+                    res_sql, res_params = self.format_cast_expression(
+                        res_sql, fb_type, res_params, None
+                    )
+            wrapped_conditions.append((cond_sql, res_sql, cond_params, res_params))
+
+        wrapped_else_sql = else_result_sql
+        wrapped_else_params = else_result_params
+        if (wrapped_else_sql and wrapped_else_sql.strip() == self.get_parameter_placeholder()
+                and wrapped_else_params):
+            fb_type = self._python_type_to_firebird_sql(wrapped_else_params[0])
+            if fb_type:
+                wrapped_else_sql, wrapped_else_params = self.format_cast_expression(
+                    wrapped_else_sql, fb_type, wrapped_else_params, None
+                )
+
+        return super().format_case_expression(
+            value_sql, value_params,
+            wrapped_conditions,
+            wrapped_else_sql, wrapped_else_params,
+            alias,
+        )
 
     def get_parameter_placeholder(self, position: int = 0) -> str:
         """Firebird uses ? as positional parameter placeholder."""

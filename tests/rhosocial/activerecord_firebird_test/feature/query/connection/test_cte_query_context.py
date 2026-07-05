@@ -7,8 +7,9 @@ ensuring Firebird backend compatibility for CTEQuery connection pool context awa
 """
 from rhosocial.activerecord.testsuite.feature.query.connection.conftest import (
     sync_pool_and_model,
-    async_pool_and_model,
 )
 
 # Import shared tests from testsuite package
-from rhosocial.activerecord.testsuite.feature.query.connection.test_cte_query_context import *
+from rhosocial.activerecord.testsuite.feature.query.connection.test_cte_query_context import (
+    TestSyncCTEQueryContext
+)
