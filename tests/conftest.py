@@ -14,7 +14,7 @@ from rhosocial.activerecord.backend.impl.firebird import (
 
 os.environ.setdefault(
     "TESTSUITE_PROVIDER_REGISTRY",
-    "tests.providers.registry:provider_registry"
+    "providers.registry:provider_registry"
 )
 
 

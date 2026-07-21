@@ -1,7 +1,7 @@
+# tests/providers/mixins.py
 import os
-import sys
 import logging
-from typing import Type, List
+from typing import Type, List, Set
 
 from rhosocial.activerecord.model import ActiveRecord
 from rhosocial.activerecord.testsuite.utils import select_fixture
@@ -11,7 +11,10 @@ from rhosocial.activerecord.testsuite.feature.mixins.fixtures.models import (
     Task as TaskBase,
     CombinedArticle as CombinedArticleBase,
 )
-from rhosocial.activerecord.testsuite.feature.mixins.interfaces import IMixinsProvider
+from rhosocial.activerecord.testsuite.feature.mixins.interfaces import (
+    MixinsProviderBase,
+    IMixinsSyncProvider,
+)
 from .scenarios import get_enabled_scenarios, get_scenario
 
 logger = logging.getLogger(__name__)
@@ -28,14 +31,32 @@ Task = _select_model_class(TaskBase, None, None, None, "Task")
 CombinedArticle = _select_model_class(CombinedArticleBase, None, None, None, "CombinedArticle")
 
 
-class MixinsProvider(IMixinsProvider):
+class MixinsProviderBaseImpl(MixinsProviderBase):
     def __init__(self):
-        self._active_backends = []
+        self._created_tables: Set[str] = set()
 
     def get_test_scenarios(self) -> List[str]:
         return list(get_enabled_scenarios().keys())
 
-    def _setup_model(self, model_class, scenario_name, table_name):
+    def _load_firebird_schema(self, filename: str) -> str:
+        schema_dir = os.path.join(
+            os.path.dirname(__file__), "..", "rhosocial", "activerecord_firebird_test", "feature", "mixins", "schema"
+        )
+        schema_path = os.path.join(schema_dir, filename)
+        if os.path.exists(schema_path):
+            with open(schema_path, "r", encoding="utf-8") as f:
+                return f.read()
+        return ""
+
+
+class MixinsSyncProvider(MixinsProviderBaseImpl, IMixinsSyncProvider):
+    def __init__(self):
+        super().__init__()
+        self._active_backends: List = []
+
+    def _setup_model(
+        self, model_class: Type[ActiveRecord], scenario_name: str, table_name: str
+    ) -> Type[ActiveRecord]:
         backend_class, config = get_scenario(scenario_name)
         model_class.configure(config, backend_class)
         backend = model_class.__backend__
@@ -45,43 +66,36 @@ class MixinsProvider(IMixinsProvider):
             backend.execute(f"DROP TABLE {table_name}", fetch=False)
         except Exception:
             pass
-        schema = self._load_schema(f"{table_name}.sql")
+        schema = self._load_firebird_schema(f"{table_name}.sql")
         if schema.strip():
             backend.executescript(schema)
+        self._created_tables.add(table_name)
         return model_class
 
-    def _load_schema(self, filename):
-        schema_dir = os.path.join(os.path.dirname(__file__), "..", "rhosocial",
-                                  "activerecord_firebird_test", "feature", "mixins", "schema")
-        path = os.path.join(schema_dir, filename)
-        if os.path.exists(path):
-            with open(path) as f:
-                return f.read()
-        return ""
-
-    def setup_timestamped_post_model(self, scenario_name):
+    def setup_timestamped_post_model(self, scenario_name: str) -> Type[ActiveRecord]:
         return self._setup_model(TimestampedPost, scenario_name, "timestamped_posts")
 
-    def setup_versioned_product_model(self, scenario_name):
+    def setup_versioned_product_model(self, scenario_name: str) -> Type[ActiveRecord]:
         return self._setup_model(VersionedProduct, scenario_name, "versioned_products")
 
-    def setup_task_model(self, scenario_name):
+    def setup_task_model(self, scenario_name: str) -> Type[ActiveRecord]:
         return self._setup_model(Task, scenario_name, "tasks")
 
-    def setup_combined_article_model(self, scenario_name):
+    def setup_combined_article_model(self, scenario_name: str) -> Type[ActiveRecord]:
         return self._setup_model(CombinedArticle, scenario_name, "combined_articles")
 
-    def cleanup_after_test(self, scenario_name):
-        for b in self._active_backends:
+    def cleanup_after_test(self, scenario_name: str):
+        for backend in self._active_backends:
             try:
-                for t in ["timestamped_posts", "versioned_products", "tasks", "combined_articles"]:
+                for table_name in list(self._created_tables):
                     try:
-                        b.execute(f"DROP TABLE {t}", fetch=False)
+                        backend.execute(f"DROP TABLE {table_name}", fetch=False)
                     except Exception:
                         pass
             finally:
                 try:
-                    b.disconnect()
+                    backend.disconnect()
                 except Exception:
                     pass
         self._active_backends.clear()
+        self._created_tables.clear()

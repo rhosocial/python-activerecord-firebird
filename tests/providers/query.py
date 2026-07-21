@@ -1,7 +1,7 @@
+# tests/providers/query.py
 import os
-import sys
 import logging
-from typing import Type, List, Tuple
+from typing import Type, List, Tuple, Set
 
 from rhosocial.activerecord.model import ActiveRecord
 
@@ -20,7 +20,10 @@ from rhosocial.activerecord.testsuite.feature.query.fixtures.extended_models imp
     User as ExtUserBase, ExtendedOrder, ExtendedOrderItem,
 )
 
-from rhosocial.activerecord.testsuite.feature.query.interfaces import IQueryProvider
+from rhosocial.activerecord.testsuite.feature.query.interfaces import (
+    QueryProviderBase,
+    IQuerySyncProvider,
+)
 from rhosocial.activerecord.testsuite.core.protocols import WorkerTestProtocol
 from .scenarios import get_enabled_scenarios, get_scenario
 
@@ -45,101 +48,117 @@ CteNode = _select_model_class(CteNodeBase, None, None, None, "CteNode")
 ExtUser = _select_model_class(ExtUserBase, None, None, None, "ExtUser")
 
 
-class QueryProvider(IQueryProvider, WorkerTestProtocol):
+class QueryProviderBaseImpl(QueryProviderBase):
     def __init__(self):
-        self._active_backends = []
+        self._created_tables: Set[str] = set()
 
     def get_test_scenarios(self) -> List[str]:
         return list(get_enabled_scenarios().keys())
 
-    def _setup_model(self, model_class, scenario_name, table_name):
+    def _load_firebird_schema(self, filename: str) -> str:
+        schema_dir = os.path.join(
+            os.path.dirname(__file__), "..", "rhosocial", "activerecord_firebird_test", "feature", "query", "schema"
+        )
+        schema_path = os.path.join(schema_dir, filename)
+        if os.path.exists(schema_path):
+            with open(schema_path, "r", encoding="utf-8") as f:
+                return f.read()
+        return ""
+
+
+class QuerySyncProvider(QueryProviderBaseImpl, IQuerySyncProvider, WorkerTestProtocol):
+    def __init__(self):
+        super().__init__()
+        self._active_backends: List = []
+
+    def _track_backend(self, backend) -> None:
+        if backend not in self._active_backends:
+            self._active_backends.append(backend)
+
+    def _setup_model(
+        self, model_class: Type[ActiveRecord], scenario_name: str, table_name: str
+    ) -> Type[ActiveRecord]:
         backend_class, config = get_scenario(scenario_name)
         model_class.configure(config, backend_class)
         backend = model_class.__backend__
-        if backend not in self._active_backends:
-            self._active_backends.append(backend)
+        self._track_backend(backend)
+        self._reset_table_sync(backend, table_name)
+        self._created_tables.add(table_name)
+        return model_class
+
+    def _reset_table_sync(self, backend, table_name: str) -> None:
         try:
             backend.execute(f"DROP TABLE {table_name}", fetch=False)
         except Exception:
             pass
-        schema = self._load_schema(f"{table_name}.sql")
+        schema = self._load_firebird_schema(f"{table_name}.sql")
         if schema.strip():
             backend.executescript(schema)
-        return model_class
 
-    def _load_schema(self, filename):
-        schema_dir = os.path.join(os.path.dirname(__file__), "..", "rhosocial",
-                                  "activerecord_firebird_test", "feature", "query", "schema")
-        path = os.path.join(schema_dir, filename)
-        if os.path.exists(path):
-            with open(path) as f:
-                return f.read()
-        return ""
+    def _initialize_model_schema(self, model_class: Type[ActiveRecord], table_name: str) -> None:
+        self._reset_table_sync(model_class.__backend__, table_name)
 
-    def _setup_multiple_models(self, models, scenario_name):
-        if not models:
+    def _setup_multiple_models(
+        self, model_classes: List[Tuple[Type[ActiveRecord], str]], scenario_name: str
+    ) -> Tuple[Type[ActiveRecord], ...]:
+        if not model_classes:
             return tuple()
-        first_cls, first_tbl = models[0]
-        first = self._setup_model(first_cls, scenario_name, first_tbl)
-        shared = first.__backend__
-        result = [first]
-        for cls, tbl in models[1:]:
-            cls.__connection_config__ = first.__connection_config__
-            cls.__backend_class__ = first.__backend_class__
-            cls.__backend__ = shared
-            try:
-                shared.execute(f"DROP TABLE {tbl}", fetch=False)
-            except Exception:
-                pass
-            schema = self._load_schema(f"{tbl}.sql")
-            if schema.strip():
-                shared.executescript(schema)
-            result.append(cls)
+        first_model_class, first_table_name = model_classes[0]
+        first_model = self._setup_model(first_model_class, scenario_name, first_table_name)
+        shared_backend = first_model.__backend__
+        result = [first_model]
+        for model_class, table_name in model_classes[1:]:
+            model_class.__connection_config__ = first_model.__connection_config__
+            model_class.__backend_class__ = first_model.__backend_class__
+            model_class.__backend__ = shared_backend
+            self._track_backend(shared_backend)
+            self._initialize_model_schema(model_class, table_name)
+            self._created_tables.add(table_name)
+            result.append(model_class)
         return tuple(result)
 
-    def setup_user_model(self, scenario_name):
+    def setup_user_model(self, scenario_name: str) -> Type[ActiveRecord]:
         return self._setup_model(User, scenario_name, "users")
 
-    def setup_post_model(self, scenario_name):
+    def setup_post_model(self, scenario_name: str) -> Type[ActiveRecord]:
         return self._setup_model(Post, scenario_name, "posts")
 
-    def setup_comment_model(self, scenario_name):
+    def setup_comment_model(self, scenario_name: str) -> Type[ActiveRecord]:
         return self._setup_model(Comment, scenario_name, "comments")
 
-    def setup_tree_fixtures(self, scenario_name):
-        return self._setup_model(CteNode, scenario_name, "nodes")
+    def setup_tree_fixtures(self, scenario_name: str) -> Tuple[Type[ActiveRecord], ...]:
+        return (self._setup_model(CteNode, scenario_name, "nodes"),)
 
-    def setup_user_comment_models(self, scenario_name):
-        return self._setup_multiple_models([
-            (User, "users"), (Comment, "comments")
-        ], scenario_name)
+    def setup_user_comment_models(self, scenario_name: str) -> Tuple[Type[ActiveRecord], ...]:
+        return self._setup_multiple_models(
+            [(User, "users"), (Comment, "comments")], scenario_name
+        )
 
-    def setup_order_fixtures(self, scenario_name):
+    def setup_order_fixtures(self, scenario_name: str) -> Tuple[Type[ActiveRecord], Type[ActiveRecord], Type[ActiveRecord]]:
         return self._setup_multiple_models([
             (User, "users"),
             (Order, "orders"),
             (OrderItem, "order_items"),
         ], scenario_name)
 
-    def setup_blog_fixtures(self, scenario_name):
+    def setup_blog_fixtures(self, scenario_name: str) -> Tuple[Type[ActiveRecord], Type[ActiveRecord], Type[ActiveRecord]]:
         return self._setup_multiple_models([
             (User, "users"),
             (Post, "posts"),
             (Comment, "comments"),
         ], scenario_name)
 
-    def setup_json_user_fixtures(self, scenario_name):
-        json_user_model = self._setup_model(JsonUser, scenario_name, "json_users")
-        return (json_user_model,)
+    def setup_json_user_fixtures(self, scenario_name: str) -> Tuple[Type[ActiveRecord], ...]:
+        return (self._setup_model(JsonUser, scenario_name, "json_users"),)
 
-    def setup_extended_order_fixtures(self, scenario_name):
+    def setup_extended_order_fixtures(self, scenario_name: str) -> Tuple[Type[ActiveRecord], Type[ActiveRecord], Type[ActiveRecord]]:
         return self._setup_multiple_models([
             (ExtUser, "users"),
             (ExtendedOrder, "extended_orders"),
             (ExtendedOrderItem, "extended_order_items"),
         ], scenario_name)
 
-    def setup_combined_fixtures(self, scenario_name):
+    def setup_combined_fixtures(self, scenario_name: str) -> Tuple[Type[ActiveRecord], Type[ActiveRecord], Type[ActiveRecord], Type[ActiveRecord], Type[ActiveRecord]]:
         return self._setup_multiple_models([
             (User, "users"),
             (Order, "orders"),
@@ -148,86 +167,60 @@ class QueryProvider(IQueryProvider, WorkerTestProtocol):
             (Comment, "comments"),
         ], scenario_name)
 
-    def setup_annotated_query_fixtures(self, scenario_name):
+    def setup_annotated_query_fixtures(self, scenario_name: str) -> Tuple[Type[ActiveRecord], ...]:
         from rhosocial.activerecord.testsuite.feature.query.fixtures.annotated_adapter_models import SearchableItem
         return self._setup_multiple_models([
             (SearchableItem, "searchable_items"),
         ], scenario_name)
 
-    def setup_mapped_models(self, scenario_name):
+    def setup_mapped_models(self, scenario_name: str) -> Tuple[Type[ActiveRecord], Type[ActiveRecord], Type[ActiveRecord]]:
         return self._setup_multiple_models([
             (MappedUser, "users"),
             (MappedPost, "posts"),
             (MappedComment, "comments"),
         ], scenario_name)
 
-    def setup_profile_fixtures(self, scenario_name):
-        Profile = User.get_relation('profile').get_related_model(User)
+    def setup_profile_fixtures(self, scenario_name: str) -> Tuple[Type[ActiveRecord], Type[ActiveRecord]]:
+        Profile = User.get_relation("profile").get_related_model(User)
         return self._setup_multiple_models([
             (User, "users"),
             (Profile, "profiles"),
         ], scenario_name)
 
-    async def setup_async_order_fixtures(self, scenario_name):
-        raise NotImplementedError("Firebird backend does not support async")
+    def setup_order_item_model(self, scenario_name: str) -> Type[ActiveRecord]:
+        return self._setup_model(OrderItem, scenario_name, "order_items")
 
-    async def setup_async_blog_fixtures(self, scenario_name):
-        raise NotImplementedError("Firebird backend does not support async")
+    def get_worker_connection_params(self, scenario_name: str, fixture_type: str = None) -> dict:
+        from .scenarios import SCENARIO_MAP
+        if scenario_name not in SCENARIO_MAP:
+            if SCENARIO_MAP:
+                scenario_name = next(iter(SCENARIO_MAP))
+            else:
+                raise ValueError("No scenarios registered")
+        return {
+            "backend_module": "rhosocial.activerecord.backend.impl.firebird",
+            "backend_class_name": "FirebirdBackend",
+            "config_class_module": "rhosocial.activerecord.backend.impl.firebird.config",
+            "config_class_name": "FirebirdConnectionConfig",
+            "config_kwargs": SCENARIO_MAP[scenario_name],
+            "schema_sql": self.get_worker_schema_sql(scenario_name, "users"),
+        }
 
-    async def setup_async_json_user_fixtures(self, scenario_name):
-        raise NotImplementedError("Firebird backend does not support async")
+    def get_worker_schema_sql(self, scenario_name: str, table_name: str) -> str:
+        return self._load_firebird_schema(f"{table_name}.sql")
 
-    async def setup_async_tree_fixtures(self, scenario_name):
-        raise NotImplementedError("Firebird backend does not support async")
-
-    async def setup_async_extended_order_fixtures(self, scenario_name):
-        raise NotImplementedError("Firebird backend does not support async")
-
-    async def setup_async_combined_fixtures(self, scenario_name):
-        raise NotImplementedError("Firebird backend does not support async")
-
-    async def setup_async_annotated_query_fixtures(self, scenario_name):
-        raise NotImplementedError("Firebird backend does not support async")
-
-    async def setup_async_mapped_models(self, scenario_name):
-        raise NotImplementedError("Firebird backend does not support async")
-
-    async def setup_async_profile_fixtures(self, scenario_name):
-        raise NotImplementedError("Firebird backend does not support async")
-
-    def cleanup_after_test(self, scenario_name):
-        tables = ["users", "posts", "comments", "nodes",
-                  "orders", "order_items", "json_users",
-                  "extended_orders", "extended_order_items",
-                  "searchable_items", "profiles"]
-        for b in self._active_backends:
+    def cleanup_after_test(self, scenario_name: str):
+        for backend in self._active_backends:
             try:
-                for t in tables:
+                for table_name in list(self._created_tables):
                     try:
-                        b.execute(f"DROP TABLE {t}", fetch=False)
+                        backend.execute(f"DROP TABLE {table_name}", fetch=False)
                     except Exception:
                         pass
             finally:
                 try:
-                    b.disconnect()
+                    backend.disconnect()
                 except Exception:
                     pass
         self._active_backends.clear()
-
-    async def cleanup_after_test_async(self, scenario_name):
-        raise NotImplementedError("Firebird backend does not support async")
-
-    def get_worker_connection_params(self, scenario_name, fixture_type=None):
-        from .scenarios import SCENARIO_MAP
-        name = scenario_name if scenario_name in SCENARIO_MAP else next(iter(SCENARIO_MAP))
-        return {
-            'backend_module': 'rhosocial.activerecord.backend.impl.firebird',
-            'backend_class_name': 'FirebirdBackend',
-            'config_class_module': 'rhosocial.activerecord.backend.impl.firebird.config',
-            'config_class_name': 'FirebirdConnectionConfig',
-            'config_kwargs': SCENARIO_MAP[name],
-            'schema_sql': "",
-        }
-
-    def get_worker_schema_sql(self, scenario_name, table_name):
-        return self._load_schema(f"{table_name}.sql")
+        self._created_tables.clear()
