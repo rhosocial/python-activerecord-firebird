@@ -3,7 +3,7 @@ CREATE TABLE combined_articles (
     title VARCHAR(255) NOT NULL,
     content BLOB SUB_TYPE TEXT NOT NULL,
     status VARCHAR(50) DEFAULT 'draft',
-    lock_version INT DEFAULT 0,
+    version INT DEFAULT 0,
     deleted_at TIMESTAMP,
     created_at TIMESTAMP,
     updated_at TIMESTAMP
