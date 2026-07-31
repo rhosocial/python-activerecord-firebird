@@ -7,6 +7,11 @@ from typing import Any, Dict, List, Optional, Tuple
 class FirebirdDMLOperationMixin:
 
     def format_insert_statement(self, expr) -> Tuple[str, tuple]:
+        if expr.on_conflict:
+            # Firebird has no ON CONFLICT clause; raise instead of silently
+            # dropping the clause via the shared capability gate.
+            self.format_on_conflict_clauses(expr)
+
         all_params: List[Any] = []
 
         table_sql, table_params = expr.into.to_sql()

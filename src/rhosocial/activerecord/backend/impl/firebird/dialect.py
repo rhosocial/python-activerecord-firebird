@@ -502,6 +502,13 @@ class FirebirdDialect(
     def get_upsert_syntax_type(self) -> str:
         return "UPDATE OR INSERT"
 
+    def supports_on_conflict_clause(self) -> bool:
+        """Firebird has no ON CONFLICT clause form; upsert is UPDATE OR INSERT."""
+        return False
+
+    def supports_multiple_on_conflict_clauses(self) -> bool:
+        return False
+
     def supports_explain_analyze(self) -> bool:
         return False
 
