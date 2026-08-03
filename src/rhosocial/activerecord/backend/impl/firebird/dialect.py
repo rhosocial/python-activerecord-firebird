@@ -761,6 +761,14 @@ class FirebirdDialect(
     def supports_if_exists_table(self) -> bool:
         return False
 
+    def supports_drop_table_cascade(self) -> bool:
+        """Firebird has no CASCADE keyword on DROP TABLE."""
+        return False
+
+    def supports_drop_table_restrict(self) -> bool:
+        """Firebird has no RESTRICT keyword on DROP TABLE."""
+        return False
+
     def supports_rename_table(self) -> bool:
         return True
 

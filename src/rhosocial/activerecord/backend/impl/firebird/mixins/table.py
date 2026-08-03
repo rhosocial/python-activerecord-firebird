@@ -1,10 +1,33 @@
 # src/rhosocial/activerecord/backend/impl/firebird/mixins/table.py
 """Firebird table DDL mixin."""
 
-from typing import Any, List, Tuple
+from typing import Any, List, Tuple, TYPE_CHECKING
+
+if TYPE_CHECKING:  # pragma: no cover
+    from ...expression.statements import DropTableExpression  # noinspection PyUnresolvedReferences
+
+from rhosocial.activerecord.backend.dialect.mixins.ddl_table import TableMixin
 
 
 class FirebirdTableMixin:
+
+    # -- Cascade capability switches (declared on the dialect, Ref to TableSupport protocol)
+
+    def supports_drop_table_cascade(self) -> bool:
+        """Firebird has no CASCADE keyword on DROP TABLE."""
+        return False
+
+    def supports_drop_table_restrict(self) -> bool:
+        """Firebird has no RESTRICT keyword on DROP TABLE."""
+        return False
+
+    # Delegate to TableMixin for DropTableExpression formatting.
+    # FirebirdDialect's MRO resolves TableSupport.format_drop_table_statement
+    # (the empty Protocol stub) before TableMixin's actual implementation due to
+    # Python's C3 linearization. Re-binding the concrete method here ensures the
+    # MRO picks up the TypeScript-level override.
+    format_drop_table_statement = TableMixin.format_drop_table_statement
+    # format_drop_table_statement = TableMixin.__dict__['format_drop_table_statement']
 
     def format_create_table_statement(self, expr) -> Tuple[str, tuple]:
         if getattr(expr, 'partition', None) is not None:

@@ -59,7 +59,10 @@ class BasicConnectionProvider(IBasicConnectionProvider):
         return self.setup_sync_pool_and_model(scenario_name)
 
     def cleanup_sync(self, scenario_name: str, pool: BackendPool):
-        pool.close(timeout=1.0)
+        try:
+            pool.close(timeout=1.0, force=True)
+        except Exception:
+            pass
         for backend in self._active_backends:
             try:
                 backend.disconnect()
