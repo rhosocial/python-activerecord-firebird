@@ -164,6 +164,13 @@ class FirebirdBackend(
         try:
             return super().execute(sql, params, options=options)
         except Exception as e:
+            # If the upstream execute() already wrapped the original driver
+            # error into a rhosocial ActiveRecord error (IntegrityError,
+            # ConnectionError, etc.) via _handle_execution_error, re-raise it
+            # unchanged. Otherwise, treat the exception as a raw driver error
+            # and dispatch through _handle_error for proper classification.
+            if isinstance(e, exc.DatabaseError):
+                raise
             self._handle_error(e)
 
     def _handle_auto_commit(self) -> None:
@@ -182,6 +189,9 @@ class FirebirdBackend(
                 self._handle_auto_commit_if_needed()
             return result
         except Exception as e:
+            # Re-raise already-wrapped rhosocial errors unchanged; see execute().
+            if isinstance(e, exc.DatabaseError):
+                raise
             self._handle_error(e)
 
     def executescript(self, sql: str) -> QueryResult:
@@ -192,6 +202,9 @@ class FirebirdBackend(
             self._handle_auto_commit_if_needed()
             return result
         except Exception as e:
+            # Re-raise already-wrapped rhosocial errors unchanged; see execute().
+            if isinstance(e, exc.DatabaseError):
+                raise
             self._handle_error(e)
 
     def get_server_version(self) -> Tuple[int, int, int]:
