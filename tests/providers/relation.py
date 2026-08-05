@@ -139,7 +139,16 @@ class RelationSyncProvider(RelationProviderBaseImpl, IRelationSyncProvider):
         for statement in sql.split(";"):
             statement = statement.strip()
             if statement:
-                backend.execute(statement)
+                try:
+                    backend.execute(statement)
+                except Exception as exc:
+                    # Tables may persist across CI runs when the same database
+                    # file is reused between matrix jobs; ignore "already exists"
+                    # errors so CREATE TABLE / DROP TABLE is idempotent.
+                    msg = str(exc)
+                    if "already exists" in msg or "-607" in msg or "Table" in msg and "exists" in msg:
+                        continue
+                    raise
 
     def _setup_employee_department(self, scenario_name):
         backend_class, config = get_scenario(scenario_name)
