@@ -3,7 +3,12 @@ CREATE TABLE orders (
     user_id INT NOT NULL,
     order_number VARCHAR(255) NOT NULL,
     total_amount DECIMAL(18,2) DEFAULT 0,
-    status VARCHAR(50) DEFAULT 'pending',
+    -- VARCHAR uses Firebird's PAD SPACE collation by default, which would
+    -- make the SQL-injection-immunity tests fail (e.g. "admin'--" stored
+    -- and returned as "admin'-- ").  Use UNICODE_CI which is the standard
+    -- UTF-8 collation on Firebird 4+ and produces NO PAD semantics.
+    -- Note: in Firebird DDL the COLLATE clause must come BEFORE DEFAULT.
+    status VARCHAR(50) CHARACTER SET UTF8 COLLATE UNICODE_CI,
     created_at TIMESTAMP,
     updated_at TIMESTAMP
 )
