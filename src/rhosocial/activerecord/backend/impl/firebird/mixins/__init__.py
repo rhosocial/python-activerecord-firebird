@@ -12,6 +12,7 @@ from .blob import FirebirdBlobMixin
 from .introspection import FirebirdIntrospectionMixin
 from .types import FirebirdTypeSupportMixin
 from .partition import FirebirdPartitionMixin
+from .alter_table_modifier import FirebirdAlterTableModifierMixin
 
 __all__ = [
     "FIREBIRD_VERSION_BOUNDARIES",
@@ -27,4 +28,5 @@ __all__ = [
     "FirebirdIntrospectionMixin",
     "FirebirdTypeSupportMixin",
     "FirebirdPartitionMixin",
+    "FirebirdAlterTableModifierMixin",
 ]

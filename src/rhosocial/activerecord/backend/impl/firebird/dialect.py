@@ -97,6 +97,7 @@ from rhosocial.activerecord.backend.dialect.exceptions import UnsupportedFeature
 
 from .collation import validate_firebird_collation_name
 from .mixins import (
+    FirebirdAlterTableModifierMixin,
     FirebirdDMLOperationMixin,
     FirebirdLockingMixin,
     FirebirdTableMixin,
@@ -162,6 +163,7 @@ class FirebirdDialect(
     ExpressionMixin,
     DateTimeMixin,
     DQLMixin,
+    FirebirdAlterTableModifierMixin,  # Before DDLColumnMixin to override format_*_action
     DDLColumnMixin,
     TransactionControlMixin,
     # Firebird-specific overrides (before generic mixins to take precedence)
