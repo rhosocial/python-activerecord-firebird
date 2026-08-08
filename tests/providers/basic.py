@@ -73,6 +73,17 @@ class BasicProviderBaseImpl(BasicProviderBase):
     def get_yes_no_adapter(self) -> "BaseSQLTypeAdapter":
         return YesOrNoBooleanAdapter()
 
+    def get_dialect(self, scenario_name: str = "default"):
+        """Return a bare, fully-constructed Firebird dialect instance.
+
+        Used by the ``feature/basic/ddl`` subtopic (expression/dialect
+        contract). Firebird rejects all three ``IF [NOT] EXISTS``
+        modifiers, so the ``supports_*`` switches all report ``False``.
+        """
+        from rhosocial.activerecord.backend.impl.firebird.dialect import FirebirdDialect
+
+        return FirebirdDialect()
+
     def _load_firebird_schema(self, filename: str) -> str:
         schema_dir = os.path.join(
             os.path.dirname(__file__), "..", "rhosocial", "activerecord_firebird_test", "feature", "basic", "schema"
