@@ -32,42 +32,57 @@ class TestCreateRole:
 
 
 class TestAlterRole:
-    def test_alter_role_set_default(self):
+    def test_alter_role_set_system_privileges(self):
+        dialect = FirebirdDialect((4, 0, 0))
+        sql, params = FirebirdAlterRoleExpression(
+            dialect,
+            "r",
+            clause=FirebirdRoleAlterClause.SET_SYSTEM_PRIVILEGES,
+            system_privileges=["USER_MANAGEMENT", "MONITOR_ANY_ATTACHMENT"],
+        ).to_sql()
+        assert sql == (
+            'ALTER ROLE "R" SET SYSTEM PRIVILEGES TO '
+            "USER_MANAGEMENT, MONITOR_ANY_ATTACHMENT"
+        )
+        assert params == ()
+
+    def test_alter_role_set_system_privileges_requires_list(self):
+        dialect = FirebirdDialect((4, 0, 0))
+        with pytest.raises(ValueError):
+            FirebirdAlterRoleExpression(
+                dialect,
+                "r",
+                clause=FirebirdRoleAlterClause.SET_SYSTEM_PRIVILEGES,
+            ).to_sql()
+
+    def test_alter_role_drop_system_privileges(self):
+        dialect = FirebirdDialect((4, 0, 0))
+        sql, params = FirebirdAlterRoleExpression(
+            dialect, "r", clause=FirebirdRoleAlterClause.DROP_SYSTEM_PRIVILEGES
+        ).to_sql()
+        assert sql == 'ALTER ROLE "R" DROP SYSTEM PRIVILEGES'
+        assert params == ()
+
+    def test_alter_role_set_auto_admin_mapping(self):
+        dialect = FirebirdDialect((4, 0, 0))
+        sql, params = FirebirdAlterRoleExpression(
+            dialect, "r", clause=FirebirdRoleAlterClause.SET_AUTO_ADMIN_MAPPING
+        ).to_sql()
+        assert sql == 'ALTER ROLE "R" SET AUTO ADMIN MAPPING'
+        assert params == ()
+
+    def test_alter_role_drop_auto_admin_mapping(self):
+        dialect = FirebirdDialect((4, 0, 0))
+        sql, params = FirebirdAlterRoleExpression(
+            dialect, "r", clause=FirebirdRoleAlterClause.DROP_AUTO_ADMIN_MAPPING
+        ).to_sql()
+        assert sql == 'ALTER ROLE "R" DROP AUTO ADMIN MAPPING'
+        assert params == ()
+
+    def test_alter_role_default_is_auto_admin_mapping(self):
         dialect = FirebirdDialect((4, 0, 0))
         sql, params = FirebirdAlterRoleExpression(dialect, "r").to_sql()
-        assert sql == 'ALTER ROLE "R" SET DEFAULT'
-        assert params == ()
-
-    def test_alter_role_set_active(self):
-        dialect = FirebirdDialect((4, 0, 0))
-        sql, params = FirebirdAlterRoleExpression(
-            dialect, "r", clause=FirebirdRoleAlterClause.SET_ACTIVE
-        ).to_sql()
-        assert sql == 'ALTER ROLE "R" SET ACTIVE'
-        assert params == ()
-
-    def test_alter_role_set_auto_admin(self):
-        dialect = FirebirdDialect((4, 0, 0))
-        sql, params = FirebirdAlterRoleExpression(
-            dialect, "r", clause=FirebirdRoleAlterClause.SET_AUTO_ADMIN
-        ).to_sql()
-        assert sql == 'ALTER ROLE "R" SET AUTO_ADMIN'
-        assert params == ()
-
-    def test_alter_role_drop_auto_admin(self):
-        dialect = FirebirdDialect((4, 0, 0))
-        sql, params = FirebirdAlterRoleExpression(
-            dialect, "r", clause=FirebirdRoleAlterClause.DROP_AUTO_ADMIN
-        ).to_sql()
-        assert sql == 'ALTER ROLE "R" DROP AUTO_ADMIN'
-        assert params == ()
-
-    def test_alter_role_rename_to(self):
-        dialect = FirebirdDialect((4, 0, 0))
-        sql, params = FirebirdAlterRoleExpression(
-            dialect, "r", clause=FirebirdRoleAlterClause.RENAME_TO, new_name="r2"
-        ).to_sql()
-        assert sql == 'ALTER ROLE "R" RENAME TO "R2"'
+        assert sql == 'ALTER ROLE "R" SET AUTO ADMIN MAPPING'
         assert params == ()
 
     def test_alter_role_requires_fb3(self):

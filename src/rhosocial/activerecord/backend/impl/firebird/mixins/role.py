@@ -2,8 +2,8 @@
 """Firebird ROLE statement formatting mixin.
 
 Roles are an ancient Firebird feature; ``CREATE ROLE`` / ``DROP ROLE`` are
-gated here at ``(2, 5, 0)`` while ``ALTER ROLE`` (SET DEFAULT/ACTIVE/
-INACTIVE/AUTO_ADMIN, DROP AUTO_ADMIN, RENAME TO) requires Firebird 3.0.
+gated here at ``(2, 5, 0)`` while ``ALTER ROLE`` (SET/DROP SYSTEM PRIVILEGES,
+SET/DROP AUTO ADMIN MAPPING) requires Firebird 3.0.
 """
 
 from typing import Tuple
@@ -33,13 +33,24 @@ class FirebirdRoleMixin:
         return f"CREATE ROLE {self.format_identifier(expr.role_name)}", ()
 
     def format_alter_role_statement(self, expr) -> Tuple[str, tuple]:
-        """Format ALTER ROLE name <clause> (Firebird 3.0+)."""
+        """Format ALTER ROLE name <clause> (Firebird 3.0+).
+
+        Firebird 5.0 ALTER ROLE supports: ``SET SYSTEM PRIVILEGES TO <list>``,
+        ``DROP SYSTEM PRIVILEGES`` and ``{SET | DROP} AUTO ADMIN MAPPING``.
+        """
         self._check_role_version("ALTER ROLE", (3, 0, 0))
 
         name = self.format_identifier(expr.role_name)
-        if expr.clause == FirebirdRoleAlterClause.RENAME_TO:
+        if expr.clause == FirebirdRoleAlterClause.SET_SYSTEM_PRIVILEGES:
+            privileges = expr.system_privileges or []
+            if not privileges:
+                raise ValueError(
+                    "system_privileges are required for "
+                    "FirebirdRoleAlterClause.SET_SYSTEM_PRIVILEGES"
+                )
             return (
-                f"ALTER ROLE {name} RENAME TO {self.format_identifier(expr.new_name)}",
+                f"ALTER ROLE {name} SET SYSTEM PRIVILEGES TO "
+                f"{', '.join(str(p) for p in privileges)}",
                 (),
             )
         return f"ALTER ROLE {name} {expr.clause.value}", ()
