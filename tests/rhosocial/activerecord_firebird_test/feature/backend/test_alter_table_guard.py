@@ -1,4 +1,4 @@
-# tests/rhosocial/activerecord_firebird_test/feature/backend/test_alter_table_if_exists.py
+# tests/rhosocial/activerecord_firebird_test/feature/backend/test_alter_table_guard.py
 """Tests for Firebird ALTER TABLE IF [NOT] EXISTS guarding.
 
 Firebird <= 5.0.4 does not support ``ADD COLUMN IF NOT EXISTS``,
