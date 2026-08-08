@@ -12,6 +12,11 @@ from .exception import (
     FirebirdCreateExceptionExpression,
     FirebirdDropExceptionExpression,
 )
+from .external_function import (
+    FirebirdAlterExternalFunctionExpression,
+    FirebirdCreateExternalFunctionExpression,
+    FirebirdDropExternalFunctionExpression,
+)
 from .package import (
     FirebirdCreatePackageBodyExpression,
     FirebirdCreatePackageExpression,
@@ -23,6 +28,17 @@ from .routine import (
     FirebirdDropRoutineExpression,
     FirebirdRoutineMode,
 )
+from .role import (
+    FirebirdAlterRoleExpression,
+    FirebirdCreateRoleExpression,
+    FirebirdDropRoleExpression,
+    FirebirdRoleAlterClause,
+)
+from .user import (
+    FirebirdAlterUserExpression,
+    FirebirdCreateUserExpression,
+    FirebirdDropUserExpression,
+)
 
 __all__ = [
     "FirebirdCreateDomainExpression",
@@ -32,10 +48,20 @@ __all__ = [
     "FirebirdCreateExceptionExpression",
     "FirebirdAlterExceptionExpression",
     "FirebirdDropExceptionExpression",
+    "FirebirdCreateExternalFunctionExpression",
+    "FirebirdAlterExternalFunctionExpression",
+    "FirebirdDropExternalFunctionExpression",
     "FirebirdCreateProcedureExpression",
     "FirebirdCreateFunctionExpression",
     "FirebirdDropRoutineExpression",
     "FirebirdRoutineMode",
+    "FirebirdRoleAlterClause",
+    "FirebirdCreateRoleExpression",
+    "FirebirdAlterRoleExpression",
+    "FirebirdDropRoleExpression",
+    "FirebirdCreateUserExpression",
+    "FirebirdAlterUserExpression",
+    "FirebirdDropUserExpression",
     "FirebirdCreatePackageExpression",
     "FirebirdCreatePackageBodyExpression",
     "FirebirdDropPackageExpression",

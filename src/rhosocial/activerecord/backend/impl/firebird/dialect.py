@@ -111,6 +111,11 @@ from .mixins import (
     FirebirdExceptionMixin,
     FirebirdRoutineMixin,
     FirebirdPackageMixin,
+    FirebirdExternalFunctionMixin,
+    FirebirdRoleMixin,
+    FirebirdUserMixin,
+    FirebirdCommentMixin,
+    FirebirdDatabaseMixin,
 )
 from .protocols import (
     FirebirdDMLOperationSupport,
@@ -182,6 +187,11 @@ class FirebirdDialect(
     FirebirdExceptionMixin,
     FirebirdRoutineMixin,       # Must be before FunctionMixin (format_create_function_statement)
     FirebirdPackageMixin,
+    FirebirdExternalFunctionMixin,
+    FirebirdRoleMixin,
+    FirebirdUserMixin,
+    FirebirdCommentMixin,
+    FirebirdDatabaseMixin,
     # Core feature mixins (no duplicates)
     DMLMixin,
     CollationMixin,

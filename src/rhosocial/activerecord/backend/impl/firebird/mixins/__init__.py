@@ -17,6 +17,11 @@ from .domain import FirebirdDomainMixin
 from .exception import FirebirdExceptionMixin
 from .routine import FirebirdRoutineMixin
 from .package import FirebirdPackageMixin
+from .external_function import FirebirdExternalFunctionMixin
+from .role import FirebirdRoleMixin
+from .user import FirebirdUserMixin
+from .comment import FirebirdCommentMixin
+from .database import FirebirdDatabaseMixin
 
 __all__ = [
     "FIREBIRD_VERSION_BOUNDARIES",
@@ -37,4 +42,9 @@ __all__ = [
     "FirebirdExceptionMixin",
     "FirebirdRoutineMixin",
     "FirebirdPackageMixin",
+    "FirebirdExternalFunctionMixin",
+    "FirebirdRoleMixin",
+    "FirebirdUserMixin",
+    "FirebirdCommentMixin",
+    "FirebirdDatabaseMixin",
 ]
