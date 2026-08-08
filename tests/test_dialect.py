@@ -54,7 +54,11 @@ class TestFirebirdDialectFeatureSupport:
         assert dialect.supports_json_type() is False
 
     def test_skip_locked_fb4(self, fb4_dialect):
-        assert fb4_dialect.supports_for_update_skip_locked() is True
+        assert fb4_dialect.supports_for_update_skip_locked() is False
+
+    def test_skip_locked_fb5(self):
+        d = FirebirdDialect(version=(5, 0, 0))
+        assert d.supports_for_update_skip_locked() is True
 
     def test_skip_locked_fb3(self, dialect):
         assert dialect.supports_for_update_skip_locked() is False
@@ -131,6 +135,11 @@ class TestFirebirdDialectPagination:
 
     def test_offset_fetch_fb4(self, fb4_dialect):
         sql, params = fb4_dialect.format_limit_offset(limit=10, offset=20)
+        assert "OFFSET" in sql
+        assert "FETCH" in sql
+
+    def test_offset_fetch_fb3(self, dialect):
+        sql, params = dialect.format_limit_offset(limit=10, offset=20)
         assert "OFFSET" in sql
         assert "FETCH" in sql
 

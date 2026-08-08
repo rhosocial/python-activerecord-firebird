@@ -3,6 +3,8 @@
 
 from typing import Any, Dict, List, Optional, Tuple
 
+from rhosocial.activerecord.backend.dialect.exceptions import UnsupportedFeatureError
+
 
 class FirebirdDMLOperationMixin:
 
@@ -153,7 +155,6 @@ class FirebirdDMLOperationMixin:
         MATCHED BY SOURCE`` branches; the ``WHEN NOT MATCHED`` branch may
         only INSERT.
         """
-        from rhosocial.activerecord.backend.dialect.exceptions import UnsupportedFeatureError
         from rhosocial.activerecord.backend.expression.statements import MergeActionType
 
         version = getattr(self, 'version', (2, 5, 0))
@@ -273,3 +274,68 @@ class FirebirdDMLOperationMixin:
         else:
             sql = f"EXECUTE BLOCK\nAS\nBEGIN\n{block}\nEND"
         return sql, tuple(all_params)
+
+    def format_execute_statement(self, expr) -> Tuple[str, tuple]:
+        """Format EXECUTE STATEMENT (dynamic SQL) for Firebird.
+
+        The bare ``EXECUTE STATEMENT`` form is available since Firebird 1.5,
+        but the ``WITH {AUTONOMOUS | COMMON} TRANSACTION`` and ``WITH CALLER
+        PRIVILEGES`` clauses were added in Firebird 3.0, so the whole
+        expression is gated uniformly at ``(3, 0, 0)``.
+        """
+        version = getattr(self, 'version', (3, 0, 0))
+        if version < (3, 0, 0):
+            raise UnsupportedFeatureError(
+                self.name,
+                "EXECUTE STATEMENT",
+                "Firebird 3.0 or later is required for EXECUTE STATEMENT "
+                "with WITH TRANSACTION / WITH CALLER PRIVILEGES.",
+            )
+
+        all_params: List[Any] = []
+        parts = ["EXECUTE STATEMENT"]
+
+        sql_text = expr._sql
+        if hasattr(sql_text, "to_sql"):
+            sql_sql, sql_params = sql_text.to_sql()
+            parts.append(sql_sql)
+            all_params.extend(sql_params)
+        elif isinstance(sql_text, str) and sql_text.startswith(":"):
+            parts.append(sql_text)
+        else:
+            escaped = str(sql_text).replace("'", "''")
+            parts.append(f"'{escaped}'")
+
+        if getattr(expr, "_transaction", None):
+            parts.append(f"WITH {expr._transaction.upper()} TRANSACTION")
+        if getattr(expr, "_caller_privileges", False):
+            parts.append("WITH CALLER PRIVILEGES")
+
+        bound_params = getattr(expr, "_params", []) or []
+        if bound_params:
+            placeholders = ", ".join(self.get_parameter_placeholder() for _ in bound_params)
+            parts.append(f"({placeholders})")
+            all_params.extend(bound_params)
+
+        return " ".join(parts), tuple(all_params)
+
+    def format_autonomous_transaction_do(self, block: str) -> Tuple[str, tuple]:
+        """Format IN AUTONOMOUS TRANSACTION DO <statement> (Firebird 3.0+).
+
+        The block is wrapped in ``BEGIN ... END`` unless it already starts
+        with ``BEGIN``, mirroring :meth:`format_execute_block`.
+        """
+        version = getattr(self, 'version', (3, 0, 0))
+        if version < (3, 0, 0):
+            raise UnsupportedFeatureError(
+                self.name,
+                "IN AUTONOMOUS TRANSACTION DO",
+                "Firebird 3.0 or later is required for autonomous "
+                "transaction blocks.",
+            )
+        stripped = block.strip()
+        if stripped.upper().startswith("BEGIN"):
+            body = stripped
+        else:
+            body = f"BEGIN\n{stripped}\nEND"
+        return f"IN AUTONOMOUS TRANSACTION DO {body}", ()

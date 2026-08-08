@@ -1,11 +1,18 @@
 # src/rhosocial/activerecord/backend/impl/firebird/mixins/types.py
-"""Firebird DataType formatting mixin."""
+"""Firebird DataType formatting mixin.
+
+Covers the Firebird 4.0+ data types ``TIMESTAMP WITH TIME ZONE``, ``TIME
+WITH TIME ZONE``, ``DECFLOAT(16|34)`` and ``INT128`` with a version gate of
+``(4, 0, 0)`` — requesting any of them on an older dialect raises
+``UnsupportedFeatureError``.
+"""
 
 from __future__ import annotations
 
 import re
 from typing import Tuple
 
+from rhosocial.activerecord.backend.dialect.exceptions import UnsupportedFeatureError
 from rhosocial.activerecord.backend.dialect.mixins import DDLTypeMixin
 from rhosocial.activerecord.backend.dialect.protocols import DDLTypeSupport
 from rhosocial.activerecord.backend.expression.types import (
@@ -25,6 +32,13 @@ from rhosocial.activerecord.backend.expression.types import (
     TimeType,
     TimestampType,
     VarCharType,
+)
+
+from ..expression.types import (
+    FirebirdDecFloatType,
+    FirebirdInt128Type,
+    FirebirdTimeStampTzType,
+    FirebirdTimeTzType,
 )
 
 
@@ -89,6 +103,44 @@ class FirebirdTypeSupportMixin(DDLTypeMixin, DDLTypeSupport):
     @DDLTypeMixin.handles(TimestampType)
     def format_data_type_timestamp(self, data_type: TimestampType) -> Tuple[str, tuple]:
         return "TIMESTAMP", ()
+
+    @DDLTypeMixin.handles(FirebirdTimeStampTzType)
+    def format_data_type_timestamptz(self, data_type: FirebirdTimeStampTzType) -> Tuple[str, tuple]:
+        """Format TIMESTAMP WITH TIME ZONE (Firebird 4.0+)."""
+        self._check_fb4_type("TIMESTAMP WITH TIME ZONE")
+        return "TIMESTAMP WITH TIME ZONE", ()
+
+    @DDLTypeMixin.handles(FirebirdTimeTzType)
+    def format_data_type_timetz(self, data_type: FirebirdTimeTzType) -> Tuple[str, tuple]:
+        """Format TIME WITH TIME ZONE (Firebird 4.0+)."""
+        self._check_fb4_type("TIME WITH TIME ZONE")
+        return "TIME WITH TIME ZONE", ()
+
+    @DDLTypeMixin.handles(FirebirdDecFloatType)
+    def format_data_type_decfloat(self, data_type: FirebirdDecFloatType) -> Tuple[str, tuple]:
+        """Format DECFLOAT(16|34) (Firebird 4.0+)."""
+        self._check_fb4_type("DECFLOAT")
+        return f"DECFLOAT({data_type.precision})", ()
+
+    @DDLTypeMixin.handles(FirebirdInt128Type)
+    def format_data_type_int128(self, data_type: FirebirdInt128Type) -> Tuple[str, tuple]:
+        """Format INT128 (Firebird 4.0+)."""
+        self._check_fb4_type("INT128")
+        return "INT128", ()
+
+    def _check_fb4_type(self, feature: str) -> None:
+        """Raise unless the dialect targets Firebird 4.0 or later.
+
+        TIME ZONE / DECFLOAT / INT128 data types were all introduced in
+        Firebird 4.0.
+        """
+        version = getattr(self, 'version', (4, 0, 0))
+        if version < (4, 0, 0):
+            raise UnsupportedFeatureError(
+                self.name,
+                feature,
+                f"Firebird 4.0 or later is required for the {feature} data type.",
+            )
 
     # --- Parsing ---
 

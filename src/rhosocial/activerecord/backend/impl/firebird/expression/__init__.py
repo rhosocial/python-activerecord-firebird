@@ -8,12 +8,33 @@ from .alter_table import (
     DropIdentity,
     SetPosition,
 )
+from .ddl import (
+    FirebirdAlterDomainExpression,
+    FirebirdAlterExceptionExpression,
+    FirebirdCreateDomainExpression,
+    FirebirdCreateExceptionExpression,
+    FirebirdCreateFunctionExpression,
+    FirebirdCreatePackageBodyExpression,
+    FirebirdCreatePackageExpression,
+    FirebirdCreateProcedureExpression,
+    FirebirdDomainAlterMode,
+    FirebirdDropDomainExpression,
+    FirebirdDropExceptionExpression,
+    FirebirdDropPackageExpression,
+    FirebirdDropRoutineExpression,
+    FirebirdRoutineMode,
+)
+from .execute_statement import FirebirdExecuteStatementExpression
 from .generator import GenIdExpression, NextValueForExpression
 from .types import (
     FirebirdDecimalType,
     FirebirdFloatType,
     FirebirdDoubleType,
     FirebirdBlobSubType,
+    FirebirdTimeStampTzType,
+    FirebirdTimeTzType,
+    FirebirdDecFloatType,
+    FirebirdInt128Type,
 )
 
 __all__ = [
@@ -28,4 +49,23 @@ __all__ = [
     "FirebirdFloatType",
     "FirebirdDoubleType",
     "FirebirdBlobSubType",
+    "FirebirdTimeStampTzType",
+    "FirebirdTimeTzType",
+    "FirebirdDecFloatType",
+    "FirebirdInt128Type",
+    "FirebirdCreateDomainExpression",
+    "FirebirdAlterDomainExpression",
+    "FirebirdDomainAlterMode",
+    "FirebirdDropDomainExpression",
+    "FirebirdCreateExceptionExpression",
+    "FirebirdAlterExceptionExpression",
+    "FirebirdDropExceptionExpression",
+    "FirebirdCreateProcedureExpression",
+    "FirebirdCreateFunctionExpression",
+    "FirebirdDropRoutineExpression",
+    "FirebirdRoutineMode",
+    "FirebirdCreatePackageExpression",
+    "FirebirdCreatePackageBodyExpression",
+    "FirebirdDropPackageExpression",
+    "FirebirdExecuteStatementExpression",
 ]

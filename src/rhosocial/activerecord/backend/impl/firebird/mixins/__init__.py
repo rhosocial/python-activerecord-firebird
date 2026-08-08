@@ -13,6 +13,10 @@ from .introspection import FirebirdIntrospectionMixin
 from .types import FirebirdTypeSupportMixin
 from .partition import FirebirdPartitionMixin
 from .alter_table_modifier import FirebirdAlterTableModifierMixin
+from .domain import FirebirdDomainMixin
+from .exception import FirebirdExceptionMixin
+from .routine import FirebirdRoutineMixin
+from .package import FirebirdPackageMixin
 
 __all__ = [
     "FIREBIRD_VERSION_BOUNDARIES",
@@ -29,4 +33,8 @@ __all__ = [
     "FirebirdTypeSupportMixin",
     "FirebirdPartitionMixin",
     "FirebirdAlterTableModifierMixin",
+    "FirebirdDomainMixin",
+    "FirebirdExceptionMixin",
+    "FirebirdRoutineMixin",
+    "FirebirdPackageMixin",
 ]

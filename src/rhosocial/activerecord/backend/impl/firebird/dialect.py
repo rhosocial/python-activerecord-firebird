@@ -8,8 +8,8 @@ Firebird SQL dialect features and version support:
   - BOOLEAN type (FB 3.0+)
   - IDENTITY columns (FB 3.0+)
   - SEQUENCE (FB 3.0+)
-  - SKIP LOCKED (FB 4.0+)
-  - OFFSET/FETCH (FB 4.0+)
+  - SKIP LOCKED (FB 5.0+)
+  - OFFSET/FETCH (FB 3.0+)
   - DECFLOAT (FB 4.0+)
 """
 
@@ -107,6 +107,10 @@ from .mixins import (
     FirebirdIntrospectionMixin,
     FirebirdPartitionMixin,
     FirebirdTypeSupportMixin,
+    FirebirdDomainMixin,
+    FirebirdExceptionMixin,
+    FirebirdRoutineMixin,
+    FirebirdPackageMixin,
 )
 from .protocols import (
     FirebirdDMLOperationSupport,
@@ -174,6 +178,10 @@ class FirebirdDialect(
     FirebirdSequenceMixin,      # Must be before SequenceMixin
     FirebirdBlobMixin,
     FirebirdIntrospectionMixin, # Must be before IntrospectionMixin
+    FirebirdDomainMixin,
+    FirebirdExceptionMixin,
+    FirebirdRoutineMixin,       # Must be before FunctionMixin (format_create_function_statement)
+    FirebirdPackageMixin,
     # Core feature mixins (no duplicates)
     DMLMixin,
     CollationMixin,
@@ -276,8 +284,8 @@ class FirebirdDialect(
     - IDENTITY columns (FB 3.0+)
     - BOOLEAN type (FB 3.0+)
     - Packages (FB 3.0+)
-    - SKIP LOCKED (FB 4.0+)
-    - OFFSET/FETCH (FB 4.0+)
+    - SKIP LOCKED (FB 5.0+)
+    - OFFSET/FETCH (FB 3.0+)
     - DECFLOAT (FB 4.0+)
     - EXECUTE BLOCK (FB 2.5+)
     - ROWS syntax (FB 2.5+)
@@ -548,10 +556,11 @@ class FirebirdDialect(
         return True
 
     def supports_for_update_skip_locked(self) -> bool:
-        return self.version >= (4, 0, 0)
+        return self.version >= (5, 0, 0)
 
     def supports_lateral_join(self) -> bool:
-        return False
+        """Firebird 4.0 introduced joins with LATERAL derived tables."""
+        return self.version >= (4, 0, 0)
 
     def supports_ilike(self) -> bool:
         return False
@@ -588,7 +597,7 @@ class FirebirdDialect(
         return self.version >= (3, 0, 0)
 
     def supports_skip_locked(self) -> bool:
-        return self.version >= (4, 0, 0)
+        return self.version >= (5, 0, 0)
 
     def supports_snapshot_isolation(self) -> bool:
         return True
@@ -660,7 +669,7 @@ class FirebirdDialect(
         return True
 
     def supports_offset_fetch(self) -> bool:
-        return self.version >= (4, 0, 0)
+        return self.version >= (3, 0, 0)
 
     def supports_database_triggers(self) -> bool:
         return self.version >= (3, 0, 0)
@@ -1093,12 +1102,12 @@ class FirebirdDialect(
         """Format LIMIT/OFFSET for Firebird.
 
         Firebird 2.5+: ROWS m TO n
-        Firebird 4.0+: OFFSET m ROWS FETCH NEXT n ROWS ONLY
+        Firebird 3.0+: OFFSET m ROWS FETCH NEXT n ROWS ONLY
         """
         if limit is None and offset is None:
             return "", ()
 
-        if self.version >= (4, 0, 0):
+        if self.version >= (3, 0, 0):
             parts = []
             if offset is not None and offset > 0:
                 parts.append(f"OFFSET {offset} ROWS")
@@ -1165,7 +1174,7 @@ class FirebirdDialect(
         if clause.limit is None and clause.offset is None:
             return "", ()
 
-        if self.version >= (4, 0, 0):
+        if self.version >= (3, 0, 0):
             parts = []
             if clause.offset is not None:
                 parts.append(f"OFFSET {clause.offset} ROWS")
