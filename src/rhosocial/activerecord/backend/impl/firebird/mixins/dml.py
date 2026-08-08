@@ -143,6 +143,123 @@ class FirebirdDMLOperationMixin:
 
         return ' '.join(parts), tuple(all_params)
 
+    def format_merge_statement(self, expr) -> Tuple[str, tuple]:
+        """Format MERGE statement using Firebird's supported syntax.
+
+        Firebird supports MERGE since 2.1. The ``WHEN MATCHED THEN
+        DELETE`` branch and the SQL:2008 multi-WHEN form require Firebird
+        3.0, and ``WHEN NOT MATCHED BY SOURCE`` requires Firebird 5.0.
+        DELETE is only legal in the ``WHEN MATCHED`` and ``WHEN NOT
+        MATCHED BY SOURCE`` branches; the ``WHEN NOT MATCHED`` branch may
+        only INSERT.
+        """
+        from rhosocial.activerecord.backend.dialect.exceptions import UnsupportedFeatureError
+        from rhosocial.activerecord.backend.expression.statements import MergeActionType
+
+        version = getattr(self, 'version', (2, 5, 0))
+
+        all_params: List[Any] = []
+        target_sql, target_params = expr.target_table.to_sql()
+        all_params.extend(target_params)
+        source_sql, source_params = expr.source.to_sql()
+        all_params.extend(source_params)
+        on_sql, on_params = expr.on_condition.to_sql()
+        all_params.extend(on_params)
+
+        merge_sql_parts = [f"MERGE INTO {target_sql}", f"USING {source_sql}", f"ON {on_sql}"]
+
+        for action in expr.when_matched:
+            action_sql_parts = []
+            if action.condition:
+                cond_sql, cond_params = action.condition.to_sql()
+                action_sql_parts.append(f"WHEN MATCHED AND {cond_sql}")
+                all_params.extend(cond_params)
+            else:
+                action_sql_parts.append("WHEN MATCHED")
+
+            if action.action_type == MergeActionType.UPDATE:
+                assignments = []
+                for col, as_expr in action.assignments.items():
+                    as_sql, as_params = as_expr.to_sql()
+                    assignments.append(f"{self.format_identifier(col)} = {as_sql}")
+                    all_params.extend(as_params)
+                action_sql_parts.append(f"THEN UPDATE SET {', '.join(assignments)}")
+            elif action.action_type == MergeActionType.DELETE:
+                if version < (3, 0, 0):
+                    raise UnsupportedFeatureError(
+                        self.name,
+                        "MERGE ... WHEN MATCHED THEN DELETE",
+                        "Firebird 3.0 or later is required for the DELETE "
+                        "branch in a MERGE statement.",
+                    )
+                action_sql_parts.append("THEN DELETE")
+            merge_sql_parts.append(" ".join(action_sql_parts))
+
+        for action in expr.when_not_matched:
+            action_sql_parts = []
+            if action.condition:
+                cond_sql, cond_params = action.condition.to_sql()
+                action_sql_parts.append(f"WHEN NOT MATCHED AND {cond_sql}")
+                all_params.extend(cond_params)
+            else:
+                action_sql_parts.append("WHEN NOT MATCHED")
+
+            if action.action_type == MergeActionType.INSERT:
+                insert_cols, insert_vals = [], []
+                for col, val_expr in action.assignments.items():
+                    insert_cols.append(self.format_identifier(col))
+                    val_sql, val_params = val_expr.to_sql()
+                    insert_vals.append(val_sql)
+                    all_params.extend(val_params)
+                if not insert_cols:
+                    raise UnsupportedFeatureError(
+                        self.name,
+                        "MERGE ... WHEN NOT MATCHED THEN INSERT DEFAULT VALUES",
+                        "Firebird requires an explicit INSERT column list in "
+                        "the WHEN NOT MATCHED branch.",
+                    )
+                action_sql_parts.append(
+                    f"THEN INSERT ({', '.join(insert_cols)}) VALUES ({', '.join(insert_vals)})"
+                )
+            else:
+                raise UnsupportedFeatureError(
+                    self.name,
+                    "MERGE ... WHEN NOT MATCHED THEN DELETE",
+                    "Firebird only allows INSERT in the WHEN NOT MATCHED "
+                    "branch. Use WHEN NOT MATCHED BY SOURCE THEN DELETE "
+                    "(Firebird 5.0) for deletes.",
+                )
+            merge_sql_parts.append(" ".join(action_sql_parts))
+
+        for action in expr.when_not_matched_by_source:
+            if version < (5, 0, 0):
+                raise UnsupportedFeatureError(
+                    self.name,
+                    "MERGE ... WHEN NOT MATCHED BY SOURCE",
+                    "Firebird 5.0 or later is required for WHEN NOT MATCHED "
+                    "BY SOURCE.",
+                )
+            action_sql_parts = []
+            if action.condition:
+                cond_sql, cond_params = action.condition.to_sql()
+                action_sql_parts.append(f"WHEN NOT MATCHED BY SOURCE AND {cond_sql}")
+                all_params.extend(cond_params)
+            else:
+                action_sql_parts.append("WHEN NOT MATCHED BY SOURCE")
+
+            if action.action_type == MergeActionType.UPDATE:
+                assignments = []
+                for col, as_expr in action.assignments.items():
+                    as_sql, as_params = as_expr.to_sql()
+                    assignments.append(f"{self.format_identifier(col)} = {as_sql}")
+                    all_params.extend(as_params)
+                action_sql_parts.append(f"THEN UPDATE SET {', '.join(assignments)}")
+            elif action.action_type == MergeActionType.DELETE:
+                action_sql_parts.append("THEN DELETE")
+            merge_sql_parts.append(" ".join(action_sql_parts))
+
+        return " ".join(merge_sql_parts), tuple(all_params)
+
     def format_execute_block(
         self, block: str, params: Optional[Dict[str, Any]] = None
     ) -> Tuple[str, tuple]:

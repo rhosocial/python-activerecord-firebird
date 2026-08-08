@@ -29,6 +29,11 @@ class FirebirdTableMixin:
     format_drop_table_statement = TableMixin.format_drop_table_statement
     # format_drop_table_statement = TableMixin.__dict__['format_drop_table_statement']
 
+    # Same C3 linearization issue applies to ALTER TABLE: TableSupport ships an
+    # empty format_alter_table_statement stub that would otherwise win over the
+    # concrete TableMixin implementation, so re-bind it here as well.
+    format_alter_table_statement = TableMixin.format_alter_table_statement
+
     def format_create_table_statement(self, expr) -> Tuple[str, tuple]:
         if getattr(expr, 'partition', None) is not None:
             from rhosocial.activerecord.backend.dialect.exceptions import UnsupportedFeatureError
