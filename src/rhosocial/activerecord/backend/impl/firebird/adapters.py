@@ -48,8 +48,10 @@ class FirebirdTextBlobAdapter(SQLTypeAdapter):
             return value.decode('utf-8')
         if isinstance(value, bytearray):
             return value.decode('utf-8')
-        result = str(value)
-        return result.rstrip()
+        # Preserve trailing whitespace: Firebird VARCHAR values keep trailing
+        # spaces/newlines, so values like "admin'-- " must round-trip exactly.
+        # (rstrip() here would corrupt whitespace-sensitive payloads.)
+        return str(value)
 
 
 class FirebirdBooleanAdapter(SQLTypeAdapter):
@@ -65,7 +67,12 @@ class FirebirdBooleanAdapter(SQLTypeAdapter):
             return None
         if self._use_char:
             return 'T' if value else 'F'
-        return bool(value)
+        # Firebird 3+ supports a native BOOLEAN type and the driver accepts
+        # integer 0/1 for BOOLEAN columns; binding a raw Python bool is
+        # rejected by the driver (it stringifies to 'True'/'False'). Using an
+        # integer also stores cleanly into small VARCHAR columns used by custom
+        # adapters that target str (e.g. YesOrNo adapters storing 'yes'/'no').
+        return 1 if value else 0
 
     def from_database(self, value: Any, target_type: Type, options: Optional[Dict] = None) -> Optional[bool]:
         if value is None:

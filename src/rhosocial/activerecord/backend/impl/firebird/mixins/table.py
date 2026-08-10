@@ -102,6 +102,7 @@ class FirebirdTableMixin:
             parts.append(f"COMPUTED BY ({computed_by})")
 
         constraint_parts = []
+        default_parts: List[str] = []
         for constraint in col_def.constraints:
             if constraint.constraint_type == ColumnConstraintType.PRIMARY_KEY:
                 constraint_parts.append("PRIMARY KEY")
@@ -116,13 +117,19 @@ class FirebirdTableMixin:
                     from rhosocial.activerecord.backend.expression import bases
                     if isinstance(constraint.default_value, bases.BaseExpression):
                         default_sql, default_params = constraint.default_value.to_sql()
-                        constraint_parts.append(f"DEFAULT {default_sql}")
+                        default_parts.append(f"DEFAULT {default_sql}")
                         params.extend(default_params)
                     elif isinstance(constraint.default_value, str):
                         escaped = constraint.default_value.replace("'", "''")
-                        constraint_parts.append(f"DEFAULT '{escaped}'")
+                        default_parts.append(f"DEFAULT '{escaped}'")
                     else:
-                        constraint_parts.append(f"DEFAULT {constraint.default_value}")
+                        default_parts.append(f"DEFAULT {constraint.default_value}")
+
+        # Firebird requires the DEFAULT clause to follow the data type directly;
+        # it must be emitted before column constraints such as NOT NULL/UNIQUE,
+        # otherwise the parser rejects the column definition with a
+        # "Token unknown ... DEFAULT" error.
+        constraint_parts = default_parts + constraint_parts
 
         if constraint_parts:
             parts.append(' '.join(constraint_parts))

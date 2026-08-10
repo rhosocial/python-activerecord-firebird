@@ -377,6 +377,45 @@ class FirebirdDialect(
             alias,
         )
 
+    def format_binary_arithmetic_expression(
+        self, op: str, left_sql: str, right_sql: str, left_params: tuple, right_params: tuple
+    ) -> Tuple[str, Tuple]:
+        """Format a binary arithmetic expression with typed phantom parameters.
+
+        Firebird cannot infer the type of a ``?`` parameter used inside an
+        arithmetic expression (e.g. ``col + ?`` raises -804 Data type unknown).
+        Wrap literal ``?`` operands in an explicit CAST based on the bound value.
+        """
+        placeholder = self.get_parameter_placeholder()
+        left_sql = self._cast_literal_operand(left_sql, left_params, placeholder)
+        right_sql = self._cast_literal_operand(right_sql, right_params, placeholder)
+        return f"{left_sql} {op} {right_sql}", left_params + right_params
+
+    def _cast_literal_operand(self, sql: str, params: tuple, placeholder: str) -> str:
+        if sql.strip() == placeholder and params and len(params) == 1:
+            fb_type = self._python_type_to_firebird_sql(params[0])
+            if fb_type:
+                sql, _ = self.format_cast_expression(sql, fb_type, params, None)
+        return sql
+
+    def format_function_call(
+        self, expr: "bases.BaseExpression", filter_predicate: Optional["bases.SQLPredicate"] = None
+    ) -> Tuple[str, Tuple]:
+        """Format a function call, remapping names Firebird does not provide.
+
+        Firebird 5 does not expose a ``LENGTH`` scalar function (the name is a
+        reserved keyword); the canonical length function is ``CHAR_LENGTH`` for
+        characters and ``OCTET_LENGTH`` for bytes.
+        """
+        func_name = getattr(expr, "func_name", None)
+        if isinstance(func_name, str) and func_name.upper() == "LENGTH":
+            expr.func_name = "CHAR_LENGTH"
+            try:
+                return super().format_function_call(expr, filter_predicate=filter_predicate)
+            finally:
+                expr.func_name = func_name
+        return super().format_function_call(expr, filter_predicate=filter_predicate)
+
     def get_parameter_placeholder(self, position: int = 0) -> str:
         """Firebird uses ? as positional parameter placeholder."""
         return "?"
@@ -444,6 +483,31 @@ class FirebirdDialect(
         if expr.unit.value == "week":
             sql = f"({sql} / 7)"
         return self._apply_value_expression_modifiers(sql, start_params + end_params, expr)
+
+    def format_query_statement(self, expr: Any) -> Tuple[str, Tuple]:
+        """Format a SELECT statement, qualifying a bare wildcard when mixed with columns.
+
+        Firebird rejects ``SELECT *, extra_col ...`` (Token unknown, error -104) and
+        requires an explicit column list or a table-qualified wildcard such as
+        ``SELECT "T".*, extra_col ...`` when additional expressions are selected.
+        """
+        from rhosocial.activerecord.backend.expression import WildcardExpression
+
+        if len(expr.select) > 1:
+            table_name = None
+            for e in expr.select:
+                if isinstance(e, WildcardExpression) and e.table is None and e.schema_name is None:
+                    if getattr(expr, "from_", None) is not None:
+                        src = expr.from_
+                        if isinstance(src, list) and len(src) == 1:
+                            src = src[0]
+                        if isinstance(src, str):
+                            table_name = src
+                        elif src.__class__.__name__ == "TableExpression":
+                            table_name = src.alias or src.name
+                    if table_name:
+                        e.table = table_name
+        return super().format_query_statement(expr)
 
     def supports_collate_expression(self) -> bool:
         """Firebird supports expression-level COLLATE."""

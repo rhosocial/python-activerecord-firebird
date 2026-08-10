@@ -80,7 +80,7 @@ CREATE TABLE posts (
     title VARCHAR(255) NOT NULL,
     body BLOB SUB_TYPE TEXT NOT NULL,
     user_id INTEGER NOT NULL,
-    view_count INTEGER NOT NULL DEFAULT 0,
+    view_count INTEGER DEFAULT 0 NOT NULL,
     metadata BLOB SUB_TYPE TEXT
 );
 CREATE TABLE comments (
