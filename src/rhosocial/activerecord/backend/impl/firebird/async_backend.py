@@ -268,6 +268,7 @@ class AsyncFirebirdBackend(
                 if not rows:
                     return []
                 column_names = [desc[0].strip('"').lower() for desc in cursor.description]
+                char_columns = self._char_columns_from_cursor(cursor)
                 final_results = []
                 adapters = column_adapters or {}
                 mapping = column_mapping or {}
@@ -275,6 +276,10 @@ class AsyncFirebirdBackend(
                     row_dict = dict(zip(column_names, row))
                     adapted_row = self._adapt_row_types(row_dict, adapters)
                     final_row = self._remap_row_columns(adapted_row, mapping)
+                    if char_columns:
+                        for col in char_columns:
+                            if isinstance(final_row.get(col), str):
+                                final_row[col] = final_row[col].rstrip(' ')
                     final_results.append(final_row)
                 return final_results
             except Exception as e:

@@ -261,6 +261,7 @@ class FirebirdBackend(
                 return []
             # Firebird returns uppercase column names; lowercase for case-insensitive matching
             column_names = [desc[0].strip('"').lower() for desc in cursor.description]
+            char_columns = self._char_columns_from_cursor(cursor)
             final_results = []
             adapters = column_adapters or {}
             mapping = column_mapping or {}
@@ -268,11 +269,41 @@ class FirebirdBackend(
                 row_dict = dict(zip(column_names, row))
                 adapted_row = self._adapt_row_types(row_dict, adapters)
                 final_row = self._remap_row_columns(adapted_row, mapping)
+                if char_columns:
+                    for col in char_columns:
+                        if isinstance(final_row.get(col), str):
+                            final_row[col] = final_row[col].rstrip(' ')
                 final_results.append(final_row)
             return final_results
         except Exception as e:
             self.logger.error(f"Error processing result set: {str(e)}", exc_info=True)
             raise
+
+    @staticmethod
+    def _char_columns_from_cursor(cursor) -> set:
+        """Detect CHAR-type columns using the firebird-driver statement metadata.
+
+        The public ``cursor.description`` reports both CHAR and VARCHAR as ``str``
+        and their declared sizes, so it cannot distinguish them. Firebird pads
+        CHAR values with trailing spaces on read, so only CHAR columns need the
+        padding stripped (VARCHAR/BLOB TEXT must round-trip trailing whitespace).
+        The datatype codes come from the driver's message metadata descriptor.
+        """
+        try:
+            stmt = getattr(cursor, "_stmt", None)
+            if stmt is None:
+                return set()
+            out_desc = getattr(stmt, "_out_desc", None)
+            if not out_desc:
+                return set()
+            names = getattr(stmt, "_names", None)
+            return {
+                (names[i].lower() if names and i < len(names) else str(meta.field).lower())
+                for i, meta in enumerate(out_desc)
+                if getattr(meta, "datatype", None) == 452  # SQLDataType.TEXT == CHAR
+            }
+        except Exception:
+            return set()
 
     def _build_query_result(self, cursor, data, duration):
         affected = getattr(cursor, "rowcount", 0)
