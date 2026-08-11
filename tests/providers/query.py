@@ -19,6 +19,9 @@ from rhosocial.activerecord.testsuite.feature.query.fixtures.cte_models import (
 from rhosocial.activerecord.testsuite.feature.query.fixtures.extended_models import (
     User as ExtUserBase, ExtendedOrder, ExtendedOrderItem,
 )
+from rhosocial.activerecord.testsuite.feature.basic.fixtures.models import (
+    OrderItem as CompositeOrderItem,
+)
 
 from rhosocial.activerecord.testsuite.feature.query.interfaces import (
     QueryProviderBase,
@@ -55,9 +58,10 @@ class QueryProviderBaseImpl(QueryProviderBase):
     def get_test_scenarios(self) -> List[str]:
         return list(get_enabled_scenarios().keys())
 
-    def _load_firebird_schema(self, filename: str) -> str:
+    def _load_firebird_schema(self, filename: str, schema_dir_name: str = "query") -> str:
         schema_dir = os.path.join(
-            os.path.dirname(__file__), "..", "rhosocial", "activerecord_firebird_test", "feature", "query", "schema"
+            os.path.dirname(__file__), "..", "rhosocial", "activerecord_firebird_test",
+            "feature", schema_dir_name, "schema",
         )
         schema_path = os.path.join(schema_dir, filename)
         if os.path.exists(schema_path):
@@ -76,27 +80,31 @@ class QuerySyncProvider(QueryProviderBaseImpl, IQuerySyncProvider, WorkerTestPro
             self._active_backends.append(backend)
 
     def _setup_model(
-        self, model_class: Type[ActiveRecord], scenario_name: str, table_name: str
+        self, model_class: Type[ActiveRecord], scenario_name: str, table_name: str,
+        schema_dir_name: str = "query",
     ) -> Type[ActiveRecord]:
         backend_class, config = get_scenario(scenario_name)
         model_class.configure(config, backend_class)
         backend = model_class.__backend__
         self._track_backend(backend)
-        self._reset_table_sync(backend, table_name)
+        self._reset_table_sync(backend, table_name, schema_dir_name)
         self._created_tables.add(table_name)
         return model_class
 
-    def _reset_table_sync(self, backend, table_name: str) -> None:
+    def _reset_table_sync(self, backend, table_name: str, schema_dir_name: str = "query") -> None:
         try:
             backend.execute(f"DROP TABLE {table_name}", fetch=False)
         except Exception:
             pass
-        schema = self._load_firebird_schema(f"{table_name}.sql")
+        schema = self._load_firebird_schema(f"{table_name}.sql", schema_dir_name)
         if schema.strip():
             backend.executescript(schema)
 
-    def _initialize_model_schema(self, model_class: Type[ActiveRecord], table_name: str) -> None:
-        self._reset_table_sync(model_class.__backend__, table_name)
+    def _initialize_model_schema(
+        self, model_class: Type[ActiveRecord], table_name: str,
+        schema_dir_name: str = "query",
+    ) -> None:
+        self._reset_table_sync(model_class.__backend__, table_name, schema_dir_name)
 
     def _setup_multiple_models(
         self, model_classes: List[Tuple[Type[ActiveRecord], str]], scenario_name: str
@@ -188,7 +196,7 @@ class QuerySyncProvider(QueryProviderBaseImpl, IQuerySyncProvider, WorkerTestPro
         ], scenario_name)
 
     def setup_order_item_model(self, scenario_name: str) -> Type[ActiveRecord]:
-        return self._setup_model(OrderItem, scenario_name, "order_items")
+        return self._setup_model(CompositeOrderItem, scenario_name, "order_items", "basic")
 
     def get_worker_connection_params(self, scenario_name: str, fixture_type: str = None) -> dict:
         from .scenarios import SCENARIO_MAP

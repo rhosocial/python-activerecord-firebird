@@ -78,6 +78,12 @@ def pytest_collection_modifyitems(items):
                 reason="Firebird TIMESTAMP precision is 100μs vs test's 1μs",
                 strict=False,
             ))
+        # EXPLAIN statement - Firebird has no equivalent EXPLAIN SQL
+        if func_name in ("test_explain", "test_explain_mysql", "test_explain_postgres"):
+            item.add_marker(pytest.mark.xfail(
+                reason="Firebird does not support the EXPLAIN statement",
+                strict=False,
+            ))
         # Optimistic lock - lock_version handling issue
         if func_name in ("test_optimistic_lock", "test_version_increment",
             "test_version_initializes_to_one_on_insert", "test_version_events_separation"):
