@@ -62,7 +62,17 @@ class AsyncFirebirdBackend(
                 running synchronous fdb operations. If not provided, the
                 default ``ThreadPoolExecutor`` is used.
         """
-        self._executor = executor
+        if executor is not None:
+            self._executor = executor
+        else:
+            # firebird-driver connections are not thread-safe. Use a
+            # single-worker thread pool so all synchronous fdb operations
+            # on the shared connection are serialized. A multi-threaded
+            # default pool allowed concurrent cursor.execute calls that
+            # segfaulted the C client under full-suite load.
+            from concurrent.futures import ThreadPoolExecutor
+            self._executor = ThreadPoolExecutor(max_workers=1)
+        self._op_lock = asyncio.Lock()
 
         connection_config = kwargs.get('connection_config')
         if connection_config is None:
