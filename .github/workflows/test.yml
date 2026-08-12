@@ -131,6 +131,23 @@ jobs:
           export PYTHONPATH=src:tests
           echo "=== DIAG: aggregate schema file ==="
           ls -la tests/rhosocial/activerecord_firebird_test/feature/query/schema/orders.sql
+          echo "=== DIAG: table structure ==="
+          python << 'PYEOF'
+          import firebird.driver as fdb
+          dsn = '127.0.0.1/${{ matrix.port }}:/var/lib/firebird/data/test_db'
+          conn = fdb.connect(database=dsn, user='SYSDBA', password='password', charset='UTF8')
+          cur = conn.cursor()
+          for tbl in ('ORDERS', 'USERS', 'ORDER_ITEMS'):
+              try:
+                  cur.execute(f"SELECT f.rdb\$field_name, t.rdb\$type_name, f.rdb\$field_length FROM rdb\$relation_fields f JOIN rdb\$fields t ON f.rdb\$field_source = t.rdb\$field_name WHERE f.rdb\$relation_name = '{tbl}'")
+                  rows = cur.fetchall()
+                  print(f'== {tbl}: {len(rows)} cols')
+                  for r in rows:
+                      print('  ', r[0], r[1], r[2])
+              except Exception as e:
+                  print(f'{tbl} query failed: {e}')
+          conn.close()
+          PYEOF
           echo "=== DIAG: run aggregate only ==="
           python -m pytest tests/rhosocial/activerecord_firebird_test/feature/query/aggregate/ --tb=short --maxfail=5 -rf
           echo "=== DIAG: full test run ==="
