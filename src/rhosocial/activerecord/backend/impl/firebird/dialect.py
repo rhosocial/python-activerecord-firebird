@@ -427,6 +427,27 @@ class FirebirdDialect(
             sql = f"{cast_sql} AS {alias_sql}" if alias_sql else cast_sql
         return sql, params
 
+    def format_window_function_call(self, call: "Any") -> Tuple[str, tuple]:
+        """Format a window function call, pinning SUM/AVG result types.
+
+        Mirrors :meth:`format_function_call`: Firebird 5/6-snapshot fails to
+        infer the result type of ``SUM``/``AVG`` over a DECIMAL column inside
+        a window expression, so wrap the whole ``SUM(...) OVER (...)`` call in
+        an explicit ``CAST(... AS DECIMAL(18,2))``.
+        """
+        sql, params = super().format_window_function_call(call)
+        function_name = getattr(call, "function_name", None)
+        if isinstance(function_name, str) and function_name.upper() in ("SUM", "AVG"):
+            alias_sql = ""
+            if " AS " in sql:
+                sql, alias_sql = sql.split(" AS ", 1)
+            cast_sql, params = self.format_cast_expression(
+                sql, "DECIMAL(18,2)", tuple(params), None
+            )
+            params = list(params)
+            sql = f"{cast_sql} AS {alias_sql}" if alias_sql else cast_sql
+        return sql, params
+
     def get_parameter_placeholder(self, position: int = 0) -> str:
         """Firebird uses ? as positional parameter placeholder."""
         return "?"
