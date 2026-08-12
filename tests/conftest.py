@@ -103,16 +103,18 @@ def pytest_collection_modifyitems(items):
         # Set operations with INTERSECT/EXCEPT keywords - Firebird does not
         # support these as standalone query operators (only UNION, or via
         # DSQL expression syntax). ActiveQuery/composite-PK variants are real
-        # failures; the plain test_set_operation_async passes via UNION.
+        # failures; the plain test_set_operation(_async) passes via UNION and
+        # must NOT be marked xfail.
         if func_name in ("test_intersect", "test_except_",
             "test_intersect_operation", "test_except_operation",
             "test_intersect_operator", "test_except_operator",
             "test_multiple_set_operations", "test_operator_precedence",
             "test_set_operation_chaining"):
-            item.add_marker(pytest.mark.xfail(
-                reason="Firebird does not support INTERSECT/EXCEPT query operators",
-                strict=False,
-            ))
+            if "test_set_operation.py" not in node_path and "test_set_operation_async.py" not in node_path:
+                item.add_marker(pytest.mark.xfail(
+                    reason="Firebird does not support INTERSECT/EXCEPT query operators",
+                    strict=False,
+                ))
 
 
 def _load_backend_config() -> FirebirdConnectionConfig:
