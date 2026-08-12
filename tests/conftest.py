@@ -1,7 +1,6 @@
 # tests/conftest.py
 """Pytest configuration for Firebird backend tests."""
 
-import gc
 import os
 
 import pytest
@@ -18,22 +17,38 @@ os.environ.setdefault(
 )
 
 
-@pytest.hookimpl(hookwrapper=True)
-def pytest_runtest_call(item):
-    """Force a controlled garbage collection around each test.
+@pytest.hookimpl(trylast=True)
+def pytest_configure(config):
+    """Harden firebird-driver destructors against GC after connection close.
 
-    firebird-driver 2.0.x aborts the process when a firebird Statement or
-    Cursor is garbage-collected after its connection has been closed, and
-    under full-suite load that GC runs unpredictably in a worker thread.
-    Disable the automatic cycle collector and collect at the test boundary
-    (while the provider's backend connections are still alive) so those
-    objects are released safely instead of during connection teardown.
+    firebird-driver 2.0.x Cursor.__del__ calls close() unconditionally when a
+    statement is still attached; once the owning connection has been closed
+    that close() aborts the process from inside the garbage collector, and
+    under full-suite load it runs in a worker thread. Wrap the destructor so
+    a failure to close during GC is swallowed instead of terminating pytest.
     """
-    gc.disable()
-    gc.collect()
-    yield
-    gc.disable()
-    gc.collect()
+    try:
+        from firebird.driver.core import Cursor
+
+        _orig_del = Cursor.__del__
+
+        def _safe_del(self):
+            # The original destructor calls close(), which releases the C
+            # result set through interfaces.ResultSet.close() and aborts the
+            # process when the owning connection is already closed
+            # (firebird-driver 2.0.x). Only run the real destructor while the
+            # connection is still alive; once the connection is gone, skip it
+            # and let the OS reclaim the native resources at process exit.
+            try:
+                connection = getattr(self, "_connection", None)
+                if connection is not None and not connection.is_closed():
+                    _orig_del(self)
+            except Exception:
+                pass
+
+        Cursor.__del__ = _safe_del
+    except Exception:
+        pass
 
 
 def pytest_collection_modifyitems(items):
