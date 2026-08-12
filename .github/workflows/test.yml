@@ -129,6 +129,11 @@ jobs:
       - name: Run tests
         run: |
           export PYTHONPATH=src:tests
+          echo "=== DIAG: aggregate schema file ==="
+          ls -la tests/rhosocial/activerecord_firebird_test/feature/query/schema/orders.sql
+          echo "=== DIAG: run aggregate only ==="
+          python -m pytest tests/rhosocial/activerecord_firebird_test/feature/query/aggregate/ --tb=short --maxfail=5 -rf
+          echo "=== DIAG: full test run ==="
           python -m pytest tests/ --tb=short --maxfail=10 -rf
 
       - name: Run tests with coverage (3.14 + 6-snapshot only)
