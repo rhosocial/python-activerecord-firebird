@@ -1,6 +1,7 @@
 # tests/conftest.py
 """Pytest configuration for Firebird backend tests."""
 
+import gc
 import os
 
 import pytest
@@ -15,6 +16,24 @@ os.environ.setdefault(
     "TESTSUITE_PROVIDER_REGISTRY",
     "providers.registry:provider_registry"
 )
+
+
+@pytest.hookimpl(hookwrapper=True)
+def pytest_runtest_call(item):
+    """Force a controlled garbage collection around each test.
+
+    firebird-driver 2.0.x aborts the process when a firebird Statement or
+    Cursor is garbage-collected after its connection has been closed, and
+    under full-suite load that GC runs unpredictably in a worker thread.
+    Disable the automatic cycle collector and collect at the test boundary
+    (while the provider's backend connections are still alive) so those
+    objects are released safely instead of during connection teardown.
+    """
+    gc.disable()
+    gc.collect()
+    yield
+    gc.disable()
+    gc.collect()
 
 
 def pytest_collection_modifyitems(items):
