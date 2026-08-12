@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import threading
 import time
 from concurrent.futures import Executor
 from typing import Optional, Tuple
@@ -41,6 +42,31 @@ from rhosocial.activerecord.backend.schema import StatementType
 from .config import FirebirdConnectionConfig
 from .mixins import FirebirdBackendMixin
 from .async_transaction import AsyncFirebirdTransactionManager
+
+
+_shared_executor_instance = None
+_shared_executor_lock = None
+
+
+def _shared_firebird_executor() -> "Executor":
+    """Return a process-wide single-worker executor for fdb operations.
+
+    Every ``AsyncFirebirdBackend`` that does not receive an explicit
+    executor shares this one worker thread. This keeps the number of
+    live threads constant (one) no matter how many backend instances the
+    suite creates and guarantees that all firebird-driver calls are
+    serialized process-wide, which avoids the libfbclient crashes seen
+    when many worker threads coexist.
+    """
+    global _shared_executor_instance, _shared_executor_lock
+    if _shared_executor_instance is None:
+        from concurrent.futures import ThreadPoolExecutor
+        if _shared_executor_lock is None:
+            _shared_executor_lock = threading.Lock()
+        with _shared_executor_lock:
+            if _shared_executor_instance is None:
+                _shared_executor_instance = ThreadPoolExecutor(max_workers=1)
+    return _shared_executor_instance
 
 
 class AsyncFirebirdBackend(
@@ -65,14 +91,14 @@ class AsyncFirebirdBackend(
         if executor is not None:
             self._executor = executor
         else:
-            # firebird-driver connections are not thread-safe. Use a
-            # single-worker thread pool so all synchronous fdb operations
-            # on the shared connection are serialized. A multi-threaded
-            # default pool allowed concurrent cursor.execute calls that
-            # segfaulted the C client under full-suite load.
-            from concurrent.futures import ThreadPoolExecutor
-            self._executor = ThreadPoolExecutor(max_workers=1)
-        self._op_lock = asyncio.Lock()
+            # firebird-driver / libfbclient are not thread-safe, and the
+            # crash surfaces both during concurrent execute and during GC of
+            # fdb objects while worker threads exist. Serialize every fdb
+            # operation through a single shared worker thread for the whole
+            # process so that (a) no two operations run concurrently and
+            # (b) the number of live threads stays constant regardless of how
+            # many backend instances the test suite creates.
+            self._executor = _shared_firebird_executor()
 
         connection_config = kwargs.get('connection_config')
         if connection_config is None:
