@@ -186,12 +186,22 @@ class AsyncFirebirdBackend(
             return False
         try:
             loop = asyncio.get_event_loop()
-            cursor = self._cursor or self._connection.cursor()
-            await loop.run_in_executor(
-                self._executor, lambda: cursor.execute("SELECT 1 FROM RDB$DATABASE")
-            )
-            await loop.run_in_executor(self._executor, cursor.fetchone)
-            return True
+            cursor = self._cursor
+            temp_cursor = cursor is None
+            if cursor is None:
+                cursor = self._connection.cursor()
+            try:
+                await loop.run_in_executor(
+                    self._executor, lambda: cursor.execute("SELECT 1 FROM RDB$DATABASE")
+                )
+                await loop.run_in_executor(self._executor, cursor.fetchone)
+                return True
+            finally:
+                if temp_cursor:
+                    try:
+                        await loop.run_in_executor(self._executor, cursor.close)
+                    except Exception:
+                        pass
         except Exception:
             if reconnect:
                 try:
