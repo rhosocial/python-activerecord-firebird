@@ -202,6 +202,12 @@ class AsyncFirebirdBackend(
                 version_str = str(desc[0][0]) if desc else "2.5.0"
             except Exception:
                 return (2, 5, 0)
+        finally:
+            if cursor is not self._cursor:
+                try:
+                    await loop.run_in_executor(self._executor, cursor.close)
+                except Exception:
+                    pass
         import re
         match = re.search(r'(\d+)\.(\d+)\.(\d+)', version_str)
         if match:
