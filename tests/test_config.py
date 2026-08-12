@@ -1,9 +1,7 @@
 # tests/test_config.py
 """Tests for FirebirdConnectionConfig."""
 
-import os
 
-import pytest
 
 from rhosocial.activerecord.backend.impl.firebird import FirebirdConnectionConfig
 

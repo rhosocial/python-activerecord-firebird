@@ -1,7 +1,6 @@
 # tests/test_dialect.py
 """Tests for FirebirdDialect SQL generation."""
 
-import pytest
 
 from rhosocial.activerecord.backend.impl.firebird import FirebirdDialect
 

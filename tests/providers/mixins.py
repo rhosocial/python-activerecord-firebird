@@ -14,7 +14,9 @@ from rhosocial.activerecord.testsuite.feature.mixins.fixtures.models import (
 from rhosocial.activerecord.testsuite.feature.mixins.interfaces import (
     MixinsProviderBase,
     IMixinsSyncProvider,
+    IMixinsAsyncProvider,
 )
+from rhosocial.activerecord.backend.impl.firebird import AsyncFirebirdBackend
 from .scenarios import get_enabled_scenarios, get_scenario
 
 logger = logging.getLogger(__name__)
@@ -95,6 +97,76 @@ class MixinsSyncProvider(MixinsProviderBaseImpl, IMixinsSyncProvider):
             finally:
                 try:
                     backend.disconnect()
+                except Exception:
+                    pass
+        self._active_backends.clear()
+        self._created_tables.clear()
+
+
+class MixinsAsyncProvider(MixinsProviderBaseImpl, IMixinsAsyncProvider):
+    """Async provider for the 'mixins' feature tests."""
+
+    def __init__(self):
+        super().__init__()
+        self._active_backends: List = []
+
+    async def _setup_model(
+        self, model_class: Type[ActiveRecord], scenario_name: str, table_name: str
+    ) -> Type[ActiveRecord]:
+        from rhosocial.activerecord.backend.options import ExecutionOptions
+        from rhosocial.activerecord.backend.schema import StatementType
+
+        _, config = get_scenario(scenario_name)
+        await model_class.configure(config, AsyncFirebirdBackend)
+        backend = model_class.__backend__
+        if backend not in self._active_backends:
+            self._active_backends.append(backend)
+        ddl = ExecutionOptions(stmt_type=StatementType.DDL, process_result_set=False)
+        try:
+            await backend.execute(f"DROP TABLE {table_name}", options=ddl)
+        except Exception:
+            pass
+        schema = self._load_firebird_schema(f"{table_name}.sql")
+        if schema.strip():
+            await backend.executescript(schema)
+        self._created_tables.add(table_name)
+        return model_class
+
+    async def setup_timestamped_post_model(self, scenario_name: str) -> Type[ActiveRecord]:
+        from rhosocial.activerecord.testsuite.feature.mixins.fixtures.models import AsyncTimestampedPost
+
+        return await self._setup_model(AsyncTimestampedPost, scenario_name, "timestamped_posts")
+
+    async def setup_versioned_product_model(self, scenario_name: str) -> Type[ActiveRecord]:
+        from rhosocial.activerecord.testsuite.feature.mixins.fixtures.models import AsyncVersionedProduct
+
+        return await self._setup_model(AsyncVersionedProduct, scenario_name, "versioned_products")
+
+    async def setup_task_model(self, scenario_name: str) -> Type[ActiveRecord]:
+        from rhosocial.activerecord.testsuite.feature.mixins.fixtures.models import AsyncTask
+
+        return await self._setup_model(AsyncTask, scenario_name, "tasks")
+
+    async def setup_combined_article_model(self, scenario_name: str) -> Type[ActiveRecord]:
+        from rhosocial.activerecord.testsuite.feature.mixins.fixtures.models import AsyncCombinedArticle
+
+        return await self._setup_model(AsyncCombinedArticle, scenario_name, "combined_articles")
+
+    async def cleanup_after_test(self, scenario_name: str):
+        from rhosocial.activerecord.backend.options import ExecutionOptions
+        from rhosocial.activerecord.backend.schema import StatementType
+
+        ddl = ExecutionOptions(stmt_type=StatementType.DDL, process_result_set=False)
+        for backend in self._active_backends:
+            try:
+                for table_name in list(self._created_tables):
+                    try:
+                        await backend.execute(f"DROP TABLE {table_name}", options=ddl)
+                    except Exception:
+                        pass
+            finally:
+                try:
+                    await backend.disconnect()
                 except Exception:
                     pass
         self._active_backends.clear()

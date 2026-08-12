@@ -26,7 +26,9 @@ from rhosocial.activerecord.testsuite.feature.basic.fixtures.models import (
 from rhosocial.activerecord.testsuite.feature.query.interfaces import (
     QueryProviderBase,
     IQuerySyncProvider,
+    IQueryAsyncProvider,
 )
+from rhosocial.activerecord.backend.impl.firebird import AsyncFirebirdBackend
 from rhosocial.activerecord.testsuite.core.protocols import WorkerTestProtocol
 from .scenarios import get_enabled_scenarios, get_scenario
 
@@ -142,14 +144,18 @@ class QuerySyncProvider(QueryProviderBaseImpl, IQuerySyncProvider, WorkerTestPro
             [(User, "users"), (Comment, "comments")], scenario_name
         )
 
-    def setup_order_fixtures(self, scenario_name: str) -> Tuple[Type[ActiveRecord], Type[ActiveRecord], Type[ActiveRecord]]:
+    def setup_order_fixtures(
+        self, scenario_name: str
+    ) -> Tuple[Type[ActiveRecord], Type[ActiveRecord], Type[ActiveRecord]]:
         return self._setup_multiple_models([
             (User, "users"),
             (Order, "orders"),
             (OrderItem, "order_items"),
         ], scenario_name)
 
-    def setup_blog_fixtures(self, scenario_name: str) -> Tuple[Type[ActiveRecord], Type[ActiveRecord], Type[ActiveRecord]]:
+    def setup_blog_fixtures(
+        self, scenario_name: str
+    ) -> Tuple[Type[ActiveRecord], Type[ActiveRecord], Type[ActiveRecord]]:
         return self._setup_multiple_models([
             (User, "users"),
             (Post, "posts"),
@@ -159,14 +165,21 @@ class QuerySyncProvider(QueryProviderBaseImpl, IQuerySyncProvider, WorkerTestPro
     def setup_json_user_fixtures(self, scenario_name: str) -> Tuple[Type[ActiveRecord], ...]:
         return (self._setup_model(JsonUser, scenario_name, "json_users"),)
 
-    def setup_extended_order_fixtures(self, scenario_name: str) -> Tuple[Type[ActiveRecord], Type[ActiveRecord], Type[ActiveRecord]]:
+    def setup_extended_order_fixtures(
+        self, scenario_name: str
+    ) -> Tuple[Type[ActiveRecord], Type[ActiveRecord], Type[ActiveRecord]]:
         return self._setup_multiple_models([
             (ExtUser, "users"),
             (ExtendedOrder, "extended_orders"),
             (ExtendedOrderItem, "extended_order_items"),
         ], scenario_name)
 
-    def setup_combined_fixtures(self, scenario_name: str) -> Tuple[Type[ActiveRecord], Type[ActiveRecord], Type[ActiveRecord], Type[ActiveRecord], Type[ActiveRecord]]:
+    def setup_combined_fixtures(
+        self, scenario_name: str
+    ) -> Tuple[
+        Type[ActiveRecord], Type[ActiveRecord], Type[ActiveRecord],
+        Type[ActiveRecord], Type[ActiveRecord],
+    ]:
         return self._setup_multiple_models([
             (User, "users"),
             (Order, "orders"),
@@ -181,7 +194,9 @@ class QuerySyncProvider(QueryProviderBaseImpl, IQuerySyncProvider, WorkerTestPro
             (SearchableItem, "searchable_items"),
         ], scenario_name)
 
-    def setup_mapped_models(self, scenario_name: str) -> Tuple[Type[ActiveRecord], Type[ActiveRecord], Type[ActiveRecord]]:
+    def setup_mapped_models(
+        self, scenario_name: str
+    ) -> Tuple[Type[ActiveRecord], Type[ActiveRecord], Type[ActiveRecord]]:
         return self._setup_multiple_models([
             (MappedUser, "users"),
             (MappedPost, "posts"),
@@ -228,6 +243,202 @@ class QuerySyncProvider(QueryProviderBaseImpl, IQuerySyncProvider, WorkerTestPro
             finally:
                 try:
                     backend.disconnect()
+                except Exception:
+                    pass
+        self._active_backends.clear()
+        self._created_tables.clear()
+
+
+class QueryAsyncProvider(QueryProviderBaseImpl, IQueryAsyncProvider):
+    """Async provider for the 'query' feature tests."""
+
+    def __init__(self):
+        super().__init__()
+        self._active_backends: List = []
+
+    async def _setup_model(
+        self, model_class: Type[ActiveRecord], scenario_name: str, table_name: str,
+        schema_dir_name: str = "query",
+    ) -> Type[ActiveRecord]:
+        from rhosocial.activerecord.backend.options import ExecutionOptions
+        from rhosocial.activerecord.backend.schema import StatementType
+
+        _, config = get_scenario(scenario_name)
+        await model_class.configure(config, AsyncFirebirdBackend)
+        backend = model_class.__backend__
+        if backend not in self._active_backends:
+            self._active_backends.append(backend)
+        ddl = ExecutionOptions(stmt_type=StatementType.DDL, process_result_set=False)
+        try:
+            await backend.execute(f"DROP TABLE {table_name}", options=ddl)
+        except Exception:
+            pass
+        schema = self._load_firebird_schema(f"{table_name}.sql", schema_dir_name)
+        if schema.strip():
+            await backend.executescript(schema)
+        self._created_tables.add(table_name)
+        return model_class
+
+    async def _setup_multiple_models(
+        self, model_classes: List[Tuple[Type[ActiveRecord], str]], scenario_name: str,
+    ) -> Tuple[Type[ActiveRecord], ...]:
+        if not model_classes:
+            return tuple()
+        first_model_class, first_table_name = model_classes[0]
+        first_model = await self._setup_model(first_model_class, scenario_name, first_table_name)
+        shared_backend = first_model.__backend__
+        from rhosocial.activerecord.backend.options import ExecutionOptions
+        from rhosocial.activerecord.backend.schema import StatementType
+
+        ddl = ExecutionOptions(stmt_type=StatementType.DDL, process_result_set=False)
+        result = [first_model]
+        for model_class, table_name in model_classes[1:]:
+            model_class.__connection_config__ = first_model.__connection_config__
+            model_class.__backend_class__ = first_model.__backend_class__
+            model_class.__backend__ = shared_backend
+            if shared_backend not in self._active_backends:
+                self._active_backends.append(shared_backend)
+            try:
+                await shared_backend.execute(f"DROP TABLE {table_name}", options=ddl)
+            except Exception:
+                pass
+            schema = self._load_firebird_schema(f"{table_name}.sql")
+            if schema.strip():
+                await shared_backend.executescript(schema)
+            self._created_tables.add(table_name)
+            result.append(model_class)
+        return tuple(result)
+
+    async def setup_order_fixtures(
+        self, scenario_name: str
+    ) -> Tuple[Type[ActiveRecord], Type[ActiveRecord], Type[ActiveRecord]]:
+        from rhosocial.activerecord.testsuite.feature.query.fixtures.async_models import (
+            AsyncUser,
+            AsyncOrder,
+            AsyncOrderItem,
+        )
+
+        return await self._setup_multiple_models(
+            [(AsyncUser, "users"), (AsyncOrder, "orders"), (AsyncOrderItem, "order_items")], scenario_name
+        )
+
+    async def setup_blog_fixtures(
+        self, scenario_name: str
+    ) -> Tuple[Type[ActiveRecord], Type[ActiveRecord], Type[ActiveRecord]]:
+        from rhosocial.activerecord.testsuite.feature.query.fixtures.async_blog_models import AsyncPost, AsyncComment
+        from rhosocial.activerecord.testsuite.feature.query.fixtures.async_models import AsyncUser
+
+        return await self._setup_multiple_models(
+            [(AsyncUser, "users"), (AsyncPost, "posts"), (AsyncComment, "comments")], scenario_name
+        )
+
+    async def setup_json_user_fixtures(self, scenario_name: str) -> Tuple[Type[ActiveRecord], ...]:
+        import pytest
+        from rhosocial.activerecord.testsuite.feature.query.fixtures.async_json_models import AsyncJsonUser
+
+        _, config = get_scenario(scenario_name)
+        await AsyncJsonUser.configure(config, AsyncFirebirdBackend)
+        backend = AsyncJsonUser.__backend__
+        if backend not in self._active_backends:
+            self._active_backends.append(backend)
+        if not backend.dialect.supports_json_type():
+            pytest.skip(f"JSON type not supported by Firebird {backend.dialect.version}")
+        return (await self._setup_model(AsyncJsonUser, scenario_name, "json_users"),)
+
+    async def setup_tree_fixtures(self, scenario_name: str) -> Tuple[Type[ActiveRecord], ...]:
+        from rhosocial.activerecord.testsuite.feature.query.fixtures.async_cte_models import AsyncNode
+
+        return (await self._setup_model(AsyncNode, scenario_name, "nodes"),)
+
+    async def setup_extended_order_fixtures(
+        self, scenario_name: str
+    ) -> Tuple[Type[ActiveRecord], Type[ActiveRecord], Type[ActiveRecord]]:
+        from rhosocial.activerecord.testsuite.feature.query.fixtures.async_extended_models import (
+            AsyncUser,
+            AsyncExtendedOrder,
+            AsyncExtendedOrderItem,
+        )
+
+        return await self._setup_multiple_models(
+            [
+                (AsyncUser, "users"),
+                (AsyncExtendedOrder, "extended_orders"),
+                (AsyncExtendedOrderItem, "extended_order_items"),
+            ],
+            scenario_name,
+        )
+
+    async def setup_combined_fixtures(
+        self, scenario_name: str
+    ) -> Tuple[Type[ActiveRecord], Type[ActiveRecord], Type[ActiveRecord], Type[ActiveRecord], Type[ActiveRecord]]:
+        from rhosocial.activerecord.testsuite.feature.query.fixtures.async_models import (
+            AsyncUser,
+            AsyncOrder,
+            AsyncOrderItem,
+        )
+        from rhosocial.activerecord.testsuite.feature.query.fixtures.async_blog_models import AsyncPost, AsyncComment
+
+        return await self._setup_multiple_models(
+            [
+                (AsyncUser, "users"),
+                (AsyncOrder, "orders"),
+                (AsyncOrderItem, "order_items"),
+                (AsyncPost, "posts"),
+                (AsyncComment, "comments"),
+            ],
+            scenario_name,
+        )
+
+    async def setup_annotated_query_fixtures(self, scenario_name: str) -> Tuple[Type[ActiveRecord], ...]:
+        from rhosocial.activerecord.testsuite.feature.query.fixtures.async_annotated_adapter_models import (
+            AsyncSearchableItem,
+        )
+
+        return await self._setup_multiple_models([(AsyncSearchableItem, "searchable_items")], scenario_name)
+
+    async def setup_mapped_models(
+        self, scenario_name: str
+    ) -> Tuple[Type[ActiveRecord], Type[ActiveRecord], Type[ActiveRecord]]:
+        from rhosocial.activerecord.testsuite.feature.query.fixtures.models import (
+            AsyncMappedUser,
+            AsyncMappedPost,
+            AsyncMappedComment,
+        )
+
+        return await self._setup_multiple_models(
+            [(AsyncMappedUser, "users"), (AsyncMappedPost, "posts"), (AsyncMappedComment, "comments")], scenario_name
+        )
+
+    async def setup_profile_fixtures(
+        self, scenario_name: str
+    ) -> Tuple[Type[ActiveRecord], Type[ActiveRecord]]:
+        from rhosocial.activerecord.testsuite.feature.query.fixtures.async_models import (
+            AsyncUser,
+            AsyncProfile,
+        )
+
+        return await self._setup_multiple_models([(AsyncUser, "users"), (AsyncProfile, "profiles")], scenario_name)
+
+    async def setup_order_item_model(self, scenario_name: str) -> Type[ActiveRecord]:
+        from rhosocial.activerecord.testsuite.feature.basic.fixtures.models import AsyncOrderItem
+
+        return await self._setup_model(AsyncOrderItem, scenario_name, "order_items", "basic")
+
+    async def cleanup_after_test(self, scenario_name: str):
+        from rhosocial.activerecord.backend.options import ExecutionOptions
+        from rhosocial.activerecord.backend.schema import StatementType
+
+        ddl = ExecutionOptions(stmt_type=StatementType.DDL, process_result_set=False)
+        for backend in self._active_backends:
+            try:
+                for table_name in list(self._created_tables):
+                    try:
+                        await backend.execute(f"DROP TABLE {table_name}", options=ddl)
+                    except Exception:
+                        pass
+            finally:
+                try:
+                    await backend.disconnect()
                 except Exception:
                     pass
         self._active_backends.clear()

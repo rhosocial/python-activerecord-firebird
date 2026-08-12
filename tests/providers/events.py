@@ -12,7 +12,9 @@ from rhosocial.activerecord.testsuite.feature.events.fixtures.models import (
 from rhosocial.activerecord.testsuite.feature.events.interfaces import (
     EventsProviderBase,
     IEventsSyncProvider,
+    IEventsAsyncProvider,
 )
+from rhosocial.activerecord.backend.impl.firebird import AsyncFirebirdBackend
 from .scenarios import get_enabled_scenarios, get_scenario
 
 logger = logging.getLogger(__name__)
@@ -85,6 +87,66 @@ class EventsSyncProvider(EventsProviderBaseImpl, IEventsSyncProvider):
             finally:
                 try:
                     backend.disconnect()
+                except Exception:
+                    pass
+        self._active_backends.clear()
+        self._created_tables.clear()
+
+
+class EventsAsyncProvider(EventsProviderBaseImpl, IEventsAsyncProvider):
+    """Async provider for the 'events' feature tests."""
+
+    def __init__(self):
+        super().__init__()
+        self._active_backends: List = []
+
+    async def _setup_model(
+        self, model_class: Type[ActiveRecord], scenario_name: str, table_name: str
+    ) -> Type[ActiveRecord]:
+        from rhosocial.activerecord.backend.options import ExecutionOptions
+        from rhosocial.activerecord.backend.schema import StatementType
+
+        _, config = get_scenario(scenario_name)
+        await model_class.configure(config, AsyncFirebirdBackend)
+        backend = model_class.__backend__
+        if backend not in self._active_backends:
+            self._active_backends.append(backend)
+        ddl = ExecutionOptions(stmt_type=StatementType.DDL, process_result_set=False)
+        try:
+            await backend.execute(f"DROP TABLE {table_name}", options=ddl)
+        except Exception:
+            pass
+        schema = self._load_firebird_schema(f"{table_name}.sql")
+        if schema.strip():
+            await backend.executescript(schema)
+        self._created_tables.add(table_name)
+        return model_class
+
+    async def setup_event_model(self, scenario_name: str) -> Type[ActiveRecord]:
+        from rhosocial.activerecord.testsuite.feature.events.fixtures.models import AsyncEventTestModel
+
+        return await self._setup_model(AsyncEventTestModel, scenario_name, "event_tests")
+
+    async def setup_event_tracking_model(self, scenario_name: str) -> Type[ActiveRecord]:
+        from rhosocial.activerecord.testsuite.feature.events.fixtures.models import EventTrackingModel
+
+        return await self._setup_model(EventTrackingModel, scenario_name, "event_tracking_models")
+
+    async def cleanup_after_test(self, scenario_name: str):
+        from rhosocial.activerecord.backend.options import ExecutionOptions
+        from rhosocial.activerecord.backend.schema import StatementType
+
+        ddl = ExecutionOptions(stmt_type=StatementType.DDL, process_result_set=False)
+        for backend in self._active_backends:
+            try:
+                for table_name in list(self._created_tables):
+                    try:
+                        await backend.execute(f"DROP TABLE {table_name}", options=ddl)
+                    except Exception:
+                        pass
+            finally:
+                try:
+                    await backend.disconnect()
                 except Exception:
                     pass
         self._active_backends.clear()

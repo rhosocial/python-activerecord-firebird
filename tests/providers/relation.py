@@ -1,5 +1,4 @@
 # tests/providers/relation.py
-import os
 import logging
 from typing import Dict, List, Tuple, Type, Set
 
@@ -7,7 +6,9 @@ from rhosocial.activerecord.model import ActiveRecord
 from rhosocial.activerecord.testsuite.feature.relation.interfaces import (
     RelationProviderBase,
     IRelationSyncProvider,
+    IRelationAsyncProvider,
 )
+from rhosocial.activerecord.backend.impl.firebird import AsyncFirebirdBackend
 from rhosocial.activerecord.testsuite.feature.relation.fixtures.models import (
     Employee,
     Department,
@@ -21,6 +22,12 @@ from rhosocial.activerecord.testsuite.feature.relation.fixtures.models import (
     BoundaryOwner,
     BoundaryProfile,
     BoundaryPost,
+    AsyncUser,
+    AsyncPost,
+    AsyncComment,
+    AsyncBoundaryOwner,
+    AsyncBoundaryProfile,
+    AsyncBoundaryPost,
 )
 from .scenarios import get_enabled_scenarios, get_scenario
 
@@ -286,3 +293,164 @@ class RelationSyncProvider(RelationProviderBaseImpl, IRelationSyncProvider):
         self._active_backends.clear()
         self._created_tables.clear()
         self._reset_sync_setup_state()
+
+
+class RelationAsyncProvider(RelationProviderBaseImpl, IRelationAsyncProvider):
+    """Async provider for the 'relation' feature tests."""
+
+    def __init__(self):
+        super().__init__()
+        self._active_backends: List = []
+        self._async_user_post_comment_setup = False
+        self._async_relation_boundary_setup = False
+
+    async def _execute_script(self, backend, sql: str):
+        from rhosocial.activerecord.backend.options import ExecutionOptions
+        from rhosocial.activerecord.backend.schema import StatementType
+
+        ddl = ExecutionOptions(stmt_type=StatementType.DDL, process_result_set=False)
+        for statement in sql.split(";"):
+            statement = statement.strip()
+            if statement:
+                try:
+                    await backend.execute(statement, options=ddl)
+                except Exception as exc:
+                    msg = str(exc)
+                    if "already exists" in msg or "-607" in msg or "Table" in msg and "exists" in msg:
+                        continue
+                    raise
+
+    async def _setup_employee_department(self, scenario_name):
+        _, config = get_scenario(scenario_name)
+        await Employee.configure(config, AsyncFirebirdBackend)
+        backend = Employee.__backend__
+        await backend.connect()
+        await backend.introspect_and_adapt()
+        self._active_backends.append(backend)
+        await self._execute_script(backend, EMPLOYEE_DEPARTMENT_SCHEMA)
+        self._configure_with_shared_backend(Department, config, AsyncFirebirdBackend, backend)
+        self._created_tables.update(["employees", "departments"])
+        return Employee, Department
+
+    async def _setup_author_book(self, scenario_name):
+        _, config = get_scenario(scenario_name)
+        await Author.configure(config, AsyncFirebirdBackend)
+        backend = Author.__backend__
+        await backend.connect()
+        await backend.introspect_and_adapt()
+        self._active_backends.append(backend)
+        await self._execute_script(backend, AUTHOR_BOOK_SCHEMA)
+        self._configure_with_shared_backend(Book, config, AsyncFirebirdBackend, backend)
+        self._configure_with_shared_backend(Chapter, config, AsyncFirebirdBackend, backend)
+        self._configure_with_shared_backend(Profile, config, AsyncFirebirdBackend, backend)
+        self._created_tables.update(["authors", "books", "chapters", "profiles"])
+        return Author, Book, Chapter, Profile
+
+    async def _setup_user_post_comment_sync(self, scenario_name):
+        if not self._async_user_post_comment_setup:
+            _, config = get_scenario(scenario_name)
+            await AsyncUser.configure(config, AsyncFirebirdBackend)
+            backend = AsyncUser.__backend__
+            await backend.connect()
+            await backend.introspect_and_adapt()
+            self._active_backends.append(backend)
+            await self._execute_script(backend, USER_POST_COMMENT_SCHEMA)
+            self._configure_with_shared_backend(AsyncPost, config, AsyncFirebirdBackend, backend)
+            self._configure_with_shared_backend(AsyncComment, config, AsyncFirebirdBackend, backend)
+            self._async_user_post_comment_setup = True
+            self._created_tables.update(["users", "posts", "comments"])
+
+    async def _setup_relation_boundary_sync(self, scenario_name):
+        if not self._async_relation_boundary_setup:
+            _, config = get_scenario(scenario_name)
+            await AsyncBoundaryOwner.configure(config, AsyncFirebirdBackend)
+            backend = AsyncBoundaryOwner.__backend__
+            await backend.connect()
+            await backend.introspect_and_adapt()
+            self._active_backends.append(backend)
+            await self._execute_script(backend, RELATION_BOUNDARY_SCHEMA)
+            self._configure_with_shared_backend(AsyncBoundaryProfile, config, AsyncFirebirdBackend, backend)
+            self._configure_with_shared_backend(AsyncBoundaryPost, config, AsyncFirebirdBackend, backend)
+            self._async_relation_boundary_setup = True
+            self._created_tables.update(
+                ["relation_boundary_owners", "relation_boundary_profiles", "relation_boundary_posts"]
+            )
+
+    async def setup_employee_department_fixtures(
+        self, scenario_name: str
+    ) -> Tuple[Type[ActiveRecord], Type[ActiveRecord]]:
+        return await self._setup_employee_department(scenario_name)
+
+    async def setup_author_book_fixtures(
+        self, scenario_name: str
+    ) -> Tuple[Type[ActiveRecord], Type[ActiveRecord], Type[ActiveRecord], Type[ActiveRecord]]:
+        return await self._setup_author_book(scenario_name)
+
+    async def setup_user_model(self, scenario_name: str) -> Type[ActiveRecord]:
+        await self._setup_user_post_comment_sync(scenario_name)
+        return AsyncUser
+
+    async def setup_post_model(self, scenario_name: str) -> Type[ActiveRecord]:
+        await self._setup_user_post_comment_sync(scenario_name)
+        return AsyncPost
+
+    async def setup_comment_model(self, scenario_name: str) -> Type[ActiveRecord]:
+        await self._setup_user_post_comment_sync(scenario_name)
+        return AsyncComment
+
+    async def setup_relation_boundary_fixtures(
+        self, scenario_name: str
+    ) -> Tuple[Type[ActiveRecord], Type[ActiveRecord], Type[ActiveRecord]]:
+        await self._setup_relation_boundary_sync(scenario_name)
+        return AsyncBoundaryOwner, AsyncBoundaryProfile, AsyncBoundaryPost
+
+    async def load_relation_boundary_dataset(self, scenario_name: str, dataset_name: str) -> Dict[str, int]:
+        await self._setup_relation_boundary_sync(scenario_name)
+        if dataset_name == "null_foreign_key":
+            profile = AsyncBoundaryProfile(bio="No owner", owner_id=None)
+            await profile.save()
+            return {"profile_id": profile.id}
+        if dataset_name == "orphan_foreign_key":
+            missing_owner_id = 999999
+            post = AsyncBoundaryPost(title="Orphan post", owner_id=missing_owner_id)
+            await post.save()
+            return {"post_id": post.id, "missing_owner_id": missing_owner_id}
+        if dataset_name == "owner_without_children":
+            owner = AsyncBoundaryOwner(name="Owner without children")
+            await owner.save()
+            return {"owner_id": owner.id}
+        if dataset_name == "multiple_has_one_matches":
+            owner = AsyncBoundaryOwner(name="Owner with duplicate profiles")
+            await owner.save()
+            first = AsyncBoundaryProfile(bio="First profile", owner_id=owner.id)
+            await first.save()
+            second = AsyncBoundaryProfile(bio="Second profile", owner_id=owner.id)
+            await second.save()
+            return {
+                "owner_id": owner.id,
+                "first_profile_id": first.id,
+                "second_profile_id": second.id,
+            }
+        raise ValueError(f"Unknown relation boundary dataset: {dataset_name}")
+
+    async def cleanup_after_test(self, scenario_name: str):
+        from rhosocial.activerecord.backend.options import ExecutionOptions
+        from rhosocial.activerecord.backend.schema import StatementType
+
+        ddl = ExecutionOptions(stmt_type=StatementType.DDL, process_result_set=False)
+        for backend in self._active_backends:
+            try:
+                for table_name in list(self._created_tables):
+                    try:
+                        await backend.execute(f"DROP TABLE {table_name}", options=ddl)
+                    except Exception:
+                        pass
+            finally:
+                try:
+                    await backend.disconnect()
+                except Exception:
+                    pass
+        self._active_backends.clear()
+        self._created_tables.clear()
+        self._async_user_post_comment_setup = False
+        self._async_relation_boundary_setup = False

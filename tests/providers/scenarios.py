@@ -69,7 +69,7 @@ def _load_scenarios_from_config():
             register_scenario(scenario_name, config)
 
     except ImportError:
-        raise ImportError("PyYAML is required to load Firebird scenario configuration files")
+        raise ImportError("PyYAML is required to load Firebird scenario configuration files") from None
 
 
 def _register_default_scenarios():

@@ -9,7 +9,7 @@ CREATE TABLE extended_orders (
     category VARCHAR(255),
     product VARCHAR(255),
     department VARCHAR(255),
-    "year" VARCHAR(10),
+    "YEAR" VARCHAR(10),
     quarter VARCHAR(10),
     created_at TIMESTAMP,
     updated_at TIMESTAMP

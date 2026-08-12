@@ -2,7 +2,6 @@
 """Pytest configuration for Firebird backend tests."""
 
 import os
-from typing import Optional
 
 import pytest
 
@@ -23,57 +22,25 @@ def pytest_collection_modifyitems(items):
     for item in items:
         func_name = getattr(getattr(item, 'function', None), '__name__', '')
         node_path = str(item.nodeid)
-        # Async tests - not supported by Firebird backend
-        if "Async" in func_name or "async" in func_name or "Async" in node_path or "async" in node_path:
-            item.add_marker(pytest.mark.xfail(
-                reason="Firebird backend does not support async operations",
-                strict=False,
-            ))
-        # INTERSECT/EXCEPT - not supported in Firebird SQL
-        if "intersect" in node_path.lower() or "except_" in node_path.lower():
-            item.add_marker(pytest.mark.xfail(
-                reason="Firebird does not support INTERSECT/EXCEPT set operations",
-                strict=False,
-            ))
-        # Window functions - not fully supported in Firebird
-        if "window_function" in node_path.lower() or "test_window_functions" in node_path.lower():
-            item.add_marker(pytest.mark.xfail(
-                reason="Firebird window function support is limited",
-                strict=False,
-            ))
         # Recursive queries
         if "recursive_query" in node_path.lower():
             item.add_marker(pytest.mark.xfail(
                 reason="Firebird recursive CTE support needs dialect configuration",
                 strict=False,
             ))
-        # Aggregate type inference issues in Firebird backend
-        if func_name in ("test_sum_simple", "test_sum_with_column",
-            "test_aggregate_with_where_condition", "test_aggregate_complex",
-            "test_aggregate_multiple_fields", "test_aggregate_with_conditions",
-            "test_sync_aggregate_operations", "test_parallel_aggregate_queries",
-            "test_common_sql_standard_features", "test_aggregation_compatibility"):
-            item.add_marker(pytest.mark.xfail(
-                reason="Firebird backend aggregate type inference issue",
-                strict=False,
-            ))
         # CTE query issues - Firebird CTE and LIMIT/FETCH NEXT differences
         if func_name in ("test_single_active_query_cte", "test_multiple_active_query_cte",
             "test_cte_with_basic_query_conditions", "test_cte_with_range_conditions",
-            "test_cte_with_joins", "test_cte_with_union_and_extended_conditions"):
+            "test_cte_with_joins", "test_cte_with_union_and_extended_conditions",
+            "test_cte_with_intersect_of_active_queries", "test_cte_with_except_of_active_queries",
+            "test_cte_with_intersect_and_range_conditions", "test_cte_with_except_and_join_conditions",
+            "test_cte_query_intersect_with_active_query", "test_cte_query_except_with_active_query"):
             item.add_marker(pytest.mark.xfail(
                 reason="Firebird CTE syntax differs from test expectations",
                 strict=False,
             ))
-        # Set operations - Firebird limitations with UNION/INTERSECT/EXCEPT
-        if func_name in ("test_multiple_set_operations", "test_set_operation_chaining",
-            "test_operator_precedence"):
-            item.add_marker(pytest.mark.xfail(
-                reason="Firebird set operation support is limited",
-                strict=False,
-            ))
         # TIMESTAMP precision - Firebird has 100μs, tests expect 1μs
-        if func_name in ("test_datetime_field", "test_soft_delete_basic"):
+        if func_name == "test_datetime_field":
             item.add_marker(pytest.mark.xfail(
                 reason="Firebird TIMESTAMP precision is 100μs vs test's 1μs",
                 strict=False,
@@ -84,32 +51,8 @@ def pytest_collection_modifyitems(items):
                 reason="Firebird does not support the EXPLAIN statement",
                 strict=False,
             ))
-        # Optimistic lock - lock_version handling issue
-        if func_name in ("test_optimistic_lock", "test_version_increment",
-            "test_version_initializes_to_one_on_insert", "test_version_events_separation"):
-            item.add_marker(pytest.mark.xfail(
-                reason="Firebird backend lock_version handling needs fix",
-                strict=False,
-            ))
-        # Combined articles with locking
-        if func_name in ("test_combined_update", "test_combined_delete",
-            "test_combined_concurrent_update"):
-            item.add_marker(pytest.mark.xfail(
-                reason="Firebird backend combined mixin locking issue",
-                strict=False,
-            ))
-        # Special character handling
-        if func_name == "test_special_character_full_matrix":
-            item.add_marker(pytest.mark.xfail(
-                reason="Firebird CHAR padding behavior differs",
-                strict=False,
-            ))
-        # Type adapter tests - SQL generation differences in Firebird
-        if func_name in ("test_optional_string_conversion", "test_optional_int_conversion",
-            "test_optional_datetime_conversion", "test_optional_bool_conversion",
-            "test_non_optional_field_no_regression",
-            "test_db_null_with_non_optional_field_raises_error",
-            "test_annotated_custom_adapter", "test_optional_annotated_custom_adapter"):
+        # Type adapter tests - db_null with non-optional field raises error in Firebird
+        if func_name == "test_db_null_with_non_optional_field_raises_error":
             item.add_marker(pytest.mark.xfail(
                 reason="Firebird backend type adapter SQL generation differences",
                 strict=False,
@@ -120,6 +63,20 @@ def pytest_collection_modifyitems(items):
         if func_name == "test_select_append_true":
             item.add_marker(pytest.mark.xfail(
                 reason="Firebird uppercases identifiers in generated SQL",
+                strict=False,
+            ))
+
+        # Set operations with INTERSECT/EXCEPT keywords - Firebird does not
+        # support these as standalone query operators (only UNION, or via
+        # DSQL expression syntax). ActiveQuery/composite-PK variants are real
+        # failures; the plain test_set_operation_async passes via UNION.
+        if func_name in ("test_intersect", "test_except_",
+            "test_intersect_operation", "test_except_operation",
+            "test_intersect_operator", "test_except_operator",
+            "test_multiple_set_operations", "test_operator_precedence",
+            "test_set_operation_chaining"):
+            item.add_marker(pytest.mark.xfail(
+                reason="Firebird does not support INTERSECT/EXCEPT query operators",
                 strict=False,
             ))
 
