@@ -281,6 +281,16 @@ class AsyncFirebirdBackend(
 
     async def _handle_error(self, error: Exception) -> None:
         """Handle and classify a Firebird error."""
+        # A failed statement leaves the cursor with an attached firebird
+        # Statement; closing it here avoids a GC-time abort in a worker thread
+        # once the connection is gone (firebird-driver 2.0.x behaviour).
+        try:
+            if self._cursor is not None:
+                loop = asyncio.get_event_loop()
+                await loop.run_in_executor(self._executor, self._cursor.close)
+        except Exception:
+            pass
+        self._cursor = None
         FirebirdBackendMixin._handle_error(self, error)
 
     # ------------------------------------------------------------------

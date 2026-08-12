@@ -165,6 +165,17 @@ class FirebirdBackend(
         try:
             return super().execute(sql, params, options=options)
         except Exception as e:
+            # A failed statement leaves the cursor in an errored state with an
+            # active firebird Statement attached. Closing it now prevents that
+            # statement from being garbage-collected later (which, under the
+            # firebird-driver 2.0.x, aborts the process when the connection has
+            # already been closed and GC runs in a worker thread).
+            try:
+                if self._cursor is not None:
+                    self._cursor.close()
+            except Exception:
+                pass
+            self._cursor = None
             # If the upstream execute() already wrapped the original driver
             # error into a rhosocial ActiveRecord error (IntegrityError,
             # ConnectionError, etc.) via _handle_execution_error, re-raise it
