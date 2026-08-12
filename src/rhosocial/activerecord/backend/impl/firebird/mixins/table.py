@@ -4,7 +4,7 @@
 from typing import Any, List, Tuple, TYPE_CHECKING
 
 if TYPE_CHECKING:  # pragma: no cover
-    from ...expression.statements import DropTableExpression  # noinspection PyUnresolvedReferences
+    pass  # noinspection PyUnresolvedReferences
 
 from rhosocial.activerecord.backend.dialect.mixins.ddl_table import TableMixin
 

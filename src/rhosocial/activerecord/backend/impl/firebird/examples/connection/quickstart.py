@@ -5,7 +5,6 @@ from rhosocial.activerecord.backend.impl.firebird import (
     FirebirdBackend,
     FirebirdConnectionConfig,
 )
-from rhosocial.activerecord.backend.result import QueryResult
 
 
 def main():

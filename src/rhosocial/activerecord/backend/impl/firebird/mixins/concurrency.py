@@ -1,7 +1,6 @@
 # src/rhosocial/activerecord/backend/impl/firebird/mixins/concurrency.py
 """Firebird concurrency mixin."""
 
-import logging
 from typing import Optional
 
 from rhosocial.activerecord.backend.protocols import ConcurrencyHint
@@ -35,7 +34,7 @@ class FirebirdConcurrencyMixin:
                     max_concurrency=limit,
                     reason=f"min(mon_max_connections={max_connections}, pool_size={pool_size})",
                 )
-        except Exception as e:
+        except Exception:
             pool_size = getattr(self.config, "pool_size", None)
             if pool_size:
                 self._concurrency_hint = ConcurrencyHint(

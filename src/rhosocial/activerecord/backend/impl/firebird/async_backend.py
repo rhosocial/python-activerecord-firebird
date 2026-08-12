@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from concurrent.futures import Executor
 from typing import Optional, Tuple
 
@@ -269,9 +270,9 @@ class AsyncFirebirdBackend(
                     return []
                 column_names = [desc[0].strip('"').lower() for desc in cursor.description]
                 char_columns = self._char_columns_from_cursor(cursor)
-                final_results = []
                 adapters = column_adapters or {}
                 mapping = column_mapping or {}
+                final_results = []
                 for row in rows:
                     row_dict = dict(zip(column_names, row))
                     adapted_row = self._adapt_row_types(row_dict, adapters)
@@ -288,10 +289,53 @@ class AsyncFirebirdBackend(
 
         return await loop.run_in_executor(self._executor, _run)
 
+    def _char_columns_from_cursor(self, cursor) -> set:
+        """Detect CHAR-type columns using the sync backend helper.
+
+        Firebird pads CHAR values with trailing spaces on read, so only CHAR
+        columns need the padding stripped. Delegates to the shared
+        implementation on :class:`FirebirdBackend`.
+        """
+        from .backend import FirebirdBackend
+
+        return FirebirdBackend._char_columns_from_cursor(cursor)
+
     async def _handle_auto_commit(self) -> None:
         """Handle auto commit in thread pool."""
         loop = asyncio.get_event_loop()
-        await loop.run_in_executor(self._executor, self._connection.commit)
+        try:
+            await loop.run_in_executor(self._executor, self._connection.commit)
+        except Exception:
+            pass
+
+    async def executescript(self, sql_script: str) -> None:
+        """Execute a multi-statement SQL script asynchronously.
+
+        Mirrors the synchronous :meth:`FirebirdBackend.executescript` by
+        running the underlying firebird-driver cursor in a thread pool so
+        async and sync backends expose the same API surface.
+        """
+        start_time = time.perf_counter()
+        try:
+            if not self._is_connected or self._connection is None:
+                await self.connect()
+            cursor = self._connection.cursor()
+            loop = asyncio.get_event_loop()
+            await loop.run_in_executor(self._executor, lambda: cursor.execute(sql_script))
+            duration = time.perf_counter() - start_time
+            self.log(logging.INFO, f"Async SQL script executed successfully, duration={duration:.3f}s")
+            await self._handle_auto_commit_if_needed()
+            try:
+                cursor.close()
+            except Exception:
+                pass
+        except Exception as e:
+            try:
+                cursor.close()
+            except Exception:
+                pass
+            self.log(logging.ERROR, f"Error executing async SQL script: {e}")
+            await self._handle_error(e)
 
     # ------------------------------------------------------------------
     # SQL helpers
@@ -323,6 +367,38 @@ class AsyncFirebirdBackend(
             last_insert_id=getattr(cursor, "lastrowid", None),
             duration=duration,
         )
+
+    async def execute(
+        self,
+        sql: str,
+        params: Optional[Tuple] = None,
+        *,
+        options: Optional[ExecutionOptions] = None,
+        **kwargs,
+    ) -> QueryResult:
+        """Execute a SQL statement asynchronously.
+
+        Mirrors :meth:`FirebirdBackend.execute` by detecting the statement
+        type when no explicit options are provided, so bare ``execute(sql)``
+        calls treat SELECT/WITH as DQL and return result data.
+        """
+        if options is None:
+            stmt_type = kwargs.get('stmt_type') or self._detect_statement_type(sql)
+            column_adapters = kwargs.get('column_adapters')
+            column_mapping = kwargs.get('column_mapping')
+            process_result_set = kwargs.get('process_result_set')
+            options = ExecutionOptions(
+                stmt_type=stmt_type,
+                column_adapters=column_adapters,
+                column_mapping=column_mapping,
+                process_result_set=process_result_set,
+            )
+        try:
+            return await super().execute(sql, params, options=options)
+        except Exception as e:
+            if isinstance(e, exc.DatabaseError):
+                raise
+            await self._handle_error(e)
 
     # ------------------------------------------------------------------
     # High-level operations
@@ -421,8 +497,8 @@ class AsyncFirebirdBackend(
 
     def _create_introspector(self):
         from .introspection import AsyncFirebirdIntrospector
-        from rhosocial.activerecord.backend.introspection.executor import AsyncIntrospectorExecutor
-        return AsyncFirebirdIntrospector(self, AsyncIntrospectorExecutor(self))
+        from .introspection.executor import AsyncFirebirdIntrospectorExecutor
+        return AsyncFirebirdIntrospector(self, AsyncFirebirdIntrospectorExecutor(self))
 
     # ------------------------------------------------------------------
     # Client library helper

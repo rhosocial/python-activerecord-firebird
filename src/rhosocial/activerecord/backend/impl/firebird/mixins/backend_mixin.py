@@ -1,7 +1,7 @@
 # src/rhosocial/activerecord/backend/impl/firebird/mixins/backend_mixin.py
 """Firebird shared non-I/O backend mixin."""
 
-from typing import Any, Dict, Optional, Tuple, Type
+from typing import Dict, Tuple, Type
 
 from rhosocial.activerecord.backend import errors as exc
 from rhosocial.activerecord.backend.type_adapter import SQLTypeAdapter

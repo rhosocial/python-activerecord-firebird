@@ -1,9 +1,10 @@
 # src/rhosocial/activerecord/backend/impl/firebird/backend.py
 """Firebird synchronous backend implementation."""
 
-from typing import Any, Dict, List, Optional, Tuple, Type, Union
+from typing import Any, List, Optional, Tuple
 
 from rhosocial.activerecord.backend.base import StorageBackend
+from rhosocial.activerecord.backend.introspection.backend_mixin import IntrospectorBackendMixin
 from rhosocial.activerecord.backend.result import QueryResult
 from rhosocial.activerecord.backend.options import (
     ExecutionOptions, InsertOptions, UpdateOptions, DeleteOptions,
@@ -12,13 +13,13 @@ from rhosocial.activerecord.backend.schema import StatementType
 from rhosocial.activerecord.backend import errors as exc
 
 from .mixins import FirebirdBackendMixin, FirebirdConcurrencyMixin
-from .config import FirebirdConnectionConfig
 from .transaction import FirebirdTransactionManager
 
 
 class FirebirdBackend(
     FirebirdBackendMixin,
     FirebirdConcurrencyMixin,
+    IntrospectorBackendMixin,
     StorageBackend,
 ):
     """Firebird synchronous backend implementation.

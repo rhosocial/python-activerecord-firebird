@@ -58,9 +58,7 @@ from rhosocial.activerecord.backend.dialect.mixins import (
     JSONMixin,
     ReturningMixin,
     SetOperationMixin,
-    SequenceMixin,
     UpsertMixin,
-    LockingMixin,
     ExplainMixin,
     JoinMixin,
     ILIKEMixin,
@@ -74,11 +72,9 @@ from rhosocial.activerecord.backend.dialect.mixins import (
     OrderedSetAggregationMixin,
     GraphMixin,
     PartitionMixin,
-    TableMixin,
     TruncateMixin,
     SchemaMixin,
     IndexMixin,
-    TriggerMixin,
     GeneratedColumnMixin,
     ViewMixin,
     FunctionMixin,
@@ -322,7 +318,8 @@ class FirebirdDialect(
         """
         if value is None:
             return None
-        import datetime, decimal
+        import datetime
+        import decimal
         if isinstance(value, bool):
             return "SMALLINT"
         if isinstance(value, int):
@@ -1152,7 +1149,7 @@ class FirebirdDialect(
         for func_name in core_functions:
             if func_name not in expression_constructors:
                 result[func_name] = True
-        for func_name, (min_ver, max_ver) in self._FIREBIRD_FUNCTION_VERSIONS.items():
+        for func_name, (_min_ver, _max_ver) in self._FIREBIRD_FUNCTION_VERSIONS.items():
             result[func_name] = self._is_firebird_function_supported(func_name)
         return result
 

@@ -358,6 +358,15 @@ class AsyncFirebirdIntrospector(FirebirdAsyncIntrospectorMixin, AsyncAbstractInt
 
     def __init__(self, backend, executor):
         super().__init__(backend, executor)
+        self._status_instance = None
+
+    @property
+    def status(self):
+        """Firebird status introspector (lazily created)."""
+        from .status_introspector import AsyncFirebirdStatusIntrospector
+        if self._status_instance is None:
+            self._status_instance = AsyncFirebirdStatusIntrospector(self._backend)
+        return self._status_instance
 
     async def get_table_info(
         self, table_name: str, schema: Optional[str] = None

@@ -17,6 +17,7 @@ from rhosocial.activerecord.backend.introspection.types import (
 )
 
 from .async_introspector import FirebirdAsyncIntrospectorMixin
+from .status_introspector import SyncFirebirdStatusIntrospector
 
 
 class SyncFirebirdIntrospector(FirebirdAsyncIntrospectorMixin, SyncAbstractIntrospector):
@@ -25,6 +26,14 @@ class SyncFirebirdIntrospector(FirebirdAsyncIntrospectorMixin, SyncAbstractIntro
     def __init__(self, backend):
         executor = SyncIntrospectorExecutor(backend)
         super().__init__(backend, executor)
+        self._status_instance = None
+
+    @property
+    def status(self) -> SyncFirebirdStatusIntrospector:
+        """Firebird status introspector (lazily created)."""
+        if self._status_instance is None:
+            self._status_instance = SyncFirebirdStatusIntrospector(self._backend)
+        return self._status_instance
 
     async def get_table_info(
         self, table_name: str, schema: Optional[str] = None

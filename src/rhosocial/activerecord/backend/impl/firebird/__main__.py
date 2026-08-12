@@ -19,7 +19,7 @@ def _build_parser():
     )
 
     try:
-        from .cli import register_commands, COMMAND_NAMES
+        from .cli import register_commands
         register_commands(subparsers)
     except ImportError:
         pass
@@ -37,12 +37,15 @@ def main():
         sys.exit(1)
 
     try:
-        from .cli import get_handler, COMMAND_NAMES
+        from .cli import get_handler
         handler = get_handler(args.command)
-        handler(args)
     except ImportError:
         print("CLI commands not available.", file=sys.stderr)
         sys.exit(1)
+    if handler is None:
+        print(f"Error: Unknown command: {args.command}", file=sys.stderr)
+        sys.exit(1)
+    handler(args)
 
 
 if __name__ == "__main__":

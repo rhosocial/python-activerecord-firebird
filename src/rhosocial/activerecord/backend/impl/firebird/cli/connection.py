@@ -42,6 +42,21 @@ def add_connection_args(parser):
         default=os.getenv("FIREBIRD_ROLE"),
         help="SQL role name (env: FIREBIRD_ROLE)",
     )
+    parser.add_argument(
+        "--use-async",
+        action="store_true",
+        help="Use asynchronous backend",
+    )
+
+
+def add_version_arg(parser):
+    """Add --version argument (used only by info subcommand)."""
+    parser.add_argument(
+        "--version",
+        type=str,
+        default=None,
+        help='Firebird version to simulate (e.g., "4.0.0", "3.0.0"). Default: 4.0.0.',
+    )
 
 
 def resolve_connection_config_from_args(args):

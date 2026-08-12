@@ -2,10 +2,9 @@
 """Firebird connection configuration."""
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, Optional
 
 from rhosocial.activerecord.backend.config import (
-    BaseConfig,
     ConnectionConfig,
     ConnectionPoolMixin,
     SSLMixin,

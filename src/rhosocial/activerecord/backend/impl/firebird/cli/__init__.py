@@ -15,14 +15,14 @@ def register_commands(subparsers):
         subparsers: argparse subparsers object
     """
     from .connection import register as register_connection
-    from .info import register as register_info
-    from .introspect import register as register_introspect
+    from .info import create_parser as register_info
+    from .introspect import create_parser as register_introspect
     from .named_connection import register as register_named_connection
     from .named_migration import create_parser as register_named_migration
     from .named_procedure import register as register_named_procedure
     from .named_query import register as register_named_query
-    from .query import register as register_query
-    from .status import register as register_status
+    from .query import create_parser as register_query
+    from .status import create_parser as register_status
 
     register_connection(subparsers)
     register_info(subparsers)
@@ -46,14 +46,14 @@ def get_handler(command_name: str):
     """
     handlers = {
         "connection": _import_handler("connection", "handle_connection"),
-        "info": _import_handler("info", "handle_info"),
-        "introspect": _import_handler("introspect", "handle_introspect"),
+        "info": _import_handler("info", "handle"),
+        "introspect": _import_handler("introspect", "handle"),
         "named-connection": _import_handler("named_connection", "handle_named_connection"),
         "named-migration": _import_handler("named_migration", "handle"),
         "named-procedure": _import_handler("named_procedure", "handle_named_procedure"),
         "named-query": _import_handler("named_query", "handle_named_query"),
-        "query": _import_handler("query", "handle_query"),
-        "status": _import_handler("status", "handle_status"),
+        "query": _import_handler("query", "handle"),
+        "status": _import_handler("status", "handle"),
     }
     return handlers.get(command_name)
 

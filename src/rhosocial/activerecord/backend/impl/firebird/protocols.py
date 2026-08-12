@@ -1,7 +1,7 @@
 # src/rhosocial/activerecord/backend/impl/firebird/protocols.py
 """Firebird dialect-specific protocol definitions."""
 
-from typing import Any, Dict, List, Optional, Protocol, Tuple, runtime_checkable
+from typing import Any, Protocol, Tuple, runtime_checkable
 
 
 @runtime_checkable
