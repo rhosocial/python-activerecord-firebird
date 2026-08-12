@@ -403,6 +403,11 @@ class FirebirdDialect(
         Firebird 5 does not expose a ``LENGTH`` scalar function (the name is a
         reserved keyword); the canonical length function is ``CHAR_LENGTH`` for
         characters and ``OCTET_LENGTH`` for bytes.
+
+        Firebird 5/6-snapshot fails to infer the result type of ``SUM``/``AVG``
+        over a ``DECIMAL`` column ("Data type unknown" at prepare time), so the
+        aggregate result is explicitly cast to ``DECIMAL(18,2)`` to pin the
+        return type. This matches the precision used by the testsuite schemas.
         """
         func_name = getattr(expr, "func_name", None)
         if isinstance(func_name, str) and func_name.upper() == "LENGTH":
@@ -411,7 +416,16 @@ class FirebirdDialect(
                 return super().format_function_call(expr, filter_predicate=filter_predicate)
             finally:
                 expr.func_name = func_name
-        return super().format_function_call(expr, filter_predicate=filter_predicate)
+        sql, params = super().format_function_call(expr, filter_predicate=filter_predicate)
+        if isinstance(func_name, str) and func_name.upper() in ("SUM", "AVG"):
+            alias_sql = ""
+            if " AS " in sql:
+                sql, alias_sql = sql.split(" AS ", 1)
+            cast_sql, params = self.format_cast_expression(
+                sql, "DECIMAL(18,2)", params, None
+            )
+            sql = f"{cast_sql} AS {alias_sql}" if alias_sql else cast_sql
+        return sql, params
 
     def get_parameter_placeholder(self, position: int = 0) -> str:
         """Firebird uses ? as positional parameter placeholder."""
