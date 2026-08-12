@@ -1,5 +1,6 @@
 -e .
 pytest
+pytest-asyncio
 pytest-benchmark
 coverage>=7.0.0
 pytest-cov
