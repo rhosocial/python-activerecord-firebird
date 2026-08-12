@@ -129,7 +129,7 @@ jobs:
       - name: Run tests
         run: |
           export PYTHONPATH=src:tests
-          python -m pytest tests/ --tb=no --maxfail=10 -rf
+          python -m pytest tests/ --tb=no --maxfail=10 -rf -rX
 
       - name: Run tests with coverage (3.14 + 6-snapshot only)
         if: matrix.python-version == '3.14' && matrix.firebird-version == '6-snapshot'
