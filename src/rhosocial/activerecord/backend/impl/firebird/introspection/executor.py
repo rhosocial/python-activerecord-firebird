@@ -23,7 +23,7 @@ class SyncFirebirdIntrospectorExecutor:
         try:
             cursor.execute(sql, params)
             columns = [desc[0] for desc in cursor.description] if cursor.description else []
-            return [dict(zip(columns, row)) for row in cursor.fetchall()]
+            return [dict(zip(columns, row, strict=False)) for row in cursor.fetchall()]
         finally:
             cursor.close()
 
@@ -49,7 +49,7 @@ class AsyncFirebirdIntrospectorExecutor:
             if cursor.description:
                 columns = [desc[0] for desc in cursor.description]
                 rows = await loop.run_in_executor(self._backend._executor, cursor.fetchall)
-                return [dict(zip(columns, row)) for row in rows]
+                return [dict(zip(columns, row, strict=False)) for row in rows]
             return []
         finally:
             try:

@@ -278,7 +278,7 @@ class FirebirdBackend(
             adapters = column_adapters or {}
             mapping = column_mapping or {}
             for row in rows:
-                row_dict = dict(zip(column_names, row))
+                row_dict = dict(zip(column_names, row, strict=False))
                 adapted_row = self._adapt_row_types(row_dict, adapters)
                 final_row = self._remap_row_columns(adapted_row, mapping)
                 if char_columns:
@@ -343,7 +343,7 @@ class FirebirdBackend(
         affected = 0
         returning = options.returning_columns or []
         for row in options.rows:
-            row_dict = dict(zip(options.columns, row)) if options.columns else {}
+            row_dict = dict(zip(options.columns, row, strict=False)) if options.columns else {}
             if returning:
                 res = self.insert(options.table, values=row_dict, returning_columns=returning)
             else:
