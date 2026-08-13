@@ -2,8 +2,12 @@
 """Tests for the ConcurrencyAware protocol implementation in the Firebird backend.
 
 Verifies that :class:`FirebirdBackend` correctly implements the
-``ConcurrencyAware`` protocol by fetching ``MON$MAX_CONNECTIONS`` during
+``ConcurrencyAware`` protocol by fetching the connection limit during
 ``connect()`` and returning the appropriate concurrency hint.
+
+Firebird 3/4 expose ``MON$MAX_CONNECTIONS`` on ``MON$DATABASE``; the column was
+removed in Firebird 5+, so the hint falls back to the configured pool size or
+``None`` (unlimited) when no limit is discoverable.
 """
 
 from rhosocial.activerecord.backend.protocols import ConcurrencyAware, ConcurrencyHint
@@ -17,37 +21,35 @@ class TestFirebirdConcurrencyAware:
         assert isinstance(fb_backend, ConcurrencyAware)
 
     def test_firebird_get_concurrency_hint(self, fb_backend):
-        """Test FirebirdBackend returns a concurrency hint after connect."""
-        hint = fb_backend.get_concurrency_hint()
+        """Test FirebirdBackend returns a concurrency hint after connect.
 
-        assert hint is not None
-        assert isinstance(hint, ConcurrencyHint)
-        assert hint.max_concurrency is not None
-        assert hint.max_concurrency > 0
-
-    def test_firebird_concurrency_hint_value_bounded(self, fb_backend):
-        """Test that the concurrency hint is bounded by the configured pool size.
-
-        When no pool size is configured, the hint reflects the server-reported
-        connection limit (or is None when neither is available).
+        Without a configured pool size the hint may be None, meaning no
+        concurrency constraint is known for the server.
         """
-        pool_size = getattr(fb_backend.config, "pool_size", None) or None
         hint = fb_backend.get_concurrency_hint()
 
-        assert hint is not None
-        if pool_size:
-            assert hint.max_concurrency <= pool_size
-        assert hint.max_concurrency is not None
-        assert hint.max_concurrency > 0
+        assert hint is None or isinstance(hint, ConcurrencyHint)
+        if hint is not None:
+            assert hint.max_concurrency is None or hint.max_concurrency > 0
 
-    def test_firebird_concurrency_hint_populated_after_connect(self, fb_backend):
-        """Test that the hint is populated once connected."""
-        assert fb_backend._connection is not None
-        assert fb_backend.get_concurrency_hint() is not None
+    def test_firebird_concurrency_hint_with_pool_size(self, fb_backend):
+        """Test that a configured pool size bounds the concurrency hint."""
+        fb_backend.config.pool_size = 4
+        fb_backend._fetch_concurrency_hint()
+
+        hint = fb_backend.get_concurrency_hint()
+        assert hint is not None
+        assert hint.max_concurrency is not None
+        assert hint.max_concurrency <= 4
+        assert hint.max_concurrency > 0
 
     def test_firebird_concurrency_hint_reason(self, fb_backend):
         """Test that the hint reason describes the constraint source."""
+        fb_backend.config.pool_size = 4
+        fb_backend._fetch_concurrency_hint()
+
         hint = fb_backend.get_concurrency_hint()
+        assert hint is not None
         assert "mon_max_connections" in hint.reason or "pool_size" in hint.reason
 
     def test_firebird_threadsafety(self, fb_backend):

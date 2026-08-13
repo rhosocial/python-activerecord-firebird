@@ -80,6 +80,7 @@ class FirebirdBackend(
             self._connection = fdb.connect(**connect_params)
             self._cursor = self._connection.cursor()
             self._is_connected = True
+            self._fetch_concurrency_hint()
         except Exception as e:
             self._handle_error(e)
 

@@ -48,26 +48,18 @@ class FirebirdConcurrencyMixin:
 
         The ``MON$MAX_CONNECTIONS`` column exists on Firebird 3/4 but was
         removed from the ``MON$DATABASE`` virtual table in Firebird 5+.
-        Fall back to the ``RDB$CONFIG`` virtual table (available since
-        Firebird 4) when the monitoring table does not expose the column.
+        Return ``None`` when the limit cannot be discovered so that the
+        caller falls back to the configured pool size (or no constraint).
         """
-        queries = [
-            "SELECT MON$MAX_CONNECTIONS FROM MON$DATABASE",
-            (
-                "SELECT RDB$CONFIG_VALUE FROM RDB$CONFIG "
-                "WHERE RDB$CONFIG_NAME = 'MaxConnections'"
-            ),
-        ]
-        for query in queries:
-            try:
-                cursor = self._connection.cursor()
-                cursor.execute(query)
-                row = cursor.fetchone()
-                cursor.close()
-                if row and row[0] is not None:
-                    return int(row[0])
-            except Exception:
-                continue
+        try:
+            cursor = self._connection.cursor()
+            cursor.execute("SELECT MON$MAX_CONNECTIONS FROM MON$DATABASE")
+            row = cursor.fetchone()
+            cursor.close()
+            if row and row[0] is not None:
+                return int(row[0])
+        except Exception:
+            pass
         return None
 
     def get_concurrency_hint(self) -> Optional[ConcurrencyHint]:
