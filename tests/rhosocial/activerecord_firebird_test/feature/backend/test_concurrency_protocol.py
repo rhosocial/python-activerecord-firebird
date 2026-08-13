@@ -26,11 +26,18 @@ class TestFirebirdConcurrencyAware:
         assert hint.max_concurrency > 0
 
     def test_firebird_concurrency_hint_value_bounded(self, fb_backend):
-        """Test that the concurrency hint is bounded by the configured pool size."""
-        pool_size = getattr(fb_backend.config, "pool_size", None) or 5
+        """Test that the concurrency hint is bounded by the configured pool size.
+
+        When no pool size is configured, the hint reflects the server-reported
+        connection limit (or is None when neither is available).
+        """
+        pool_size = getattr(fb_backend.config, "pool_size", None) or None
         hint = fb_backend.get_concurrency_hint()
 
-        assert hint.max_concurrency <= pool_size
+        assert hint is not None
+        if pool_size:
+            assert hint.max_concurrency <= pool_size
+        assert hint.max_concurrency is not None
         assert hint.max_concurrency > 0
 
     def test_firebird_concurrency_hint_populated_after_connect(self, fb_backend):
