@@ -76,8 +76,8 @@ class TestFirebirdCLIQuery:
     def test_query_connection_defaults(self):
         with patch.object(sys, "argv", ["firebird", "query", "SELECT 1"]):
             args = _build_parser().parse_args()
-        assert args.host is None or args.host == "localhost"
-        assert args.port is None or args.port == 3050
+        assert isinstance(args.host, str) and args.host
+        assert isinstance(args.port, int) and args.port > 0
 
 
 class TestFirebirdCLIIntrospect:
