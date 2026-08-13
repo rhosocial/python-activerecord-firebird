@@ -129,6 +129,32 @@ jobs:
       - name: Run tests
         run: |
           export PYTHONPATH=src:tests
+          python - << 'PYEOF'
+          from rhosocial.activerecord.backend.impl.firebird import FirebirdBackend, FirebirdConnectionConfig
+          import os
+          cfg = FirebirdConnectionConfig(
+              host=os.environ['FIREBIRD_HOST'],
+              port=int(os.environ['FIREBIRD_PORT']),
+              database=os.environ['FIREBIRD_DATABASE'],
+              username=os.environ['FIREBIRD_USERNAME'],
+              password=os.environ['FIREBIRD_PASSWORD'],
+              charset=os.environ['FIREBIRD_CHARSET'],
+              autocommit=False,
+          )
+          b = FirebirdBackend(connection_config=cfg)
+          b.connect()
+          print("connection:", b._connection)
+          try:
+              cur = b._connection.cursor()
+              cur.execute("SELECT MON$MAX_CONNECTIONS FROM MON$DATABASE")
+              row = cur.fetchone()
+              print("MON$MAX_CONNECTIONS =", row)
+              cur.close()
+          except Exception as e:
+              print("MON query FAILED:", type(e).__name__, e)
+          print("hint:", b.get_concurrency_hint())
+          b.disconnect()
+          PYEOF
           python -m pytest tests/rhosocial/activerecord_firebird_test/feature/backend/test_concurrency_protocol.py tests/rhosocial/activerecord_firebird_test/feature/backend/test_connection_resilience.py --tb=long -rf -rX
 
       - name: Run tests with coverage (3.14 + 6-snapshot only)
