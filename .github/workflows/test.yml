@@ -153,6 +153,16 @@ jobs:
           except Exception as e:
               print("MON query FAILED:", type(e).__name__, e)
           print("hint:", b.get_concurrency_hint())
+          try:
+              cur = b._connection.cursor()
+              cur.execute("SELECT RDB$CONFIG_NAME, RDB$CONFIG_VALUE FROM RDB$CONFIG")
+              for r in cur.fetchall():
+                  if 'connection' in str(r[0]).lower() or 'max' in str(r[0]).lower():
+                      print("RDB$CONFIG:", r)
+              cur.close()
+              print("RDB$CONFIG query OK")
+          except Exception as e:
+              print("RDB$CONFIG query FAILED:", type(e).__name__, e)
           b.disconnect()
           PYEOF
           python -m pytest tests/rhosocial/activerecord_firebird_test/feature/backend/test_concurrency_protocol.py tests/rhosocial/activerecord_firebird_test/feature/backend/test_connection_resilience.py --tb=long -rf -rX
