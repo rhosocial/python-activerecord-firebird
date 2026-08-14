@@ -1,6 +1,6 @@
 # Changelog
 
-## [1.0.0.dev2] - 2026-07-01
+## [1.0.0.dev1] - 2026-07-01
 
 ### Added
 
@@ -14,7 +14,7 @@
 
 ### Changed
 
-- Bumped version to `1.0.0.dev2`
+- Bumped version to `1.0.0.dev1`
 - `SyncFirebirdIntrospector` rewritten to use new `SyncAbstractIntrospector` base class
 - Migrated `cli/__init__.py` to use `importlib.import_module` instead of `__import__`
 - Removed duplicate method definitions in `FirebirdDialect`

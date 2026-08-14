@@ -50,7 +50,7 @@ For version-dependent function availability, see
 FirebirdDialect.supports_functions() and FIREBIRD_FUNCTION_VERSIONS.
 """
 
-__version__ = "1.0.0.dev2"
+__version__ = "1.0.0.dev1"
 
 from .backend import FirebirdBackend
 from .async_backend import AsyncFirebirdBackend
