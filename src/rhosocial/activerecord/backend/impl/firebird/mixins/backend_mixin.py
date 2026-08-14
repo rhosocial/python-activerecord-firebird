@@ -1,12 +1,56 @@
 # src/rhosocial/activerecord/backend/impl/firebird/mixins/backend_mixin.py
 """Firebird shared non-I/O backend mixin."""
 
+import threading
 from typing import Dict, Tuple, Type
 
 from rhosocial.activerecord.backend import errors as exc
 from rhosocial.activerecord.backend.type_adapter import SQLTypeAdapter
 
 from ..adapters import firebird_adapters
+
+_live_connections_lock = threading.Lock()
+_live_connections = set()
+
+
+def track_firebird_connection(connection) -> None:
+    """Keep a strong reference to a firebird-driver connection.
+
+    firebird-driver connections are not safe to close from the garbage
+    collector: libfbclient is not thread-safe, and when ``__del__`` runs
+    during an unrelated GC pass (e.g. while a query is being executed and
+    logged) it can corrupt the library and crash the process with a
+    segmentation fault. Holding every live connection here means the
+    garbage collector never collects one that has not been closed
+    explicitly, so ``__del__`` never runs at an unlucky moment. Backends
+    must call :func:`untrack_firebird_connection` before closing.
+    """
+    with _live_connections_lock:
+        _live_connections.add(connection)
+
+
+def untrack_firebird_connection(connection) -> None:
+    with _live_connections_lock:
+        _live_connections.discard(connection)
+
+
+def track_firebird_backend(backend) -> None:
+    """Keep a strong reference to a backend while its connection is live.
+
+    A backend owns its firebird-driver ``Connection`` and ``Cursor``. As long
+    as the backend is referenced here, the garbage collector cannot reclaim
+    those driver objects, so their ``__del__`` (which calls into the
+    non-thread-safe libfbclient) never runs at a GC-driven moment. Backends
+    must call :func:`untrack_firebird_backend` after ``disconnect()`` has
+    explicitly closed the underlying objects.
+    """
+    with _live_connections_lock:
+        _live_connections.add(backend)
+
+
+def untrack_firebird_backend(backend) -> None:
+    with _live_connections_lock:
+        _live_connections.discard(backend)
 
 
 class FirebirdBackendMixin:
@@ -71,9 +115,15 @@ class FirebirdBackendMixin:
         error_msg = str(error)
         error_code = getattr(error, 'sqlcode', None)
         gds_code = getattr(error, 'gds_codes', None)
+        sqlstate = getattr(error, 'sqlstate', None)
 
         if self._is_connection_error(error):
             raise exc.ConnectionError(error_msg) from error
+
+        if sqlstate and sqlstate.startswith('23000'):
+            # Integrity constraint violation (SQLSTATE 23000) covers NOT NULL,
+            # unique and foreign key violations across Firebird versions.
+            raise exc.IntegrityError(error_msg) from error
 
         if gds_code:
             for code in gds_code if isinstance(gds_code, (list, tuple)) else [gds_code]:
@@ -86,6 +136,9 @@ class FirebirdBackendMixin:
 
         if error_code:
             if error_code in (-803, -804, -805):
+                raise exc.IntegrityError(error_msg) from error
+            if error_code == -625:
+                # "validation error for column ..." (NOT NULL violation)
                 raise exc.IntegrityError(error_msg) from error
             if error_code == -901:
                 raise exc.DeadlockError(error_msg) from error

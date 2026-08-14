@@ -2,8 +2,22 @@
 """Pytest configuration for Firebird backend tests."""
 
 import os
+import sys
 
 import pytest
+
+# Early-parse --scenarios from sys.argv and set FIREBIRD_ACTIVE_SCENARIOS env var.
+# This must happen before providers.scenarios is imported (it filters its
+# SCENARIO_MAP at import time).
+_argv_scenarios = None
+for _i, _arg in enumerate(sys.argv):
+    if _arg.startswith("--scenarios="):
+        _argv_scenarios = _arg.split("=", 1)[1]
+    elif _arg == "--scenarios" and _i + 1 < len(sys.argv):
+        _argv_scenarios = sys.argv[_i + 1]
+
+if _argv_scenarios:
+    os.environ["FIREBIRD_ACTIVE_SCENARIOS"] = _argv_scenarios
 
 from rhosocial.activerecord.backend.impl.firebird import (
     FirebirdBackend,
@@ -18,6 +32,18 @@ os.environ.setdefault(
 
 
 @pytest.hookimpl(trylast=True)
+def pytest_addoption(parser):
+    """Register the --scenarios option for selecting which scenarios to run."""
+    parser.addoption(
+        "--scenarios",
+        action="store",
+        default=None,
+        help="Comma-separated list of scenario names to run "
+             "(e.g., --scenarios=firebird_5,firebird_6).",
+    )
+
+
+@pytest.hookimpl(trylast=True)
 def pytest_configure(config):
     """Harden firebird-driver destructors against GC after connection close.
 
@@ -27,6 +53,10 @@ def pytest_configure(config):
     under full-suite load it runs in a worker thread. Wrap the destructor so
     a failure to close during GC is swallowed instead of terminating pytest.
     """
+    scenarios_opt = config.getoption("--scenarios", default=None)
+    if scenarios_opt:
+        os.environ["FIREBIRD_ACTIVE_SCENARIOS"] = scenarios_opt
+
     try:
         from firebird.driver.core import Cursor
 
@@ -52,7 +82,14 @@ def pytest_configure(config):
 
 
 def pytest_collection_modifyitems(items):
-    """Mark known Firebird-incompatible tests as xfail."""
+    """Mark known Firebird-incompatible tests as xfail.
+
+    Only genuine, still-unresolved incompatibilities are marked here. Tests
+    whose failures were fixed upstream (dialect capability gating, TIMESTAMP
+    precision handling, NOT NULL -> IntegrityError mapping, identifier casing
+    assertions) must NOT be xfailed: doing so would turn real passes into
+    spurious XPASS entries.
+    """
     for item in items:
         func_name = getattr(getattr(item, 'function', None), '__name__', '')
         node_path = str(item.nodeid)
@@ -62,59 +99,6 @@ def pytest_collection_modifyitems(items):
                 reason="Firebird recursive CTE support needs dialect configuration",
                 strict=False,
             ))
-        # CTE query issues - Firebird CTE and LIMIT/FETCH NEXT differences
-        if func_name in ("test_single_active_query_cte", "test_multiple_active_query_cte",
-            "test_cte_with_basic_query_conditions", "test_cte_with_range_conditions",
-            "test_cte_with_joins", "test_cte_with_union_and_extended_conditions",
-            "test_cte_with_intersect_of_active_queries", "test_cte_with_except_of_active_queries",
-            "test_cte_with_intersect_and_range_conditions", "test_cte_with_except_and_join_conditions",
-            "test_cte_query_intersect_with_active_query", "test_cte_query_except_with_active_query"):
-            item.add_marker(pytest.mark.xfail(
-                reason="Firebird CTE syntax differs from test expectations",
-                strict=False,
-            ))
-        # TIMESTAMP precision - Firebird has 100μs, tests expect 1μs
-        if func_name == "test_datetime_field":
-            item.add_marker(pytest.mark.xfail(
-                reason="Firebird TIMESTAMP precision is 100μs vs test's 1μs",
-                strict=False,
-            ))
-        # EXPLAIN statement - Firebird has no equivalent EXPLAIN SQL
-        if func_name in ("test_explain", "test_explain_mysql", "test_explain_postgres"):
-            item.add_marker(pytest.mark.xfail(
-                reason="Firebird does not support the EXPLAIN statement",
-                strict=False,
-            ))
-        # Type adapter tests - db_null with non-optional field raises error in Firebird
-        if func_name == "test_db_null_with_non_optional_field_raises_error":
-            item.add_marker(pytest.mark.xfail(
-                reason="Firebird backend type adapter SQL generation differences",
-                strict=False,
-            ))
-
-        # Firebird uppercases quoted identifiers by design; tests asserting
-        # lowercase column names in generated SQL are not applicable.
-        if func_name == "test_select_append_true":
-            item.add_marker(pytest.mark.xfail(
-                reason="Firebird uppercases identifiers in generated SQL",
-                strict=False,
-            ))
-
-        # Set operations with INTERSECT/EXCEPT keywords - Firebird does not
-        # support these as standalone query operators (only UNION, or via
-        # DSQL expression syntax). ActiveQuery/composite-PK variants are real
-        # failures; the plain test_set_operation(_async) passes via UNION and
-        # must NOT be marked xfail.
-        if func_name in ("test_intersect", "test_except_",
-            "test_intersect_operation", "test_except_operation",
-            "test_intersect_operator", "test_except_operator",
-            "test_multiple_set_operations", "test_operator_precedence",
-            "test_set_operation_chaining"):
-            if "test_set_operation.py" not in node_path and "test_set_operation_async.py" not in node_path:
-                item.add_marker(pytest.mark.xfail(
-                    reason="Firebird does not support INTERSECT/EXCEPT query operators",
-                    strict=False,
-                ))
 
 
 def _load_backend_config() -> FirebirdConnectionConfig:

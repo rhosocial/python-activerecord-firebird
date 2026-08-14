@@ -1,7 +1,13 @@
 # src/rhosocial/activerecord/backend/impl/firebird/mixins/__init__.py
 from .version_boundaries import FIREBIRD_VERSION_BOUNDARIES
 from .transaction import FirebirdTransactionMixin
-from .backend_mixin import FirebirdBackendMixin
+from .backend_mixin import (
+    FirebirdBackendMixin,
+    track_firebird_backend,
+    track_firebird_connection,
+    untrack_firebird_backend,
+    untrack_firebird_connection,
+)
 from .concurrency import FirebirdConcurrencyMixin
 from .dml import FirebirdDMLOperationMixin
 from .locking import FirebirdLockingMixin
@@ -27,6 +33,10 @@ __all__ = [
     "FIREBIRD_VERSION_BOUNDARIES",
     "FirebirdTransactionMixin",
     "FirebirdBackendMixin",
+    "track_firebird_backend",
+    "track_firebird_connection",
+    "untrack_firebird_backend",
+    "untrack_firebird_connection",
     "FirebirdConcurrencyMixin",
     "FirebirdDMLOperationMixin",
     "FirebirdLockingMixin",

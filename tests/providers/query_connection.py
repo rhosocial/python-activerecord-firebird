@@ -71,7 +71,9 @@ class QueryConnectionProvider(IQueryConnectionProvider):
     def setup_sync_pool_and_model(self, scenario_name: str) -> Tuple[BackendPool, Type[ActiveRecord]]:
         _, config = get_scenario(scenario_name)
         pool_config = PoolConfig(
-            min_size=1, max_size=5, backend_factory=lambda: FirebirdBackend(connection_config=config)
+            min_size=1, max_size=5,
+            validation_query="SELECT 1 FROM RDB$DATABASE",
+            backend_factory=lambda: FirebirdBackend(connection_config=config),
         )
         pool = BackendPool.create(pool_config)
         with pool.connection() as backend:
@@ -95,7 +97,9 @@ class QueryConnectionProvider(IQueryConnectionProvider):
     ) -> Tuple[AsyncBackendPool, Type[AsyncActiveRecord]]:
         _, config = get_scenario(scenario_name)
         pool_config = PoolConfig(
-            min_size=1, max_size=5, backend_factory=lambda: AsyncFirebirdBackend(connection_config=config)
+            min_size=1, max_size=5,
+            validation_query="SELECT 1 FROM RDB$DATABASE",
+            backend_factory=lambda: AsyncFirebirdBackend(connection_config=config),
         )
         pool = await AsyncBackendPool.create(pool_config)
         async with pool.connection() as backend:

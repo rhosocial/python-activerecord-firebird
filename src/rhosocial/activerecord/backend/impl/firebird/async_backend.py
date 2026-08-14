@@ -40,7 +40,13 @@ from rhosocial.activerecord.backend.result import QueryResult
 from rhosocial.activerecord.backend.schema import StatementType
 
 from .config import FirebirdConnectionConfig
-from .mixins import FirebirdBackendMixin
+from .mixins import (
+    FirebirdBackendMixin,
+    track_firebird_backend,
+    track_firebird_connection,
+    untrack_firebird_backend,
+    untrack_firebird_connection,
+)
 from .async_transaction import AsyncFirebirdTransactionManager
 
 
@@ -155,9 +161,11 @@ class AsyncFirebirdBackend(
             self._connection = await loop.run_in_executor(
                 self._executor, lambda: fdb.connect(**connect_params)
             )
+            track_firebird_connection(self._connection)
             self._cursor = self._connection.cursor()
             self._is_connected = True
             self.log(logging.INFO, "Connected to Firebird (async)")
+            track_firebird_backend(self)
         except Exception as e:
             raise exc.ConnectionError(f"Failed to connect to Firebird: {e}") from e
 
@@ -169,6 +177,7 @@ class AsyncFirebirdBackend(
                 if self._cursor:
                     await loop.run_in_executor(self._executor, self._cursor.close)
                     self._cursor = None
+                untrack_firebird_connection(self._connection)
                 await loop.run_in_executor(self._executor, self._connection.close)
                 self.log(logging.INFO, "Disconnected from Firebird (async)")
             except Exception as e:
@@ -176,6 +185,7 @@ class AsyncFirebirdBackend(
             finally:
                 self._connection = None
                 self._is_connected = False
+                untrack_firebird_backend(self)
 
     async def ping(self, reconnect: bool = True) -> bool:
         """Check if the connection is alive."""
@@ -580,8 +590,10 @@ class AsyncFirebirdBackend(
     # ------------------------------------------------------------------
 
     def __del__(self):
-        if self._connection:
-            try:
-                self._connection.close()
-            except Exception:
-                pass
+        # Do NOT close the firebird-driver connection here. libfbclient is not
+        # thread-safe, and closing from __del__ during a GC pass crashes the
+        # process with a segmentation fault. Backends are kept strongly
+        # referenced via track_firebird_backend() until disconnect() is called
+        # explicitly, so this only runs for backends whose resources were
+        # already released.
+        pass

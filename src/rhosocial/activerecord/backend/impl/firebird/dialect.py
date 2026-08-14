@@ -598,10 +598,14 @@ class FirebirdDialect(
         return self.version >= (3, 0, 0)
 
     def supports_intersect(self) -> bool:
-        return True
+        # Firebird supports only UNION/UNION ALL as set operations.
+        # INTERSECT/EXCEPT are not part of the SELECT grammar (Firebird 5.0
+        # Language Reference: SELECT syntax lists UNION as the only set
+        # operator), and DSQL rejects them with SQLSTATE -104 "Token unknown".
+        return False
 
     def supports_except(self) -> bool:
-        return True
+        return False
 
     def supports_sequence(self) -> bool:
         return True
@@ -735,11 +739,19 @@ class FirebirdDialect(
     def supports_returning_into(self) -> bool:
         return True
 
+    def supports_microsecond_timestamp(self) -> bool:
+        # Firebird TIMESTAMP stores only 4 fractional digits (1/10000 s);
+        # microseconds beyond that are lost on write.
+        return False
+
     def supports_mon_tables(self) -> bool:
         return True
 
     def supports_explain_plan(self) -> bool:
-        return self.version >= (3, 0, 0)
+        # ``EXPLAIN PLAN FOR`` is an isql client command, not a valid DSQL
+        # statement. Firebird's engine rejects it with SQLSTATE -104 "Token
+        # unknown - EXPLAIN", so plan extraction is not available in DSQL.
+        return False
 
     def supports_list_function(self) -> bool:
         return True

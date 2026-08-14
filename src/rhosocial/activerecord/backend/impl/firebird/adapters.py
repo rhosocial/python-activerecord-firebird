@@ -204,7 +204,12 @@ class FirebirdDatetimeAdapter(SQLTypeAdapter):
         if isinstance(value, datetime):
             if value.tzinfo is not None and self._store_as_utc:
                 value = value.astimezone(timezone.utc)
-            return value.replace(tzinfo=None)
+            value = value.replace(tzinfo=None)
+            if value.microsecond % 10000:
+                # Firebird TIMESTAMP has 1/10000 s precision; truncate the
+                # excess microseconds so the stored value round-trips exactly.
+                value = value.replace(microsecond=(value.microsecond // 10000) * 10000)
+            return value
         if isinstance(value, str):
             return datetime.strptime(value, '%Y-%m-%d %H:%M:%S')
         raise ValueError(f"Cannot convert {type(value).__name__} to TIMESTAMP")

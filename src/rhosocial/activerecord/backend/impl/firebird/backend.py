@@ -12,7 +12,14 @@ from rhosocial.activerecord.backend.options import (
 from rhosocial.activerecord.backend.schema import StatementType
 from rhosocial.activerecord.backend import errors as exc
 
-from .mixins import FirebirdBackendMixin, FirebirdConcurrencyMixin
+from .mixins import (
+    FirebirdBackendMixin,
+    FirebirdConcurrencyMixin,
+    track_firebird_backend,
+    track_firebird_connection,
+    untrack_firebird_backend,
+    untrack_firebird_connection,
+)
 from .transaction import FirebirdTransactionManager
 
 
@@ -78,9 +85,11 @@ class FirebirdBackend(
             if config.timezone:
                 connect_params['session_time_zone'] = config.timezone
             self._connection = fdb.connect(**connect_params)
+            track_firebird_connection(self._connection)
             self._cursor = self._connection.cursor()
             self._is_connected = True
             self._fetch_concurrency_hint()
+            track_firebird_backend(self)
         except Exception as e:
             self._handle_error(e)
 
@@ -93,6 +102,7 @@ class FirebirdBackend(
                     pass
                 self._cursor = None
             if self._connection:
+                untrack_firebird_connection(self._connection)
                 try:
                     self._connection.close()
                 except Exception:
@@ -100,6 +110,7 @@ class FirebirdBackend(
                 self._connection = None
         finally:
             self._is_connected = False
+            untrack_firebird_backend(self)
 
     def ping(self, reconnect: bool = True) -> bool:
         if not self._is_connected or self._connection is None:
@@ -408,7 +419,11 @@ class FirebirdBackend(
         return self._transaction_manager
 
     def __del__(self):
-        try:
-            self.disconnect()
-        except Exception:
-            pass
+        # Do NOT call disconnect() here. firebird-driver objects must not be
+        # closed from the garbage collector: libfbclient is not thread-safe,
+        # and closing from __del__ during a GC pass crashes the process with a
+        # segmentation fault. Backends (and their Connection/Cursor) are kept
+        # strongly referenced via track_firebird_backend() until disconnect()
+        # is called explicitly, so this only runs for backends whose resources
+        # were already released.
+        pass
