@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "rhosocial-activerecord-firebird"
-version = "1.0.0.dev1"
+version = "1.0.0.dev2"
 description = "Firebird backend implementation for rhosocial-activerecord, providing robust Firebird database support."
 readme = "README.md"
 license = { file = "LICENSE" }
