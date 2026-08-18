@@ -1,16 +1,39 @@
 # src/rhosocial/activerecord/backend/impl/firebird/cli/named_connection.py
-"""CLI named-connection subcommand."""
+"""named-connection subcommand - Adapter for shared CLI helper.
+
+named-connection does not need connection arguments (it manages connections)
+or -o (all output is plain text).
+"""
+
+import argparse
+
+from rhosocial.activerecord.backend.named_connection import NamedConnectionResolver
 
 
-def register(subparsers):
-    """Register the named-connection subcommand."""
-    parser = subparsers.add_parser("named-connection", help="Manage named connections")
-    parser.add_argument("action", choices=["list", "show", "set", "delete"], help="Action")
-    parser.add_argument("name", nargs="?", help="Connection name")
+def create_parser(subparsers):
+    """Create the named-connection subcommand parser.
+
+    named-connection does not need connection or output arguments, but
+    the shared CLI helper requires a parent_parser. Pass an empty one.
+    """
+    from rhosocial.activerecord.backend.named_connection.cli import create_named_connection_parser
+
+    # Create an empty parent parser with no arguments
+    empty_parent = argparse.ArgumentParser(add_help=False)
+    return create_named_connection_parser(subparsers, empty_parent)
 
 
-def handle_named_connection(args):
-    """Handle named-connection subcommand."""
-    print(f"Named connection: {args.action}")
-    if args.name:
-        print(f"  Name: {args.name}")
+def handle(args):
+    """Handle the named-connection subcommand."""
+    from rhosocial.activerecord.backend.named_connection.cli import handle_named_connection as handle_nc
+
+    from .output import create_provider
+
+    output_fmt = getattr(args, "output", "table")
+    ascii_borders = getattr(args, "rich_ascii", False)
+    provider = create_provider(output_fmt, ascii_borders=ascii_borders)
+
+    def named_connection_resolver_factory(name):
+        return NamedConnectionResolver(name)
+
+    handle_nc(args, named_connection_resolver_factory, provider)

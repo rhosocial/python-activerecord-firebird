@@ -1,6 +1,7 @@
 # src/rhosocial/activerecord/backend/impl/firebird/cli/connection.py
 """CLI connection subcommand and shared connection helpers."""
 
+import argparse
 import os
 
 
@@ -43,10 +44,74 @@ def add_connection_args(parser):
         help="SQL role name (env: FIREBIRD_ROLE)",
     )
     parser.add_argument(
-        "--use-async",
+        "--ssl",
+        choices=["auto", "require", "verify-ca", "verify-full", "disabled"],
+        default="auto",
+        help="SSL mode (env: FIREBIRD_SSL, default: auto)",
+    )
+    parser.add_argument(
+        "--async",
         action="store_true",
+        dest="is_async",
         help="Use asynchronous backend",
     )
+    parser.add_argument(
+        "--named-connection",
+        dest="named_connection",
+        metavar="QUALIFIED_NAME",
+        help="Named connection from Python module (e.g., myapp.connections.prod_db). "
+        "The --host/--port/--database options can override fields in this connection.",
+    )
+    parser.add_argument(
+        "--conn-param",
+        action="append",
+        metavar="KEY=VALUE",
+        default=[],
+        dest="connection_params",
+        help="Connection parameter override for named connection. Can be specified multiple times.",
+    )
+
+
+def create_connection_parent_parser():
+    """Create a parent parser with connection and output arguments only.
+
+    Used by named-expression/named-procedure shared CLI helpers which
+    require a parent_parser argument.
+    """
+    parser = argparse.ArgumentParser(add_help=False)
+    add_connection_args(parser)
+    parser.add_argument(
+        "-o",
+        "--output",
+        choices=["table", "json", "csv", "tsv"],
+        default="table",
+        help='Output format. Defaults to "table" if rich is installed.',
+    )
+    parser.add_argument(
+        "--rich-ascii",
+        action="store_true",
+        help="Use ASCII characters for rich table borders.",
+    )
+    return parser
+
+
+def warn_if_async_requested(args) -> None:
+    """Refuse execution when --async is requested.
+
+    The official ``firebird-driver`` has no asynchronous support.  The
+    ``--async`` flag is kept for CLI surface parity with the other backends,
+    but Firebird commands reject it outright rather than silently degrading
+    to synchronous execution (which would mislead the caller).
+    """
+    if getattr(args, "is_async", False):
+        import sys
+
+        print(
+            "[ERROR] Firebird official driver (firebird-driver) does not support "
+            "asynchronous execution. Remove --async to run synchronously.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
 
 
 def add_version_arg(parser):
@@ -60,8 +125,30 @@ def add_version_arg(parser):
 
 
 def resolve_connection_config_from_args(args):
-    """Resolve Firebird connection config from parsed args."""
+    """Resolve Firebird connection config from parsed args.
+
+    Priority order:
+        1. --named-connection + --conn-param
+        2. Explicit connection parameters (--host, --port, etc.)
+        3. Default values
+    """
     from rhosocial.activerecord.backend.impl.firebird.config import FirebirdConnectionConfig
+    from rhosocial.activerecord.backend.named_connection.cli import parse_params
+    from rhosocial.activerecord.backend.named_connection import NamedConnectionResolver
+
+    named_conn = getattr(args, "named_connection", None)
+    conn_params = getattr(args, "connection_params", [])
+
+    if conn_params:
+        conn_params = parse_params(conn_params)
+    else:
+        conn_params = {}
+
+    if named_conn:
+        resolver = NamedConnectionResolver(named_conn).load()
+        if conn_params:
+            return resolver.resolve(conn_params)
+        return resolver.resolve({})
 
     return FirebirdConnectionConfig(
         host=args.host,
@@ -72,23 +159,3 @@ def resolve_connection_config_from_args(args):
         charset=getattr(args, 'charset', "UTF8"),
         role=getattr(args, 'role', None),
     )
-
-
-def register(subparsers):
-    """Register the connection subcommand."""
-    parser = subparsers.add_parser("connection", help="Manage database connections")
-    parser.add_argument("action", choices=["test", "list", "details"], help="Action to perform")
-    parser.add_argument("--name", "-n", help="Connection name")
-    parser.add_argument("--host", default="localhost", help="Firebird host")
-    parser.add_argument("--port", type=int, default=3050, help="Firebird port")
-    parser.add_argument("--database", "-d", help="Database path")
-    parser.add_argument("--user", "-u", help="Username")
-    parser.add_argument("--password", "-p", help="Password")
-
-
-def handle_connection(args):
-    """Handle connection subcommand."""
-    print(f"Connection action: {args.action}")
-    print(f"  Host: {args.host}:{args.port}")
-    print(f"  Database: {args.database or '(not specified)'}")
-    print(f"  User: {args.user or '(not specified)'}")

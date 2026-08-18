@@ -1,36 +1,45 @@
-# src/rhosocial/activerecord/backend/impl/firebird/cli/named_procedure.py
-"""named-procedure subcommand - Adapter for shared CLI helper.
+# src/rhosocial/activerecord/backend/impl/firebird/cli/named_procedure_graph.py
+"""named-procedure-graph subcommand - Adapter for shared CLI helper.
 
-named-procedure requires connection arguments, output arguments, and --rich-ascii.
+named-procedure-graph requires connection arguments, output arguments, and --rich-ascii.
+
+Usage:
+    $ python -m rhosocial.activerecord.backend.impl.firebird named-procedure-graph run \\
+        myapp.npg.monthly_report \\
+        --host localhost --database mydb \\
+        --params '{"month": "2026-04"}'
+
+    $ python -m rhosocial.activerecord.backend.impl.firebird named-procedure-graph list \\
+        myapp.npg
+
+    $ python -m rhosocial.activerecord.backend.impl.firebird named-procedure-graph validate \\
+        myapp.npg.monthly_report
 """
 
 from rhosocial.activerecord.backend.impl.firebird import FirebirdBackend, AsyncFirebirdBackend
 
-from .connection import create_connection_parent_parser, resolve_connection_config_from_args, warn_if_async_requested
+from .connection import create_connection_parent_parser, resolve_connection_config_from_args
 from .output import create_provider
 
 
 def create_parser(subparsers):
-    """Create the named-procedure subcommand parser.
+    """Create the named-procedure-graph subcommand parser.
 
-    Reuses the shared create_named_procedure_parser, passing a parent parser
+    Reuses the shared create_named_procedure_graph_parser, passing a parent parser
     containing only connection and output arguments.
     """
-    from rhosocial.activerecord.backend.named_expression.cli_procedure import (
-        create_named_procedure_parser,
+    from rhosocial.activerecord.backend.named_expression.cli_procedure_graph import (
+        create_named_procedure_graph_parser,
     )
 
     local_parent = create_connection_parent_parser()
-    return create_named_procedure_parser(subparsers, local_parent)
+    return create_named_procedure_graph_parser(subparsers, local_parent)
 
 
 def handle(args):
-
-    warn_if_async_requested(args)
-
-    """Handle the named-procedure subcommand."""
-    from rhosocial.activerecord.backend.named_expression.cli_procedure import (
-        handle_named_procedure as handle_np,
+    """Handle the named-procedure-graph subcommand."""
+    from rhosocial.activerecord.backend.named_expression.cli_procedure_graph import (
+        handle_named_procedure_graph as handle_npg,
     )
 
     provider = create_provider(args.output, ascii_borders=args.rich_ascii)
@@ -63,7 +72,7 @@ def handle(args):
             if async_backend and async_backend._connection:
                 await async_backend.disconnect()
 
-        handle_np(
+        handle_npg(
             args,
             provider,
             backend_factory=backend_factory,
@@ -73,7 +82,7 @@ def handle(args):
         )
         return
 
-    handle_np(
+    handle_npg(
         args,
         provider,
         backend_factory=backend_factory,
