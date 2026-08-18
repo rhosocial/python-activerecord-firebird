@@ -130,14 +130,14 @@ jobs:
       - name: Run tests
         run: |
           export PYTHONPATH=src:tests
-          python -m pytest tests/ --tb=short -x -n auto --dist=loadgroup
+          python -m pytest tests/ --tb=short -x -n 8 --dist=loadgroup
 
       - name: Run tests with coverage (3.14 + 6-snapshot only)
         if: matrix.python-version == '3.14' && matrix.firebird-version == '6-snapshot'
         run: |
           export PYTHONPATH=src:tests
           pip install codecov
-          coverage run --source=src -m pytest tests/ --tb=short -n auto --dist=loadgroup
+          coverage run --source=src -m pytest tests/ --tb=short -n 8 --dist=loadgroup
           coverage xml
           coverage report
 
