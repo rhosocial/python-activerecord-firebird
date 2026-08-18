@@ -12,6 +12,7 @@ on:
       - main
       - 'release/v**'
       - 'maint/**'
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -66,8 +67,8 @@ jobs:
 
       - name: Install activerecord and testsuite
         run: |
-          pip install rhosocial-activerecord==1.0.0.dev29
-          pip install rhosocial-activerecord-testsuite==1.0.0.dev16
+          pip install "rhosocial-activerecord @ git+https://github.com/rhosocial/python-activerecord.git@feature/parallel-testing"
+          pip install "rhosocial-activerecord-testsuite @ git+https://github.com/rhosocial/python-activerecord-testsuite.git@feature/parallel-testing"
 
       - name: Verify Firebird connection and create test user
         run: |
@@ -129,14 +130,14 @@ jobs:
       - name: Run tests
         run: |
           export PYTHONPATH=src:tests
-          python -m pytest tests/ --tb=no --maxfail=10 -rf -rX
+          python -m pytest tests/ --tb=short -x -n auto --dist=loadgroup
 
       - name: Run tests with coverage (3.14 + 6-snapshot only)
         if: matrix.python-version == '3.14' && matrix.firebird-version == '6-snapshot'
         run: |
           export PYTHONPATH=src:tests
           pip install codecov
-          coverage run --source=src -m pytest tests/ --tb=short
+          coverage run --source=src -m pytest tests/ --tb=short -n auto --dist=loadgroup
           coverage xml
           coverage report
 
