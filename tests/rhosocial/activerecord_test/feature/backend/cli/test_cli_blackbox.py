@@ -69,11 +69,11 @@ class TestQuery:
         assert json.loads(out) == [{"one": 1}]
 
     def test_query_async(self, conn_args):
-        out, _, exc = run_cli(
+        out, err, exc = run_cli(
             ["query"] + conn_args + ["SELECT 1 AS one FROM RDB$DATABASE", "-o", "json", "--async"]
         )
-        assert exc is None
-        assert json.loads(out) == [{"one": 1}]
+        assert exc is not None and exc.code == 1
+        assert "does not support asynchronous execution" in err
 
 
 class TestStatus:
