@@ -188,6 +188,10 @@ class FirebirdTypeSupportMixin(DDLTypeMixin, DDLTypeSupport):
             return TextType()
 
         if self._FB_DATE_TYPES.match(upper):
+            # TIMESTAMP must be tested before TIME: "TIMESTAMP".startswith("TIME")
+            # is True, so the reversed order mis-parsed TIMESTAMP as TimeType.
+            if upper.startswith("TIMESTAMP"):
+                return DateTimeType()
             if upper.startswith("TIME"):
                 return TimeType()
             if upper.startswith("DATE"):

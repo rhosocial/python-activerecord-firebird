@@ -172,6 +172,15 @@ class TestBaseDataTypeRendering:
         assert isinstance(dialect.parse_type("BOOLEAN"), BooleanType)
         assert dialect.parse_type("SOMETHING WEIRD") == CustomType("SOMETHING WEIRD")
 
+    def test_parse_type_timestamp_takes_precedence_over_time(self, dialect):
+        """F7 anchor: startswith("TIME") used to swallow TIMESTAMP strings."""
+        parsed = dialect.parse_type("TIMESTAMP")
+        assert isinstance(parsed, DateTimeType)
+        assert not isinstance(parsed, TimeType)
+        assert isinstance(dialect.parse_type("timestamp with time zone"), DateTimeType)
+        # Plain TIME must still parse as TimeType after the reorder.
+        assert isinstance(dialect.parse_type("TIME"), TimeType)
+
 
 class TestReturningBranches:
     def test_insert_returning_snapshot(self, dialect):

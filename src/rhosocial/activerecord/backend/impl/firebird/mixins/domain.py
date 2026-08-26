@@ -60,6 +60,8 @@ class FirebirdDomainMixin:
         mode = expr.mode
 
         if mode == FirebirdDomainAlterMode.SET_DEFAULT:
+            if expr.value is None:
+                raise ValueError("SET DEFAULT requires a value")
             return f"ALTER DOMAIN {domain} SET DEFAULT {self._format_ddl_literal(expr.value)}", ()
         if mode == FirebirdDomainAlterMode.DROP_DEFAULT:
             return f"ALTER DOMAIN {domain} DROP DEFAULT", ()

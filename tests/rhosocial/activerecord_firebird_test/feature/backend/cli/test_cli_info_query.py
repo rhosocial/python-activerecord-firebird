@@ -211,6 +211,10 @@ class TestInfoHelpers:
         parameterized = blob["supports_blob_sub_type"]
         assert set(parameterized) == {"supported", "total", "args"}
         assert parameterized["total"] == len(parameterized["args"]) == 2
+        # F8 anchor: sub-type args are ints ("0"/"1" must not be compared as
+        # strings), so both BLOB sub-types report as supported.
+        assert parameterized["supported"] == parameterized["total"]
+        assert set(parameterized["args"].values()) == {True}
 
         window = info_mod.check_protocol_support(dialect, FirebirdWindowFunctionSupport)
         assert window["supports_window_functions"] is True

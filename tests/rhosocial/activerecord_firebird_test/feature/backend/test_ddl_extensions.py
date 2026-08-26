@@ -61,6 +61,13 @@ class TestDomainDDL:
             ).to_sql()
             assert sql == expected
 
+        # F1 anchor: SET DEFAULT without a value used to render
+        # "SET DEFAULT None"; it must fail loudly instead.
+        with pytest.raises(ValueError, match="SET DEFAULT requires a value"):
+            FirebirdAlterDomainExpression(
+                dialect, "d", mode=FirebirdDomainAlterMode.SET_DEFAULT
+            ).to_sql()
+
     def test_alter_domain_add_constraint(self, dialect):
         sql, _ = FirebirdAlterDomainExpression(
             dialect, "d", mode=FirebirdDomainAlterMode.ADD_CONSTRAINT,

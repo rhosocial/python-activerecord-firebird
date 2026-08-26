@@ -321,7 +321,16 @@ def check_protocol_support(dialect, protocol_class: type) -> Dict[str, Any]:
                     arg_results = {}
                     for arg in all_args:
                         try:
-                            arg_results[arg] = bool(method(arg))
+                            # Numeric strings describe int parameters (e.g.
+                            # supports_blob_sub_type takes a BLOB sub-type
+                            # number); passing "0" verbatim would compare
+                            # against int sub-types and always miss.
+                            call_arg = (
+                                int(arg)
+                                if isinstance(arg, str) and arg.lstrip("-").isdigit()
+                                else arg
+                            )
+                            arg_results[arg] = bool(method(call_arg))
                         except Exception:
                             arg_results[arg] = False
                     supported_count = sum(1 for v in arg_results.values() if v)
