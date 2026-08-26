@@ -1024,6 +1024,10 @@ class FirebirdDialect(
     def supports_trigger_if_not_exists(self) -> bool:
         return False
 
+    def supports_schema(self) -> bool:
+        """Firebird has no schema namespaces; the database is the whole namespace."""
+        return False
+
     def supports_create_schema(self) -> bool:
         return False
 
