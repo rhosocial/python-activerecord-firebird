@@ -5,6 +5,8 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from rhosocial.activerecord.backend.dialect.exceptions import UnsupportedFeatureError
 
+from .version_boundaries import _norm_version
+
 
 class FirebirdDMLOperationMixin:
 
@@ -186,7 +188,7 @@ class FirebirdDMLOperationMixin:
                     all_params.extend(as_params)
                 action_sql_parts.append(f"THEN UPDATE SET {', '.join(assignments)}")
             elif action.action_type == MergeActionType.DELETE:
-                if version < (3, 0, 0):
+                if _norm_version(version) < (3, 0, 0):
                     raise UnsupportedFeatureError(
                         self.name,
                         "MERGE ... WHEN MATCHED THEN DELETE",
@@ -233,7 +235,7 @@ class FirebirdDMLOperationMixin:
             merge_sql_parts.append(" ".join(action_sql_parts))
 
         for action in expr.when_not_matched_by_source:
-            if version < (5, 0, 0):
+            if _norm_version(version) < (5, 0, 0):
                 raise UnsupportedFeatureError(
                     self.name,
                     "MERGE ... WHEN NOT MATCHED BY SOURCE",
@@ -284,7 +286,7 @@ class FirebirdDMLOperationMixin:
         expression is gated uniformly at ``(3, 0, 0)``.
         """
         version = getattr(self, 'version', (3, 0, 0))
-        if version < (3, 0, 0):
+        if _norm_version(version) < (3, 0, 0):
             raise UnsupportedFeatureError(
                 self.name,
                 "EXECUTE STATEMENT",
@@ -326,7 +328,7 @@ class FirebirdDMLOperationMixin:
         with ``BEGIN``, mirroring :meth:`format_execute_block`.
         """
         version = getattr(self, 'version', (3, 0, 0))
-        if version < (3, 0, 0):
+        if _norm_version(version) < (3, 0, 0):
             raise UnsupportedFeatureError(
                 self.name,
                 "IN AUTONOMOUS TRANSACTION DO",

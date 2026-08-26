@@ -64,8 +64,13 @@ def _column(name, data_type, *constraints):
 
 
 class TestFB4TypeGateSupportedSide:
-    """FB4-gated types must render on a (4, 0, 0) dialect."""
+    """FB4-gated types must render on any 4.0 dialect shape.
 
+    The ``(4, 0)`` variants pin F4: a two-component version tuple compares
+    less than ``(4, 0, 0)``, so every gate must normalize before comparing.
+    """
+
+    @pytest.mark.parametrize("version", [(4, 0, 0), (4, 0)])
     @pytest.mark.parametrize("data_type,expected", [
         (FirebirdTimeStampTzType(), "TIMESTAMP WITH TIME ZONE"),
         (FirebirdTimeTzType(), "TIME WITH TIME ZONE"),
@@ -73,14 +78,14 @@ class TestFB4TypeGateSupportedSide:
         (FirebirdDecFloatType(34), "DECFLOAT(34)"),
         (FirebirdInt128Type(), "INT128"),
     ])
-    def test_fb4_types_render_on_4_0(self, data_type, expected):
-        sql = FirebirdDialect((4, 0, 0)).format_data_type(data_type)
+    def test_fb4_types_render_on_4_0(self, version, data_type, expected):
+        sql = FirebirdDialect(version).format_data_type(data_type)
         assert sql == (expected, ())
-        assert data_type.to_sql(FirebirdDialect((4, 0, 0))) == (expected, ())
+        assert data_type.to_sql(FirebirdDialect(version)) == (expected, ())
 
     def test_support_flags_agree_with_rendering(self):
-        dialect = FirebirdDialect((4, 0, 0))
-        assert dialect.supports_decfloat() is True
+        for version in ((4, 0, 0), (4, 0)):
+            assert FirebirdDialect(version).supports_decfloat() is True
 
 
 class TestFB4TypeGateUnsupportedSide:

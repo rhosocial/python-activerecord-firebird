@@ -3,6 +3,8 @@
 
 from typing import Tuple
 
+from .version_boundaries import _norm_version
+
 
 class FirebirdLockingMixin:
 
@@ -17,7 +19,7 @@ class FirebirdLockingMixin:
         if with_lock:
             parts.append("WITH LOCK")
         if skip_locked:
-            if version >= (4, 0, 0):
+            if _norm_version(version) >= (4, 0, 0):
                 parts.append("SKIP LOCKED")
         if nowait:
             parts.append("WITH LOCK")
@@ -26,8 +28,8 @@ class FirebirdLockingMixin:
 
     def supports_for_update_with_lock(self) -> bool:
         version = getattr(self, 'version', (3, 0, 0))
-        return version >= (3, 0, 0)
+        return _norm_version(version) >= (3, 0, 0)
 
     def supports_skip_locked(self) -> bool:
         version = getattr(self, 'version', (3, 0, 0))
-        return version >= (4, 0, 0)
+        return _norm_version(version) >= (4, 0, 0)

@@ -92,6 +92,7 @@ from rhosocial.activerecord.backend.dialect.mixins import (
 from rhosocial.activerecord.backend.dialect.exceptions import UnsupportedFeatureError
 
 from .collation import validate_firebird_collation_name
+from .mixins.version_boundaries import _norm_version
 from .mixins import (
     FirebirdAlterTableModifierMixin,
     FirebirdDMLOperationMixin,
@@ -565,19 +566,19 @@ class FirebirdDialect(
     # region Version-based feature detection
 
     def supports_basic_cte(self) -> bool:
-        return self.version >= (3, 0, 0)
+        return _norm_version(self.version) >= (3, 0, 0)
 
     def supports_recursive_cte(self) -> bool:
-        return self.version >= (3, 0, 0)
+        return _norm_version(self.version) >= (3, 0, 0)
 
     def supports_materialized_cte(self) -> bool:
         return False
 
     def supports_window_functions(self) -> bool:
-        return self.version >= (3, 0, 0)
+        return _norm_version(self.version) >= (3, 0, 0)
 
     def supports_window_frame_clause(self) -> bool:
-        return self.version >= (3, 0, 0)
+        return _norm_version(self.version) >= (3, 0, 0)
 
     def supports_returning_insert(self) -> bool:
         return True
@@ -595,7 +596,7 @@ class FirebirdDialect(
         return False
 
     def supports_filter_clause(self) -> bool:
-        return self.version >= (3, 0, 0)
+        return _norm_version(self.version) >= (3, 0, 0)
 
     def supports_intersect(self) -> bool:
         # Firebird supports only UNION/UNION ALL as set operations.
@@ -666,11 +667,11 @@ class FirebirdDialect(
         return True
 
     def supports_for_update_skip_locked(self) -> bool:
-        return self.version >= (5, 0, 0)
+        return _norm_version(self.version) >= (5, 0, 0)
 
     def supports_lateral_join(self) -> bool:
         """Firebird 4.0 introduced joins with LATERAL derived tables."""
-        return self.version >= (4, 0, 0)
+        return _norm_version(self.version) >= (4, 0, 0)
 
     def supports_ilike(self) -> bool:
         return False
@@ -704,10 +705,10 @@ class FirebirdDialect(
         return sub_type in (0, 1, 2, 3, 4, 5)
 
     def supports_for_update_with_lock(self) -> bool:
-        return self.version >= (3, 0, 0)
+        return _norm_version(self.version) >= (3, 0, 0)
 
     def supports_skip_locked(self) -> bool:
-        return self.version >= (5, 0, 0)
+        return _norm_version(self.version) >= (5, 0, 0)
 
     def supports_snapshot_isolation(self) -> bool:
         return True
@@ -728,7 +729,7 @@ class FirebirdDialect(
         return True
 
     def supports_identity_columns(self) -> bool:
-        return self.version >= (3, 0, 0)
+        return _norm_version(self.version) >= (3, 0, 0)
 
     def supports_external_file(self) -> bool:
         return True
@@ -778,22 +779,22 @@ class FirebirdDialect(
         return True
 
     def supports_boolean_type(self) -> bool:
-        return self.version >= (3, 0, 0)
+        return _norm_version(self.version) >= (3, 0, 0)
 
     def supports_decfloat(self) -> bool:
-        return self.version >= (4, 0, 0)
+        return _norm_version(self.version) >= (4, 0, 0)
 
     def supports_rows_syntax(self) -> bool:
         return True
 
     def supports_offset_fetch(self) -> bool:
-        return self.version >= (3, 0, 0)
+        return _norm_version(self.version) >= (3, 0, 0)
 
     def supports_database_triggers(self) -> bool:
-        return self.version >= (3, 0, 0)
+        return _norm_version(self.version) >= (3, 0, 0)
 
     def supports_cte(self) -> bool:
-        return self.version >= (3, 0, 0)
+        return _norm_version(self.version) >= (3, 0, 0)
 
     def supports_udf(self) -> bool:
         return True
@@ -802,13 +803,13 @@ class FirebirdDialect(
         return True
 
     def supports_packages(self) -> bool:
-        return self.version >= (3, 0, 0)
+        return _norm_version(self.version) >= (3, 0, 0)
 
     def supports_create_package(self) -> bool:
-        return self.version >= (3, 0, 0)
+        return _norm_version(self.version) >= (3, 0, 0)
 
     def supports_create_package_body(self) -> bool:
-        return self.version >= (3, 0, 0)
+        return _norm_version(self.version) >= (3, 0, 0)
 
     def supports_global_temporary_table(self) -> bool:
         return True
@@ -829,13 +830,13 @@ class FirebirdDialect(
         return True
 
     def supports_autonomous_transaction(self) -> bool:
-        return self.version >= (3, 0, 0)
+        return _norm_version(self.version) >= (3, 0, 0)
 
     def supports_for_cursor(self) -> bool:
         return True
 
     def supports_as_cursor(self) -> bool:
-        return self.version >= (3, 0, 0)
+        return _norm_version(self.version) >= (3, 0, 0)
 
     def supports_collation(self) -> bool:
         return True
@@ -1209,9 +1210,9 @@ class FirebirdDialect(
         if version_range is None:
             return True
         min_version, max_version = version_range
-        if min_version is not None and self.version < min_version:
+        if min_version is not None and _norm_version(self.version) < min_version:
             return False
-        if max_version is not None and self.version > max_version:
+        if max_version is not None and _norm_version(self.version) > max_version:
             return False
         return True
 
@@ -1229,7 +1230,7 @@ class FirebirdDialect(
         if limit is None and offset is None:
             return "", ()
 
-        if self.version >= (3, 0, 0):
+        if _norm_version(self.version) >= (3, 0, 0):
             parts = []
             if offset is not None and offset > 0:
                 parts.append(f"OFFSET {offset} ROWS")
@@ -1296,7 +1297,7 @@ class FirebirdDialect(
         if clause.limit is None and clause.offset is None:
             return "", ()
 
-        if self.version >= (3, 0, 0):
+        if _norm_version(self.version) >= (3, 0, 0):
             parts = []
             if clause.offset is not None:
                 parts.append(f"OFFSET {clause.offset} ROWS")
