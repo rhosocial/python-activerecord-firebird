@@ -45,10 +45,23 @@ class FirebirdTableMixin:
 
         all_params: List[Any] = []
 
-        parts = ["CREATE TABLE"]
+        parts = []
         if getattr(expr, 'temporary', False):
-            parts.append("GLOBAL TEMPORARY")
+            # Legal Firebird word order is CREATE GLOBAL TEMPORARY TABLE;
+            # "CREATE TABLE GLOBAL TEMPORARY" is rejected by the parser.
+            parts.append("CREATE GLOBAL TEMPORARY TABLE")
+        else:
+            parts.append("CREATE TABLE")
         if getattr(expr, 'if_not_exists', False):
+            # Capability gate: Firebird has no IF NOT EXISTS on CREATE TABLE,
+            # so rendering it anyway would produce broken DDL.
+            if not self.supports_if_not_exists_table():
+                from rhosocial.activerecord.backend.dialect.exceptions import UnsupportedFeatureError
+                raise UnsupportedFeatureError(
+                    self.name,
+                    "IF NOT EXISTS on CREATE TABLE",
+                    "Firebird does not support IF NOT EXISTS for tables.",
+                )
             parts.append("IF NOT EXISTS")
         parts.append(self.format_identifier(expr.table_name))
 

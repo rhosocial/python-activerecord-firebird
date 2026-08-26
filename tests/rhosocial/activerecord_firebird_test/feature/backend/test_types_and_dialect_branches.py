@@ -346,12 +346,36 @@ class TestCreateTableRebuildSnapshots:
         expr = CreateTableExpression(dialect, "tmp_t", [_column("id", IntegerType())], temporary=True)
         expr.on_commit_delete = on_commit_delete
         sql, _ = expr.to_sql()
-        assert sql.startswith('CREATE TABLE GLOBAL TEMPORARY "TMP_T"')
+        assert sql.startswith('CREATE GLOBAL TEMPORARY TABLE "TMP_T"')
         assert expected_tail in sql
 
-    def test_if_not_exists_is_rendered_when_requested(self, dialect):
+    @pytest.mark.parametrize("on_commit_delete,expected", [
+        (True, 'CREATE GLOBAL TEMPORARY TABLE "GT_A" ON COMMIT DELETE ROWS ("ID" INTEGER)'),
+        (False, 'CREATE GLOBAL TEMPORARY TABLE "GT_A" ON COMMIT PRESERVE ROWS ("ID" INTEGER)'),
+    ])
+    def test_global_temporary_word_order_snapshot(self, dialect, on_commit_delete, expected):
+        """F5 anchor: exact to_sql() snapshot of the corrected word order."""
+        expr = CreateTableExpression(dialect, "gt_a", [_column("id", IntegerType())], temporary=True)
+        expr.on_commit_delete = on_commit_delete
+        assert expr.to_sql() == (expected, ())
+
+    def test_if_not_exists_raises_when_unsupported(self, dialect):
+        """F6 anchor: Firebird lacks IF NOT EXISTS on CREATE TABLE.
+
+        Previously the clause was rendered unconditionally; it must now be
+        rejected through supports_if_not_exists_table().
+        """
         expr = CreateTableExpression(dialect, "tbl_c", [_column("id", IntegerType())], if_not_exists=True)
-        assert expr.to_sql()[0].startswith('CREATE TABLE IF NOT EXISTS "TBL_C"')
+        with pytest.raises(UnsupportedFeatureError) as excinfo:
+            expr.to_sql()
+        assert "IF NOT EXISTS" in str(excinfo.value)
+
+    def test_if_not_exists_renders_when_capability_present(self, dialect):
+        expr = CreateTableExpression(dialect, "tbl_c", [_column("id", IntegerType())], if_not_exists=True)
+        from unittest import mock
+        with mock.patch.object(FirebirdDialect, "supports_if_not_exists_table", return_value=True):
+            sql, _ = expr.to_sql()
+        assert sql.startswith('CREATE TABLE IF NOT EXISTS "TBL_C"')
 
     def test_external_file_clause(self, dialect):
         expr = CreateTableExpression(dialect, "ext_t", [_column("id", IntegerType())])
