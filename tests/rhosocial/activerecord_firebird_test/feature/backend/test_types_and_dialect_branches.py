@@ -226,22 +226,61 @@ class TestReturningBranches:
 class TestSkipLockedBranches:
     @pytest.mark.parametrize("version,expected_skip_locked", [
         ((3, 0, 0), False),
+        ((4, 0, 0), True),
         ((5, 0, 0), True),
     ])
     def test_supports_skip_locked_gate(self, version, expected_skip_locked):
         dialect = FirebirdDialect(version)
         assert dialect.supports_skip_locked() is expected_skip_locked
         assert dialect.supports_for_update_skip_locked() is expected_skip_locked
+        # Single source of truth: the mixin must not carry its own threshold.
+        assert "supports_skip_locked" not in vars(FirebirdLockingMixin)
 
-    def test_for_update_clause_raises_on_every_version(self):
-        for version in ((3, 0, 0), (5, 0, 0)):
-            dialect = FirebirdDialect(version)
-            query = E.QueryExpression(
-                dialect, select=[E.Column(dialect, "id")], from_="t",
-                for_update=ForUpdateClause(dialect, skip_locked=True),
-            )
-            with pytest.raises(UnsupportedFeatureError):
-                query.to_sql()
+    def test_supports_for_update_gate_follows_protocol(self):
+        assert FirebirdDialect((3, 0, 0)).supports_for_update() is True
+        assert FirebirdDialect((2, 5, 0)).supports_for_update() is False
+        assert FirebirdDialect((4, 0)).supports_for_update() is True
+
+    @pytest.mark.parametrize("version,kwargs,fragments", [
+        ((3, 0, 0), {}, ('SELECT "ID" FROM "T"', 'FOR UPDATE')),
+        ((3, 0, 0), {"skip_locked": True}, ('FOR UPDATE',)),
+        ((3, 0, 0), {"nowait": True}, ('FOR UPDATE WITH LOCK',)),
+        ((4, 0, 0), {"skip_locked": True}, ('FOR UPDATE', 'SKIP LOCKED')),
+        ((5, 0, 0), {"skip_locked": True}, ('FOR UPDATE', 'SKIP LOCKED')),
+        ((4, 0), {"nowait": True}, ('FOR UPDATE WITH LOCK',)),
+        ((4, 0), {"skip_locked": True}, ('FOR UPDATE', 'SKIP LOCKED')),
+    ])
+    def test_for_update_renders_through_query_path(self, version, kwargs, fragments):
+        """FOR UPDATE/SKIP LOCKED must render through the real query path.
+
+        F2/F3 anchor flip: this used to assert that every version raised
+        UnsupportedFeatureError because the mixin method name missed the
+        LockingSupport protocol; now the clause renders positively.
+        """
+        dialect = FirebirdDialect(version)
+        query = E.QueryExpression(
+            dialect, select=[E.Column(dialect, "id")], from_="t",
+            for_update=ForUpdateClause(dialect, **kwargs),
+        )
+        sql, params = query.to_sql()
+        for fragment in fragments:
+            assert fragment in sql
+        if kwargs.get("skip_locked") and not dialect.supports_skip_locked():
+            assert "SKIP LOCKED" not in sql
+        assert params == ()
+
+    def test_for_update_of_columns_render_through_query_path(self):
+        dialect = FirebirdDialect((3, 0, 0))
+        query = E.QueryExpression(
+            dialect, select=[E.Column(dialect, "id")], from_="t",
+            for_update=ForUpdateClause(
+                dialect,
+                of_columns=["id", E.Column(dialect, "name")],
+                nowait=True,
+            ),
+        )
+        sql, _ = query.to_sql()
+        assert sql.endswith('FOR UPDATE OF "ID", "NAME" WITH LOCK')
 
     @pytest.mark.parametrize("version,kwargs,expected", [
         ((3, 0, 0), {}, "FOR UPDATE"),
@@ -261,7 +300,7 @@ class TestSkipLockedBranches:
         request.with_lock = kwargs.get("with_lock", False)
         request.skip_locked = kwargs.get("skip_locked", False)
         request.nowait = kwargs.get("nowait", False)
-        assert FirebirdLockingMixin.format_for_update(dialect, request) == (expected, ())
+        assert FirebirdLockingMixin.format_for_update_clause(dialect, request) == (expected, ())
 
 
 class TestSequenceBranches:

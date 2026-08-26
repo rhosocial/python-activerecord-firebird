@@ -13,7 +13,7 @@ FIREBIRD_VERSION_BOUNDARIES = {
     'DATABASE_TRIGGERS': (3, 0, 0),
     'AUTONOMOUS_TRANS': (3, 0, 0),
     'UUID_TO_FROM_CHAR': (3, 0, 0),
-    'SKIP_LOCKED': (5, 0, 0),
+    'SKIP_LOCKED': (4, 0, 0),
     'OFFSET_FETCH': (3, 0, 0),
     'DECFLOAT': (4, 0, 0),
     'EXPLAIN_PLAN': (3, 0, 0),

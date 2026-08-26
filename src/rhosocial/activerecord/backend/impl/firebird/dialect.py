@@ -8,7 +8,7 @@ Firebird SQL dialect features and version support:
   - BOOLEAN type (FB 3.0+)
   - IDENTITY columns (FB 3.0+)
   - SEQUENCE (FB 3.0+)
-  - SKIP LOCKED (FB 5.0+)
+    - SKIP LOCKED (FB 4.0+)
   - OFFSET/FETCH (FB 3.0+)
   - DECFLOAT (FB 4.0+)
 """
@@ -291,7 +291,7 @@ class FirebirdDialect(
     - IDENTITY columns (FB 3.0+)
     - BOOLEAN type (FB 3.0+)
     - Packages (FB 3.0+)
-    - SKIP LOCKED (FB 5.0+)
+  - SKIP LOCKED (FB 4.0+)
     - OFFSET/FETCH (FB 3.0+)
     - DECFLOAT (FB 4.0+)
     - EXECUTE BLOCK (FB 2.5+)
@@ -667,7 +667,7 @@ class FirebirdDialect(
         return True
 
     def supports_for_update_skip_locked(self) -> bool:
-        return _norm_version(self.version) >= (5, 0, 0)
+        return self.supports_skip_locked()
 
     def supports_lateral_join(self) -> bool:
         """Firebird 4.0 introduced joins with LATERAL derived tables."""
@@ -704,11 +704,19 @@ class FirebirdDialect(
     def supports_blob_sub_type(self, sub_type: int) -> bool:
         return sub_type in (0, 1, 2, 3, 4, 5)
 
+    def supports_for_update(self) -> bool:
+        """C3 re-bind: DQLMixin precedes FirebirdLockingMixin in the base
+        list, so its empty ``supports_for_update()`` stub would shadow the
+        concrete FB3+ gate; delegate to the locking mixin explicitly."""
+        return FirebirdLockingMixin.supports_for_update(self)
+
     def supports_for_update_with_lock(self) -> bool:
         return _norm_version(self.version) >= (3, 0, 0)
 
     def supports_skip_locked(self) -> bool:
-        return _norm_version(self.version) >= (5, 0, 0)
+        """SKIP LOCKED was introduced in Firebird 4.0; single source of
+        truth for both this gate and FirebirdLockingMixin's rendering."""
+        return _norm_version(self.version) >= (4, 0, 0)
 
     def supports_snapshot_isolation(self) -> bool:
         return True
