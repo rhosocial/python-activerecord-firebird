@@ -136,10 +136,7 @@ jobs:
         if: matrix.python-version == '3.14' && matrix.firebird-version == '6-snapshot'
         run: |
           export PYTHONPATH=src:tests
-          pip install codecov
-          coverage run --source=src -m pytest tests/ --tb=short -n auto --dist=loadgroup
-          coverage xml
-          coverage report
+          python -m pytest tests/ --tb=short -n auto --dist=loadgroup --cov=src/rhosocial --cov-branch --cov-report=xml
 
       - name: Upload coverage to Codecov
         if: matrix.python-version == '3.14' && matrix.firebird-version == '6-snapshot'
@@ -149,4 +146,4 @@ jobs:
           files: ./coverage.xml
           flags: unittests,python-${{ matrix.python-version }},firebird-${{ matrix.firebird-version }}
           name: codecov-firebird-${{ matrix.python-version }}-${{ matrix.firebird-version }}
-          fail_ci_if_error: false
+          fail_ci_if_error: true
