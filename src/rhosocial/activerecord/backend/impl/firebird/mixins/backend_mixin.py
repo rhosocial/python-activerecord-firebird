@@ -161,12 +161,14 @@ class FirebirdBackendMixin:
 
         import datetime as dt
         from decimal import Decimal
+        from uuid import UUID
 
         suggestions: Dict[Type, Tuple[SQLTypeAdapter, Type]] = {}
         type_mappings = [
             (int, int), (float, float), (str, str), (bytes, bytes),
             (bool, bool), (dt.datetime, dt.datetime), (dt.date, dt.date),
             (dt.time, dt.time), (Decimal, Decimal), (dict, str), (list, str),
+            (UUID, bytes),
         ]
 
         for py_type, db_type in type_mappings:

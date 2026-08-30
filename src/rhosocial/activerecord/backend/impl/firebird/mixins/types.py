@@ -10,13 +10,17 @@ WITH TIME ZONE``, ``DECFLOAT(16|34)`` and ``INT128`` with a version gate of
 from __future__ import annotations
 
 import re
-from typing import Tuple
+from typing import Optional, Tuple
 
 from rhosocial.activerecord.backend.dialect.exceptions import UnsupportedFeatureError
-from rhosocial.activerecord.backend.dialect.mixins import DDLTypeMixin
+from rhosocial.activerecord.backend.dialect.mixins import (
+    DDLTypeMixin,
+    DDLTypeSuggestionMixin,
+)
 from rhosocial.activerecord.backend.dialect.protocols import DDLTypeSupport
 from rhosocial.activerecord.backend.expression.types import (
     BigIntType,
+    BlobType,
     BooleanType,
     CharType,
     CustomType,
@@ -88,6 +92,16 @@ class FirebirdTypeSupportMixin(DDLTypeMixin, DDLTypeSupport):
     @DDLTypeMixin.handles(TextType)
     def format_data_type_text(self, data_type: TextType) -> Tuple[str, tuple]:
         return "BLOB SUB_TYPE TEXT", ()
+
+    @DDLTypeMixin.handles(BlobType)
+    def format_data_type_blob(self, data_type: BlobType) -> Tuple[str, tuple]:
+        # Firebird's default BLOB subtype 0 is binary; request it explicitly.
+        return "BLOB SUB_TYPE BINARY", ()
+
+    @DDLTypeMixin.handles(CustomType)
+    def format_data_type_custom(self, data_type: CustomType) -> Tuple[str, tuple]:
+        """Render a backend-specific type verbatim (e.g. CHAR(16) OCTETS UUIDs)."""
+        return data_type.raw, ()
 
     @DDLTypeMixin.handles(DateTimeType)
     def format_data_type_datetime(self, data_type: DateTimeType) -> Tuple[str, tuple]:
@@ -204,3 +218,55 @@ class FirebirdTypeSupportMixin(DDLTypeMixin, DDLTypeSupport):
             return BooleanType()
 
         return CustomType(stripped)
+
+class FirebirdTypeSuggestionMixin(DDLTypeSuggestionMixin):
+    """Firebird ``suggest_column_type()``.
+
+    Firebird has no native UUID type; the ``FirebirdUUIDAdapter`` default
+    binds UUIDs as 16 raw bytes, so the suggestion is
+    ``CHAR(16) CHARACTER SET OCTETS`` (16-octet binary, available on all
+    supported server versions) — the same binary-storage convention as
+    MySQL/MariaDB ``BINARY(16)`` and Oracle ``RAW(16)``.
+
+    ``dict``/``list`` map to ``TextType`` (``BLOB SUB_TYPE TEXT``) — Firebird
+    has no native JSON type on any currently supported version, so no
+    version gating applies. All other suggestions are stable across 2.5-5.0;
+    the *version* parameter is accepted for signature compatibility only
+    (BOOLEAN requires Firebird 3.0+, gated by the dialect's capability
+    checks rather than here).
+    """
+
+    def suggest_column_type(
+        self, python_type: type, version: "Optional[Tuple[int, int, int]]" = None
+    ) -> "Optional[DataType]":
+        import datetime as _dt
+        import decimal as _dec
+        import enum as _enum
+        import uuid as _uuid
+
+        if python_type is _uuid.UUID:
+            return CustomType("CHAR(16) CHARACTER SET OCTETS")
+
+        mapping = {
+            str: VarCharType,
+            int: IntegerType,
+            bool: BooleanType,
+            float: DoubleType,
+            bytes: BlobType,
+            _dt.datetime: DateTimeType,
+            _dt.date: DateType,
+            _dt.time: TimeType,
+            _dec.Decimal: DecimalType,
+            dict: TextType,
+            list: TextType,
+            _enum.Enum: VarCharType,
+        }
+        factory = mapping.get(python_type)
+        if factory is not None:
+            if python_type is _enum.Enum:
+                return VarCharType(64)
+            if python_type is str:
+                return VarCharType(255)
+            return factory()
+
+        return super().suggest_column_type(python_type, version)

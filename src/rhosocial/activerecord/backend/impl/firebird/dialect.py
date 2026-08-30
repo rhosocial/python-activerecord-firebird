@@ -104,6 +104,7 @@ from .mixins import (
     FirebirdIntrospectionMixin,
     FirebirdPartitionMixin,
     FirebirdTypeSupportMixin,
+    FirebirdTypeSuggestionMixin,
     FirebirdDomainMixin,
     FirebirdExceptionMixin,
     FirebirdRoutineMixin,
@@ -281,6 +282,7 @@ class FirebirdDialect(
     FirebirdContextVariableSupport,
     FirebirdPartitionMixin,
     FirebirdTypeSupportMixin,
+    FirebirdTypeSuggestionMixin,
 ):
     """Firebird dialect implementation that adapts to Firebird version.
 

@@ -16,7 +16,7 @@ from .trigger import FirebirdTriggerMixin
 from .sequence import FirebirdSequenceMixin
 from .blob import FirebirdBlobMixin
 from .introspection import FirebirdIntrospectionMixin
-from .types import FirebirdTypeSupportMixin
+from .types import FirebirdTypeSupportMixin, FirebirdTypeSuggestionMixin
 from .partition import FirebirdPartitionMixin
 from .alter_table_modifier import FirebirdAlterTableModifierMixin
 from .domain import FirebirdDomainMixin
@@ -46,6 +46,7 @@ __all__ = [
     "FirebirdBlobMixin",
     "FirebirdIntrospectionMixin",
     "FirebirdTypeSupportMixin",
+    "FirebirdTypeSuggestionMixin",
     "FirebirdPartitionMixin",
     "FirebirdAlterTableModifierMixin",
     "FirebirdDomainMixin",
