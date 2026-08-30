@@ -8,6 +8,7 @@ SET/DROP AUTO ADMIN MAPPING) requires Firebird 3.0.
 
 from typing import Tuple
 
+from .version_boundaries import _norm_version
 from rhosocial.activerecord.backend.dialect.exceptions import UnsupportedFeatureError
 
 from ..expression.ddl.role import FirebirdRoleAlterClause
@@ -16,16 +17,16 @@ from ..expression.ddl.role import FirebirdRoleAlterClause
 class FirebirdRoleMixin:
 
     def supports_roles(self) -> bool:
-        return self.version >= (2, 5, 0)
+        return _norm_version(self.version) >= (2, 5, 0)
 
     def supports_create_role(self) -> bool:
-        return self.version >= (2, 5, 0)
+        return _norm_version(self.version) >= (2, 5, 0)
 
     def supports_alter_role(self) -> bool:
-        return self.version >= (3, 0, 0)
+        return _norm_version(self.version) >= (3, 0, 0)
 
     def supports_drop_role(self) -> bool:
-        return self.version >= (2, 5, 0)
+        return _norm_version(self.version) >= (2, 5, 0)
 
     def format_create_role_statement(self, expr) -> Tuple[str, tuple]:
         """Format CREATE ROLE name."""
@@ -62,7 +63,7 @@ class FirebirdRoleMixin:
 
     def _check_role_version(self, feature: str, minimum) -> None:
         version = getattr(self, 'version', minimum)
-        if version < minimum:
+        if _norm_version(version) < minimum:
             boundary = "Firebird 3.0" if minimum >= (3, 0, 0) else "Firebird 2.5"
             raise UnsupportedFeatureError(
                 self.name,

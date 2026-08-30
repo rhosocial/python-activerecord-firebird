@@ -8,6 +8,7 @@ supported server version.
 
 from typing import Tuple
 
+from .version_boundaries import _norm_version
 from rhosocial.activerecord.backend.dialect.exceptions import UnsupportedFeatureError
 
 
@@ -38,7 +39,7 @@ class FirebirdExceptionMixin:
 
     def _check_exception_version(self, feature: str) -> None:
         version = getattr(self, 'version', (2, 5, 0))
-        if version < (2, 5, 0):
+        if _norm_version(version) < (2, 5, 0):
             raise UnsupportedFeatureError(
                 self.name,
                 feature,

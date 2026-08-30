@@ -33,14 +33,13 @@ os.environ.setdefault(
 
 @pytest.hookimpl(trylast=True)
 def pytest_addoption(parser):
-    """Register the --scenarios option for selecting which scenarios to run."""
-    parser.addoption(
-        "--scenarios",
-        action="store",
-        default=None,
-        help="Comma-separated list of scenario names to run "
-             "(e.g., --scenarios=firebird_5,firebird_6).",
-    )
+    """Register the --scenarios option for selecting which scenarios to run.
+
+    NOTE: --scenarios is now registered by the testsuite conftest
+    (rhosocial.activerecord.testsuite.conftest, loaded via pyproject addopts
+    -p). Registering it again here raises "option names {'--scenarios'}
+    already added", so it must NOT be declared locally.
+    """
 
 
 @pytest.hookimpl(trylast=True)

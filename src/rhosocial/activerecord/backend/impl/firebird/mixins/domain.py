@@ -9,6 +9,7 @@ across table columns.
 
 from typing import Tuple
 
+from .version_boundaries import _norm_version
 from rhosocial.activerecord.backend.dialect.exceptions import UnsupportedFeatureError
 
 from ..expression.ddl.domain import FirebirdDomainAlterMode
@@ -17,16 +18,16 @@ from ..expression.ddl.domain import FirebirdDomainAlterMode
 class FirebirdDomainMixin:
 
     def supports_domain(self) -> bool:
-        return self.version >= (2, 5, 0)
+        return _norm_version(self.version) >= (2, 5, 0)
 
     def supports_create_domain(self) -> bool:
-        return self.version >= (2, 5, 0)
+        return _norm_version(self.version) >= (2, 5, 0)
 
     def supports_alter_domain(self) -> bool:
-        return self.version >= (2, 5, 0)
+        return _norm_version(self.version) >= (2, 5, 0)
 
     def supports_drop_domain(self) -> bool:
-        return self.version >= (2, 5, 0)
+        return _norm_version(self.version) >= (2, 5, 0)
 
     def format_create_domain_statement(self, expr) -> Tuple[str, tuple]:
         """Format CREATE DOMAIN name [AS] datatype [DEFAULT ...] [NOT NULL] [CHECK (...)]."""
@@ -59,6 +60,8 @@ class FirebirdDomainMixin:
         mode = expr.mode
 
         if mode == FirebirdDomainAlterMode.SET_DEFAULT:
+            if expr.value is None:
+                raise ValueError("SET DEFAULT requires a value")
             return f"ALTER DOMAIN {domain} SET DEFAULT {self._format_ddl_literal(expr.value)}", ()
         if mode == FirebirdDomainAlterMode.DROP_DEFAULT:
             return f"ALTER DOMAIN {domain} DROP DEFAULT", ()
@@ -107,7 +110,7 @@ class FirebirdDomainMixin:
 
     def _check_domain_version(self, feature: str) -> None:
         version = getattr(self, 'version', (2, 5, 0))
-        if version < (2, 5, 0):
+        if _norm_version(version) < (2, 5, 0):
             raise UnsupportedFeatureError(
                 self.name,
                 feature,

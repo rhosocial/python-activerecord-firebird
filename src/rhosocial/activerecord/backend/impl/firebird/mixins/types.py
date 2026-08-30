@@ -34,6 +34,7 @@ from rhosocial.activerecord.backend.expression.types import (
     VarCharType,
 )
 
+from .version_boundaries import _norm_version
 from ..expression.types import (
     FirebirdDecFloatType,
     FirebirdInt128Type,
@@ -135,7 +136,7 @@ class FirebirdTypeSupportMixin(DDLTypeMixin, DDLTypeSupport):
         Firebird 4.0.
         """
         version = getattr(self, 'version', (4, 0, 0))
-        if version < (4, 0, 0):
+        if _norm_version(version) < (4, 0, 0):
             raise UnsupportedFeatureError(
                 self.name,
                 feature,
@@ -187,6 +188,10 @@ class FirebirdTypeSupportMixin(DDLTypeMixin, DDLTypeSupport):
             return TextType()
 
         if self._FB_DATE_TYPES.match(upper):
+            # TIMESTAMP must be tested before TIME: "TIMESTAMP".startswith("TIME")
+            # is True, so the reversed order mis-parsed TIMESTAMP as TimeType.
+            if upper.startswith("TIMESTAMP"):
+                return DateTimeType()
             if upper.startswith("TIME"):
                 return TimeType()
             if upper.startswith("DATE"):

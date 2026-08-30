@@ -53,7 +53,8 @@ class TestFirebirdDialectFeatureSupport:
         assert dialect.supports_json_type() is False
 
     def test_skip_locked_fb4(self, fb4_dialect):
-        assert fb4_dialect.supports_for_update_skip_locked() is False
+        # SKIP LOCKED is available since Firebird 4.0 (threshold unified).
+        assert fb4_dialect.supports_for_update_skip_locked() is True
 
     def test_skip_locked_fb5(self):
         d = FirebirdDialect(version=(5, 0, 0))

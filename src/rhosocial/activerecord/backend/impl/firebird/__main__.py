@@ -27,9 +27,9 @@ def _build_parser():
     return parser
 
 
-def main():
+def main(argv=None):
     parser = _build_parser()
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     if args.command is None:
         print("Error: Please specify a command.", file=sys.stderr)

@@ -1,64 +1,53 @@
 # src/rhosocial/activerecord/backend/impl/firebird/cli/__init__.py
-"""Firebird CLI subcommand registration."""
+"""Firebird CLI common definitions and subcommand registration."""
+
+import importlib
 
 COMMAND_NAMES = [
-    "connection", "info", "introspect",
-    "named-connection", "named-migration", "named-procedure", "named-query",
-    "query", "status",
+    "info",
+    "query",
+    "introspect",
+    "status",
+    "named-expression",
+    "named-procedure",
+    "named-procedure-graph",
+    "named-migration",
+    "named-connection",
 ]
 
 
 def register_commands(subparsers):
-    """Register all CLI subcommands.
+    """Register all subcommands."""
+    from .info import create_parser as info_parser
+    from .query import create_parser as query_parser
+    from .introspect import create_parser as introspect_parser
+    from .status import create_parser as status_parser
+    from .named_expression import create_parser as ne_parser
+    from .named_procedure import create_parser as np_parser
+    from .named_procedure_graph import create_parser as npg_parser
+    from .named_migration import create_parser as nm_parser
+    from .named_connection import create_parser as nc_parser
 
-    Args:
-        subparsers: argparse subparsers object
-    """
-    from .connection import register as register_connection
-    from .info import create_parser as register_info
-    from .introspect import create_parser as register_introspect
-    from .named_connection import register as register_named_connection
-    from .named_migration import create_parser as register_named_migration
-    from .named_procedure import register as register_named_procedure
-    from .named_query import register as register_named_query
-    from .query import create_parser as register_query
-    from .status import create_parser as register_status
-
-    register_connection(subparsers)
-    register_info(subparsers)
-    register_introspect(subparsers)
-    register_named_connection(subparsers)
-    register_named_migration(subparsers)
-    register_named_procedure(subparsers)
-    register_named_query(subparsers)
-    register_query(subparsers)
-    register_status(subparsers)
+    info_parser(subparsers)
+    query_parser(subparsers)
+    introspect_parser(subparsers)
+    status_parser(subparsers)
+    ne_parser(subparsers)
+    np_parser(subparsers)
+    npg_parser(subparsers)
+    nm_parser(subparsers)
+    nc_parser(subparsers)
 
 
 def get_handler(command_name: str):
-    """Get handler function for a command.
+    """Get the handler function for a subcommand.
 
     Args:
-        command_name: Command name
+        command_name: Subcommand name (e.g. 'info', 'named-expression')
 
     Returns:
-        Handler function
+        The corresponding handle function
     """
-    handlers = {
-        "connection": _import_handler("connection", "handle_connection"),
-        "info": _import_handler("info", "handle"),
-        "introspect": _import_handler("introspect", "handle"),
-        "named-connection": _import_handler("named_connection", "handle_named_connection"),
-        "named-migration": _import_handler("named_migration", "handle"),
-        "named-procedure": _import_handler("named_procedure", "handle_named_procedure"),
-        "named-query": _import_handler("named_query", "handle_named_query"),
-        "query": _import_handler("query", "handle"),
-        "status": _import_handler("status", "handle"),
-    }
-    return handlers.get(command_name)
-
-
-def _import_handler(module_name: str, func_name: str):
-    import importlib
-    module = importlib.import_module(f".{module_name}", package="rhosocial.activerecord.backend.impl.firebird.cli")
-    return getattr(module, func_name)
+    module_name = command_name.replace("-", "_")
+    module = importlib.import_module(f".{module_name}", __name__)
+    return module.handle

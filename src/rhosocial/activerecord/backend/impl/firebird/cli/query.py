@@ -12,7 +12,7 @@ import sys
 from rhosocial.activerecord.backend.impl.firebird import FirebirdBackend, AsyncFirebirdBackend
 from rhosocial.activerecord.backend.errors import ConnectionError, QueryError
 
-from .connection import add_connection_args, resolve_connection_config_from_args
+from .connection import add_connection_args, resolve_connection_config_from_args, warn_if_async_requested
 from .output import create_provider
 
 OUTPUT_CHOICES = ["table", "json", "csv", "tsv"]
@@ -81,6 +81,9 @@ def create_parser(subparsers):
 
 
 def handle(args):
+
+    warn_if_async_requested(args)
+
     """Handle the query subcommand."""
     # Set log level (query only)
     numeric_level = getattr(logging, args.log_level.upper(), None)
@@ -134,7 +137,7 @@ def handle(args):
     config = resolve_connection_config_from_args(args)
     kwargs = {"use_ascii": args.rich_ascii}
 
-    if getattr(args, "use_async", False):
+    if getattr(args, "is_async", False):
         backend = AsyncFirebirdBackend(connection_config=config)
         asyncio.run(_execute_query_async(sql_source, backend, provider, **kwargs))
     else:

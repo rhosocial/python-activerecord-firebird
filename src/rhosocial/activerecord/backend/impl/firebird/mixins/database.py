@@ -8,16 +8,17 @@ SQL SECURITY).  Both statements are gated at ``(2, 5, 0)``.
 
 from typing import Tuple
 
+from .version_boundaries import _norm_version
 from rhosocial.activerecord.backend.dialect.exceptions import UnsupportedFeatureError
 
 
 class FirebirdDatabaseMixin:
 
     def supports_create_database(self) -> bool:
-        return self.version >= (2, 5, 0)
+        return _norm_version(self.version) >= (2, 5, 0)
 
     def supports_drop_database(self) -> bool:
-        return self.version >= (2, 5, 0)
+        return _norm_version(self.version) >= (2, 5, 0)
 
     def format_create_database_statement(self, expr) -> Tuple[str, tuple]:
         """Format CREATE DATABASE 'file' with the configured options."""
@@ -54,7 +55,7 @@ class FirebirdDatabaseMixin:
 
     def _check_database_version(self, feature: str) -> None:
         version = getattr(self, 'version', (2, 5, 0))
-        if version < (2, 5, 0):
+        if _norm_version(version) < (2, 5, 0):
             raise UnsupportedFeatureError(
                 self.name,
                 feature,

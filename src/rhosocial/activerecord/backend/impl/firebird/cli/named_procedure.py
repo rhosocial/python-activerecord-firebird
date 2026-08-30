@@ -1,16 +1,81 @@
 # src/rhosocial/activerecord/backend/impl/firebird/cli/named_procedure.py
-"""CLI named-procedure subcommand."""
+"""named-procedure subcommand - Adapter for shared CLI helper.
+
+named-procedure requires connection arguments, output arguments, and --rich-ascii.
+"""
+
+from rhosocial.activerecord.backend.impl.firebird import FirebirdBackend, AsyncFirebirdBackend
+
+from .connection import create_connection_parent_parser, resolve_connection_config_from_args, warn_if_async_requested
+from .output import create_provider
 
 
-def register(subparsers):
-    """Register the named-procedure subcommand."""
-    parser = subparsers.add_parser("named-procedure", help="Execute named procedures")
-    parser.add_argument("name", help="Procedure name")
-    parser.add_argument("params", nargs="*", help="Procedure parameters")
+def create_parser(subparsers):
+    """Create the named-procedure subcommand parser.
+
+    Reuses the shared create_named_procedure_parser, passing a parent parser
+    containing only connection and output arguments.
+    """
+    from rhosocial.activerecord.backend.named_expression.cli_procedure import (
+        create_named_procedure_parser,
+    )
+
+    local_parent = create_connection_parent_parser()
+    return create_named_procedure_parser(subparsers, local_parent)
 
 
-def handle_named_procedure(args):
-    """Handle named-procedure subcommand."""
-    print(f"Procedure: {args.name}")
-    if args.params:
-        print(f"  Params: {args.params}")
+def handle(args):
+
+    warn_if_async_requested(args)
+
+    """Handle the named-procedure subcommand."""
+    from rhosocial.activerecord.backend.named_expression.cli_procedure import (
+        handle_named_procedure as handle_np,
+    )
+
+    provider = create_provider(args.output, ascii_borders=args.rich_ascii)
+
+    backend = None
+
+    def backend_factory():
+        nonlocal backend
+        config = resolve_connection_config_from_args(args)
+        backend = FirebirdBackend(connection_config=config)
+        backend.connect()
+        backend.introspect_and_adapt()
+        return backend
+
+    def disconnect():
+        if backend and backend._connection:
+            backend.disconnect()
+
+    is_async = getattr(args, "is_async", False)
+    if is_async:
+        async_backend = None
+
+        def backend_async_factory():
+            nonlocal async_backend
+            config = resolve_connection_config_from_args(args)
+            async_backend = AsyncFirebirdBackend(connection_config=config)
+            return async_backend
+
+        async def disconnect_async():
+            if async_backend and async_backend._connection:
+                await async_backend.disconnect()
+
+        handle_np(
+            args,
+            provider,
+            backend_factory=backend_factory,
+            disconnect=disconnect,
+            backend_async_factory=backend_async_factory,
+            disconnect_async=disconnect_async,
+        )
+        return
+
+    handle_np(
+        args,
+        provider,
+        backend_factory=backend_factory,
+        disconnect=disconnect,
+    )
