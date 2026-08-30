@@ -168,7 +168,7 @@ class FirebirdBackendMixin:
             (int, int), (float, float), (str, str), (bytes, bytes),
             (bool, bool), (dt.datetime, dt.datetime), (dt.date, dt.date),
             (dt.time, dt.time), (Decimal, Decimal), (dict, str), (list, str),
-            (UUID, bytes),
+            (UUID, str),
         ]
 
         for py_type, db_type in type_mappings:

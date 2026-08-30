@@ -44,6 +44,16 @@ class FirebirdTableMixin:
             )
 
         all_params: List[Any] = []
+        # Firebird has no IF NOT EXISTS on CREATE TABLE. When requested, the
+        # complete statement is wrapped at the end in an EXECUTE BLOCK
+        # existence guard over RDB$RELATIONS so repeated creation is
+        # idempotent. Only applied when the statement carries no bind
+        # parameters (the DDL becomes dynamic SQL).
+        apply_exists_guard = (
+            getattr(expr, 'if_not_exists', False)
+            and not getattr(expr, 'temporary', False)
+            and not self.supports_if_not_exists_table()
+        )
 
         parts = []
         if getattr(expr, 'temporary', False):
@@ -52,16 +62,7 @@ class FirebirdTableMixin:
             parts.append("CREATE GLOBAL TEMPORARY TABLE")
         else:
             parts.append("CREATE TABLE")
-        if getattr(expr, 'if_not_exists', False):
-            # Capability gate: Firebird has no IF NOT EXISTS on CREATE TABLE,
-            # so rendering it anyway would produce broken DDL.
-            if not self.supports_if_not_exists_table():
-                from rhosocial.activerecord.backend.dialect.exceptions import UnsupportedFeatureError
-                raise UnsupportedFeatureError(
-                    self.name,
-                    "IF NOT EXISTS on CREATE TABLE",
-                    "Firebird does not support IF NOT EXISTS for tables.",
-                )
+        if getattr(expr, 'if_not_exists', False) and not apply_exists_guard:
             parts.append("IF NOT EXISTS")
         parts.append(self.format_identifier(expr.table_name))
 
@@ -89,7 +90,33 @@ class FirebirdTableMixin:
         if external_file:
             parts.append(f"EXTERNAL FILE '{external_file}'")
 
-        return ' '.join(parts), tuple(all_params)
+        statement = ' '.join(parts)
+
+        if apply_exists_guard:
+            if all_params:
+                from rhosocial.activerecord.backend.dialect.exceptions import UnsupportedFeatureError
+                raise UnsupportedFeatureError(
+                    self.name,
+                    "IF NOT EXISTS on CREATE TABLE",
+                    "Firebird does not support IF NOT EXISTS for tables; "
+                    "the existence guard requires a parameter-free statement.",
+                )
+            # EXECUTE BLOCK existence guard. RDB$RELATION_NAME is CHAR(31)
+            # space-padded, hence TRIM. Internal single quotes are doubled
+            # because the DDL becomes dynamic SQL via EXECUTE STATEMENT.
+            # PSQL quirk: DECLARE VARIABLE sits between AS and BEGIN, and
+            # EXISTS is not a valid IF condition — hence the COUNT(*) form.
+            embedded = statement.replace("'", "''")
+            table_upper = expr.table_name.upper()
+            statement = (
+                "EXECUTE BLOCK AS DECLARE VARIABLE CNT INTEGER; BEGIN "
+                f"SELECT COUNT(*) FROM RDB$RELATIONS "
+                f"WHERE TRIM(RDB$RELATION_NAME) = '{table_upper}' INTO :CNT; "
+                "IF (:CNT = 0) THEN "
+                f"EXECUTE STATEMENT '{embedded}'; END"
+            )
+
+        return statement, tuple(all_params)
 
     def _format_column_definition_firebird(self, col_def) -> Tuple[str, List[Any]]:
         from rhosocial.activerecord.backend.expression.statements import ColumnConstraintType
