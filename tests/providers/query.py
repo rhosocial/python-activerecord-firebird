@@ -220,12 +220,17 @@ class QuerySyncProvider(QueryProviderBaseImpl, IQuerySyncProvider, WorkerTestPro
                 scenario_name = next(iter(SCENARIO_MAP))
             else:
                 raise ValueError("No scenarios registered")
+        config_dict = SCENARIO_MAP[scenario_name]
+        from providers.pooling import resolve_database_name
+        pooled_db = resolve_database_name(scenario_name)
+        if pooled_db:
+            config_dict = {**config_dict, "database": pooled_db}
         return {
             "backend_module": "rhosocial.activerecord.backend.impl.firebird",
             "backend_class_name": "FirebirdBackend",
             "config_class_module": "rhosocial.activerecord.backend.impl.firebird.config",
             "config_class_name": "FirebirdConnectionConfig",
-            "config_kwargs": SCENARIO_MAP[scenario_name],
+            "config_kwargs": config_dict,
             "schema_sql": self.get_worker_schema_sql(scenario_name, "users"),
         }
 

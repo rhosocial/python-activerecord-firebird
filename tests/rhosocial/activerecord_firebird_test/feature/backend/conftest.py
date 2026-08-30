@@ -1,4 +1,6 @@
 import os
+from dataclasses import replace
+
 import pytest
 from rhosocial.activerecord.backend.impl.firebird import (
     FirebirdBackend,
@@ -6,8 +8,23 @@ from rhosocial.activerecord.backend.impl.firebird import (
 )
 
 
+def _apply_pooled_database(config: FirebirdConnectionConfig) -> FirebirdConnectionConfig:
+    """Apply the pooled database path when the testsuite pool is active."""
+    from providers.pooling import resolve_database_name
+    from providers.scenarios import SCENARIO_MAP
+
+    if not SCENARIO_MAP:
+        return config
+    scenario_name = next(iter(SCENARIO_MAP))
+    pooled_db = resolve_database_name(scenario_name)
+    if pooled_db:
+        config = replace(config, database=pooled_db)
+    return config
+
+
 def _load_fb_config() -> FirebirdConnectionConfig:
     """Load config from scenario YAML, env vars, or fallback defaults."""
+    config = None
     config_path = os.getenv("FIREBIRD_SCENARIOS_CONFIG_PATH")
     if config_path and os.path.exists(config_path):
         try:
@@ -16,37 +33,39 @@ def _load_fb_config() -> FirebirdConnectionConfig:
                 data = yaml.safe_load(f)
             scenarios = (data or {}).get("scenarios") or {}
             if scenarios:
-                first = next(iter(scenarios.values()))
-                return FirebirdConnectionConfig(**first)
+                config = FirebirdConnectionConfig(**next(iter(scenarios.values())))
         except Exception:
-            pass
-    default_path = os.path.join(
-        os.path.dirname(__file__), "..", "..", "..", "..", "config", "firebird_scenarios.yaml"
-    )
-    default_path = os.path.normpath(default_path)
-    if os.path.exists(default_path):
+            config = None
+    if config is None:
+        default_path = os.path.join(
+            os.path.dirname(__file__), "..", "..", "..", "..", "config", "firebird_scenarios.yaml"
+        )
+        default_path = os.path.normpath(default_path)
+        if os.path.exists(default_path):
+            try:
+                import yaml
+                with open(default_path, 'r', encoding='utf-8') as f:
+                    data = yaml.safe_load(f)
+                scenarios = (data or {}).get("scenarios") or {}
+                if scenarios:
+                    config = FirebirdConnectionConfig(**next(iter(scenarios.values())))
+            except Exception:
+                config = None
+    if config is None:
         try:
-            import yaml
-            with open(default_path, 'r', encoding='utf-8') as f:
-                data = yaml.safe_load(f)
-            scenarios = (data or {}).get("scenarios") or {}
-            if scenarios:
-                first = next(iter(scenarios.values()))
-                return FirebirdConnectionConfig(**first)
+            config = FirebirdConnectionConfig.from_env()
         except Exception:
-            pass
-    try:
-        return FirebirdConnectionConfig.from_env()
-    except Exception:
-        pass
-    return FirebirdConnectionConfig(
-        host="127.0.0.1",
-        port=19583,
-        database="/var/lib/firebird/data/test_db",
-        username="SYSDBA",
-        password="password",
-        charset="UTF8",
-    )
+            config = None
+    if config is None:
+        config = FirebirdConnectionConfig(
+            host="127.0.0.1",
+            port=19583,
+            database="/var/lib/firebird/data/test_db",
+            username="SYSDBA",
+            password="password",
+            charset="UTF8",
+        )
+    return _apply_pooled_database(config)
 
 
 @pytest.fixture

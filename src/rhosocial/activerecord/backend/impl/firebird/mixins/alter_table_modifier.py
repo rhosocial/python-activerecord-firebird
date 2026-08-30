@@ -16,6 +16,7 @@ IDENTITY`` (Firebird 3.0+) and ``POSITION`` (Firebird 4.0+).
 
 from typing import Tuple
 
+from .version_boundaries import _norm_version
 from rhosocial.activerecord.backend.dialect.exceptions import UnsupportedFeatureError
 
 
@@ -130,7 +131,7 @@ class FirebirdAlterTableModifierMixin:
         Reorders a column within the table; Firebird 4.0+.
         """
         version = getattr(self, 'version', (4, 0, 0))
-        if version < (4, 0, 0):
+        if _norm_version(version) < (4, 0, 0):
             raise UnsupportedFeatureError(
                 self.name,
                 "ALTER COLUMN ... POSITION",
@@ -148,7 +149,7 @@ class FirebirdAlterTableModifierMixin:
         ALTER COLUMN clauses are gated on the same version boundary.
         """
         version = getattr(self, 'version', (3, 0, 0))
-        if version < (3, 0, 0):
+        if _norm_version(version) < (3, 0, 0):
             raise UnsupportedFeatureError(
                 self.name,
                 f"ALTER COLUMN ... {feature}",

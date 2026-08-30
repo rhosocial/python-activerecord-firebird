@@ -5,6 +5,8 @@ import threading
 from typing import Dict, Tuple, Type
 
 from rhosocial.activerecord.backend import errors as exc
+
+from .version_boundaries import _norm_version
 from rhosocial.activerecord.backend.type_adapter import SQLTypeAdapter
 
 from ..adapters import firebird_adapters
@@ -177,7 +179,7 @@ class FirebirdBackendMixin:
 
     def _check_returning_compatibility(self, returning_columns):
         version = getattr(self.dialect, 'version', None)
-        if version is not None and version < (3, 0, 0):
+        if version is not None and _norm_version(version) < (3, 0, 0):
             raise exc.UnsupportedTransactionModeError(
                 "RETURNING clause", "Firebird",
                 "RETURNING clause requires Firebird 3.0 or later",

@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from rhosocial.activerecord.backend.impl.firebird import FirebirdBackend, AsyncFirebirdBackend
 
-from .connection import add_connection_args, resolve_connection_config_from_args
+from .connection import add_connection_args, resolve_connection_config_from_args, warn_if_async_requested
 from .output import create_provider
 
 
@@ -61,6 +61,9 @@ def create_parser(subparsers):
 
 
 def handle(args):
+
+    warn_if_async_requested(args)
+
     """Handle the named-migration subcommand."""
     from rhosocial.activerecord.backend.migration.cli import handle_named_migration as handle_nm
 

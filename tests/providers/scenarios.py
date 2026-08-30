@@ -2,9 +2,11 @@
 """Firebird backend test scenario configuration mapping table"""
 
 import os
+from dataclasses import replace
 from typing import Dict, Any, Tuple, Type
 from rhosocial.activerecord.backend.impl.firebird import FirebirdBackend
 from rhosocial.activerecord.backend.impl.firebird.config import FirebirdConnectionConfig
+from rhosocial.activerecord.testsuite.core.pool import pooled_database_name
 
 SCENARIO_MAP: Dict[str, Dict[str, Any]] = {}
 
@@ -14,10 +16,12 @@ def register_scenario(name: str, config: Dict[str, Any]):
     SCENARIO_MAP[name] = config
 
 
-def get_scenario(name: str) -> Tuple[Type[FirebirdBackend], FirebirdConnectionConfig]:
-    """
-    Retrieves the backend class and a connection configuration object for a given
-    scenario name.
+def get_scenario_raw(name: str) -> Tuple[Type[FirebirdBackend], FirebirdConnectionConfig]:
+    """Return the backend class and connection config for a scenario.
+
+    The config uses the scenario's configured ``database``; no pool override is
+    applied. Used by the pool reset handler, which must reach the server
+    regardless of whether a pooled database exists yet.
     """
     if name not in SCENARIO_MAP:
         if SCENARIO_MAP:
@@ -27,6 +31,23 @@ def get_scenario(name: str) -> Tuple[Type[FirebirdBackend], FirebirdConnectionCo
 
     config = FirebirdConnectionConfig(**SCENARIO_MAP[name])
     return FirebirdBackend, config
+
+
+def get_scenario(name: str) -> Tuple[Type[FirebirdBackend], FirebirdConnectionConfig]:
+    """
+    Retrieves the backend class and a connection configuration object for a given
+    scenario name.
+
+    Under an active database pool the config's ``database`` (a file path) is
+    replaced by the worker's pooled database path (``{database}_{index}``, the
+    index appended to the path) so concurrent workers never share a database
+    file. Serial runs keep the scenario's configured database.
+    """
+    backend_class, config = get_scenario_raw(name)
+    pooled_db = pooled_database_name(name)
+    if pooled_db:
+        config = replace(config, database=pooled_db)
+    return backend_class, config
 
 
 def get_enabled_scenarios() -> Dict[str, Any]:

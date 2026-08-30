@@ -2,6 +2,7 @@
 pytest
 pytest-asyncio
 pytest-benchmark
+pytest-xdist
 coverage>=7.0.0
 pytest-cov
 pytest-mock

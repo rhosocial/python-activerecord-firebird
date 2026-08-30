@@ -7,19 +7,20 @@ introduced in Firebird 3.0; all three statements are gated at ``(3, 0, 0)``.
 
 from typing import Tuple
 
+from .version_boundaries import _norm_version
 from rhosocial.activerecord.backend.dialect.exceptions import UnsupportedFeatureError
 
 
 class FirebirdUserMixin:
 
     def supports_create_user(self) -> bool:
-        return self.version >= (3, 0, 0)
+        return _norm_version(self.version) >= (3, 0, 0)
 
     def supports_alter_user(self) -> bool:
-        return self.version >= (3, 0, 0)
+        return _norm_version(self.version) >= (3, 0, 0)
 
     def supports_drop_user(self) -> bool:
-        return self.version >= (3, 0, 0)
+        return _norm_version(self.version) >= (3, 0, 0)
 
     def format_create_user_statement(self, expr) -> Tuple[str, tuple]:
         """Format CREATE USER name PASSWORD '...' [FIRSTNAME ...] [MIDDLENAME ...]
@@ -73,7 +74,7 @@ class FirebirdUserMixin:
 
     def _check_user_version(self, feature: str) -> None:
         version = getattr(self, 'version', (3, 0, 0))
-        if version < (3, 0, 0):
+        if _norm_version(version) < (3, 0, 0):
             raise UnsupportedFeatureError(
                 self.name,
                 feature,

@@ -11,7 +11,7 @@ from typing import Any
 from rhosocial.activerecord.backend.impl.firebird import FirebirdBackend, AsyncFirebirdBackend
 from rhosocial.activerecord.backend.errors import ConnectionError, QueryError
 
-from .connection import add_connection_args, resolve_connection_config_from_args
+from .connection import add_connection_args, resolve_connection_config_from_args, warn_if_async_requested
 from .output import create_provider
 
 OUTPUT_CHOICES = ["table", "json", "csv", "tsv"]
@@ -93,6 +93,9 @@ def create_parser(subparsers):
 
 
 def handle(args):
+
+    warn_if_async_requested(args)
+
     """Handle the introspect subcommand."""
     provider = create_provider(args.output, ascii_borders=args.rich_ascii)
 
@@ -102,7 +105,7 @@ def handle(args):
 
     config = resolve_connection_config_from_args(args)
 
-    if getattr(args, "use_async", False):
+    if getattr(args, "is_async", False):
         backend = AsyncFirebirdBackend(connection_config=config)
         asyncio.run(_handle_introspect_async(args, backend, provider))
     else:
