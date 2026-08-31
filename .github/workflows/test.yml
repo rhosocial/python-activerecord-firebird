@@ -68,7 +68,7 @@ jobs:
       - name: Install activerecord and testsuite
         run: |
           pip install "rhosocial-activerecord @ git+https://github.com/rhosocial/python-activerecord.git@feature/active-record-ddl"
-          pip install "rhosocial-activerecord-testsuite @ git+https://github.com/rhosocial/python-activerecord-testsuite.git@feature/parallel-testing"
+          pip install "rhosocial-activerecord-testsuite @ git+https://github.com/rhosocial/python-activerecord-testsuite.git@release/v1.0.0.dev17"
 
       - name: Verify Firebird connection and create test user
         run: |
