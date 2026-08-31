@@ -106,4 +106,4 @@ class TestFirebirdTypeVersionGating:
 class TestFirebirdNumeric38:
     def test_numeric_38_2(self):
         dialect = FirebirdDialect((4, 0, 0))
-        assert dialect.format_data_type(DecimalType(38, 2)) == ("DECIMAL(38, 2)", ())
+        assert dialect.format_data_type(DecimalType(precision=38, scale=2)) == ("DECIMAL(38, 2)", ())

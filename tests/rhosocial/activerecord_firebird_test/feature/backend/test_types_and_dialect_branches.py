@@ -115,9 +115,9 @@ class TestBaseDataTypeRendering:
         (FloatType(), "FLOAT"),
         (DoubleType(), "DOUBLE PRECISION"),
         (BooleanType(), "BOOLEAN"),
-        (VarCharType(50), "VARCHAR(50)"),
+        (VarCharType(length=50), "VARCHAR(50)"),
         (VarCharType(None), "VARCHAR(255)"),
-        (CharType(10), "CHAR(10)"),
+        (CharType(length=10), "CHAR(10)"),
         (CharType(None), "CHAR(1)"),
         (TextType(), "BLOB SUB_TYPE TEXT"),
         (DateTimeType(), "TIMESTAMP"),
@@ -159,18 +159,18 @@ class TestBaseDataTypeRendering:
         assert parsed.scale == scale
 
     def test_parse_type_string_family(self, dialect):
-        assert dialect.parse_type("VARCHAR(50)") == VarCharType(50)
-        assert dialect.parse_type("VARCHAR") == VarCharType(255)
-        assert dialect.parse_type("CHAR(10)") == CharType(10)
-        assert dialect.parse_type("CHARACTER(5)") == CharType(5)
-        assert dialect.parse_type("CHAR") == CharType(1)
+        assert dialect.parse_type("VARCHAR(50)") == VarCharType(length=50)
+        assert dialect.parse_type("VARCHAR") == VarCharType(length=255)
+        assert dialect.parse_type("CHAR(10)") == CharType(length=10)
+        assert dialect.parse_type("CHARACTER(5)") == CharType(length=5)
+        assert dialect.parse_type("CHAR") == CharType(length=1)
 
     def test_parse_type_misc(self, dialect):
         assert isinstance(dialect.parse_type("BLOB SUB_TYPE TEXT"), TextType)
         assert isinstance(dialect.parse_type("DATE"), DateType)
         assert isinstance(dialect.parse_type("TIME"), TimeType)
         assert isinstance(dialect.parse_type("BOOLEAN"), BooleanType)
-        assert dialect.parse_type("SOMETHING WEIRD") == CustomType("SOMETHING WEIRD")
+        assert dialect.parse_type("SOMETHING WEIRD") == CustomType(raw="SOMETHING WEIRD")
 
     def test_parse_type_timestamp_takes_precedence_over_time(self, dialect):
         """F7 anchor: startswith("TIME") used to swallow TIMESTAMP strings."""
@@ -341,7 +341,7 @@ class TestCreateTableRebuildSnapshots:
     def test_basic_table(self, dialect):
         expr = CreateTableExpression(dialect, "users", [
             _column("id", IntegerType(), ColumnConstraint(ColumnConstraintType.PRIMARY_KEY)),
-            _column("name", VarCharType(100)),
+            _column("name", VarCharType(length=100)),
         ])
         assert expr.to_sql() == (
             'CREATE TABLE "USERS" ("ID" INTEGER PRIMARY KEY, "NAME" VARCHAR(100))', ()
@@ -392,7 +392,7 @@ class TestCreateTableRebuildSnapshots:
         assert expr.to_sql() == ('CREATE TABLE "EXT_T" ("ID" INTEGER) EXTERNAL FILE \'/data/ext.fdb\'', ())
 
     def test_computed_by_column(self, dialect):
-        col = _column("full_name", VarCharType(200))
+        col = _column("full_name", VarCharType(length=200))
         col.computed_by = '"FIRST_NAME" || \' \' || "LAST_NAME"'
         assert CreateTableExpression(dialect, "emp", [col]).to_sql() == (
             'CREATE TABLE "EMP" '
@@ -423,7 +423,7 @@ class TestCreateTableRebuildSnapshots:
 
     def test_string_default_escaped_and_ordered_before_not_null(self, dialect):
         col = _column(
-            "status", VarCharType(20),
+            "status", VarCharType(length=20),
             ColumnConstraint(ColumnConstraintType.DEFAULT, default_value="O'Brien"),
             ColumnConstraint(ColumnConstraintType.NOT_NULL),
         )
@@ -442,7 +442,7 @@ class TestCreateTableRebuildSnapshots:
 
     def test_numeric_default_with_explicit_null(self, dialect):
         col = _column(
-            "amount", DecimalType(18, 2),
+            "amount", DecimalType(precision=18, scale=2),
             ColumnConstraint(ColumnConstraintType.DEFAULT, default_value=0),
             ColumnConstraint(ColumnConstraintType.NULL),
         )
@@ -467,8 +467,8 @@ class TestCreateTableRebuildSnapshots:
             [
                 _column("id", IntegerType()),
                 _column("customer_id", IntegerType()),
-                _column("email", VarCharType(255)),
-                _column("amount", DecimalType(18, 2)),
+                _column("email", VarCharType(length=255)),
+                _column("amount", DecimalType(precision=18, scale=2)),
             ],
             table_constraints=[pk, unique, fk, check],
         )

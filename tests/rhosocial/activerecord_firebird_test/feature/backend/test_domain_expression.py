@@ -23,7 +23,7 @@ class TestCreateDomain:
         expr = FirebirdCreateDomainExpression(
             dialect,
             "dm_zip",
-            VarCharType(10),
+            VarCharType(length=10),
             default="00000",
             check="VALUE SIMILAR TO '[0-9]{5}'",
         )
@@ -36,14 +36,14 @@ class TestCreateDomain:
 
     def test_create_domain_not_null(self):
         dialect = FirebirdDialect((4, 0, 0))
-        expr = FirebirdCreateDomainExpression(dialect, "dm_code", VarCharType(8), not_null=True)
+        expr = FirebirdCreateDomainExpression(dialect, "dm_code", VarCharType(length=8), not_null=True)
         sql, params = expr.to_sql()
         assert sql == 'CREATE DOMAIN "DM_CODE" AS VARCHAR(8) NOT NULL'
         assert params == ()
 
     def test_create_domain_minimal(self):
         dialect = FirebirdDialect((4, 0, 0))
-        expr = FirebirdCreateDomainExpression(dialect, "dm_amt", VarCharType(10))
+        expr = FirebirdCreateDomainExpression(dialect, "dm_amt", VarCharType(length=10))
         sql, params = expr.to_sql()
         assert sql == 'CREATE DOMAIN "DM_AMT" AS VARCHAR(10)'
         assert params == ()
@@ -111,7 +111,7 @@ class TestAlterDomain:
         sql, params = self._alter(
             dialect,
             FirebirdDomainAlterMode.SET_TYPE,
-            data_type=VarCharType(12),
+            data_type=VarCharType(length=12),
         )
         assert sql == 'ALTER DOMAIN "DM_ZIP" TYPE VARCHAR(12)'
         assert params == ()

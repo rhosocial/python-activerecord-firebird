@@ -173,51 +173,51 @@ class FirebirdTypeSupportMixin(DDLTypeMixin, DDLTypeSupport):
 
         if self._FB_INTEGER_TYPES.match(upper):
             if upper.startswith("BIGINT"):
-                return BigIntType()
+                return BigIntType(dialect=self)
             if upper.startswith("SMALLINT"):
-                return SmallIntType()
-            return IntegerType()
+                return SmallIntType(dialect=self)
+            return IntegerType(dialect=self)
 
         if self._FB_FLOAT_TYPES.match(upper):
             if "DOUBLE" in upper:
-                return DoubleType()
-            return FloatType()
+                return DoubleType(dialect=self)
+            return FloatType(dialect=self)
 
         if self._FB_DECIMAL_TYPES.match(upper):
             nums = re.findall(r"\d+", stripped)
             if len(nums) >= 2:
-                return DecimalType(int(nums[0]), int(nums[1]))
+                return DecimalType(dialect=self, precision=int(nums[0]), scale=int(nums[1]))
             if len(nums) == 1:
-                return DecimalType(int(nums[0]))
-            return DecimalType()
+                return DecimalType(dialect=self, precision=int(nums[0]))
+            return DecimalType(dialect=self)
 
         if self._FB_STRING_TYPES.match(upper):
             length_match = re.search(r"\((\d+)", stripped)
             length = int(length_match.group(1)) if length_match else None
             if upper.startswith("VARCHAR"):
-                return VarCharType(length or 255)
-            return CharType(length or 1)
+                return VarCharType(dialect=self, length=length or 255)
+            return CharType(dialect=self, length=length or 1)
 
         if self._FB_BLOB_TYPES.match(upper):
-            return TextType()
+            return TextType(dialect=self)
 
         if self._FB_DATE_TYPES.match(upper):
             # TIMESTAMP must be tested before TIME: "TIMESTAMP".startswith("TIME")
             # is True, so the reversed order mis-parsed TIMESTAMP as TimeType.
             if upper.startswith("TIMESTAMP"):
-                return DateTimeType()
+                return DateTimeType(dialect=self)
             if upper.startswith("TIME"):
-                return TimeType()
+                return TimeType(dialect=self)
             if upper.startswith("DATE"):
                 if upper.strip() == "DATE":
-                    return DateType()
-                return DateTimeType()
-            return DateTimeType()
+                    return DateType(dialect=self)
+                return DateTimeType(dialect=self)
+            return DateTimeType(dialect=self)
 
         if self._FB_BOOLEAN_TYPES.match(upper):
-            return BooleanType()
+            return BooleanType(dialect=self)
 
-        return CustomType(stripped)
+        return CustomType(dialect=self, raw=stripped)
 
 class FirebirdTypeSuggestionMixin(DDLTypeSuggestionMixin):
     """Firebird ``suggest_column_type()``.
@@ -245,7 +245,7 @@ class FirebirdTypeSuggestionMixin(DDLTypeSuggestionMixin):
         import uuid as _uuid
 
         if python_type is _uuid.UUID:
-            return CustomType("CHAR(16) CHARACTER SET OCTETS")
+            return CustomType(dialect=self, raw="CHAR(16) CHARACTER SET OCTETS")
 
         mapping = {
             str: VarCharType,
@@ -264,9 +264,9 @@ class FirebirdTypeSuggestionMixin(DDLTypeSuggestionMixin):
         factory = mapping.get(python_type)
         if factory is not None:
             if python_type is _enum.Enum:
-                return VarCharType(64)
+                return VarCharType(dialect=self, length=64)
             if python_type is str:
-                return VarCharType(255)
+                return VarCharType(dialect=self, length=255)
             return factory()
 
         return super().suggest_column_type(python_type, version)
