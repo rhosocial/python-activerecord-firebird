@@ -74,8 +74,8 @@ class TestFB4TypeGateSupportedSide:
     @pytest.mark.parametrize("data_type,expected", [
         (FirebirdTimeStampTzType(), "TIMESTAMP WITH TIME ZONE"),
         (FirebirdTimeTzType(), "TIME WITH TIME ZONE"),
-        (FirebirdDecFloatType(16), "DECFLOAT(16)"),
-        (FirebirdDecFloatType(34), "DECFLOAT(34)"),
+        (FirebirdDecFloatType(precision=16), "DECFLOAT(16)"),
+        (FirebirdDecFloatType(precision=34), "DECFLOAT(34)"),
         (FirebirdInt128Type(), "INT128"),
     ])
     def test_fb4_types_render_on_4_0(self, version, data_type, expected):

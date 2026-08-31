@@ -53,11 +53,11 @@ class TestFirebirdDecFloat:
 
     def test_decfloat_34(self):
         dialect = FirebirdDialect((4, 0, 0))
-        assert dialect.format_data_type(FirebirdDecFloatType(34)) == ("DECFLOAT(34)", ())
+        assert dialect.format_data_type(FirebirdDecFloatType(precision=34)) == ("DECFLOAT(34)", ())
 
     def test_decfloat_invalid_precision(self):
         with pytest.raises(ValueError):
-            FirebirdDecFloatType(20)
+            FirebirdDecFloatType(precision=20)
 
     def test_decfloat_bound_to_sql(self):
         dialect = FirebirdDialect((4, 0, 0))
@@ -81,7 +81,7 @@ class TestFirebirdTypeVersionGating:
             FirebirdTimeStampTzType(),
             FirebirdTimeTzType(),
             FirebirdDecFloatType(),
-            FirebirdDecFloatType(34),
+            FirebirdDecFloatType(precision=34),
             FirebirdInt128Type(),
         ):
             with pytest.raises(UnsupportedFeatureError):
