@@ -368,16 +368,18 @@ class TestCreateTableRebuildSnapshots:
         expr.on_commit_delete = on_commit_delete
         assert expr.to_sql() == (expected, ())
 
-    def test_if_not_exists_raises_when_unsupported(self, dialect):
-        """F6 anchor: Firebird lacks IF NOT EXISTS on CREATE TABLE.
+    def test_if_not_exists_wrapped_in_execute_block_guard(self, dialect):
+        """F6 anchor: Firebird lacks native IF NOT EXISTS on CREATE TABLE.
 
-        Previously the clause was rendered unconditionally; it must now be
-        rejected through supports_if_not_exists_table().
+        Since the EXECUTE BLOCK existence guard landed, requesting
+        ``if_not_exists`` no longer raises: the statement is wrapped in an
+        idempotent RDB$RELATIONS existence check instead.
         """
         expr = CreateTableExpression(dialect, "tbl_c", [_column("id", IntegerType())], if_not_exists=True)
-        with pytest.raises(UnsupportedFeatureError) as excinfo:
-            expr.to_sql()
-        assert "IF NOT EXISTS" in str(excinfo.value)
+        sql, _ = expr.to_sql()
+        assert "EXECUTE BLOCK" in sql
+        assert "RDB$RELATIONS" in sql
+        assert 'CREATE TABLE "TBL_C"' in sql
 
     def test_if_not_exists_renders_when_capability_present(self, dialect):
         expr = CreateTableExpression(dialect, "tbl_c", [_column("id", IntegerType())], if_not_exists=True)
