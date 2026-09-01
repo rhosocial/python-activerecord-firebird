@@ -42,7 +42,7 @@ class FirebirdDomainMixin:
         ]
 
         if getattr(expr, "default", None) is not None:
-            parts.append(f"DEFAULT {self._format_ddl_literal(expr.default)}")
+            parts.append(f"DEFAULT {self.format_ddl_literal(expr.default)}")
 
         if getattr(expr, "not_null", False):
             parts.append("NOT NULL")
@@ -62,7 +62,7 @@ class FirebirdDomainMixin:
         if mode == FirebirdDomainAlterMode.SET_DEFAULT:
             if expr.value is None:
                 raise ValueError("SET DEFAULT requires a value")
-            return f"ALTER DOMAIN {domain} SET DEFAULT {self._format_ddl_literal(expr.value)}", ()
+            return f"ALTER DOMAIN {domain} SET DEFAULT {self.format_ddl_literal(expr.value)}", ()
         if mode == FirebirdDomainAlterMode.DROP_DEFAULT:
             return f"ALTER DOMAIN {domain} DROP DEFAULT", ()
         if mode == FirebirdDomainAlterMode.SET_NOT_NULL:
@@ -96,7 +96,7 @@ class FirebirdDomainMixin:
         self._check_domain_version("DROP DOMAIN")
         return f"DROP DOMAIN {self.format_identifier(expr.domain_name)}", ()
 
-    def _format_ddl_literal(self, value) -> str:
+    def format_ddl_literal(self, value) -> str:
         """Render a DDL default value as an inline literal."""
         if isinstance(value, str):
             return self._quote_literal(value)

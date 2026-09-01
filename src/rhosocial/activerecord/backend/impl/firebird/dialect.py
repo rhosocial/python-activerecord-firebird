@@ -1324,13 +1324,7 @@ class FirebirdDialect(
 
     # region CREATE TABLE override
 
-    def format_create_table_statement(self, expr: "CreateTableExpression") -> Tuple[str, tuple]:
-        return FirebirdTableMixin.format_create_table_statement(self, expr)
 
-    def _format_column_definition_firebird(self, col_def) -> Tuple[str, List[Any]]:
-        return FirebirdTableMixin._format_column_definition_firebird(self, col_def)
 
-    def _format_table_constraint_firebird(self, t_const) -> Tuple[str, List[Any]]:
-        return FirebirdTableMixin._format_table_constraint_firebird(self, t_const)
 
     # endregion

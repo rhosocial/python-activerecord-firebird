@@ -23,11 +23,11 @@ class FirebirdRoutineMixin:
 
         parts = [expr.mode.value, "PROCEDURE", self.format_identifier(expr.procedure_name)]
         if expr.params:
-            parts.append(f"({self._format_routine_params(expr.params)})")
+            parts.append(f"({self.format_routine_params(expr.params)})")
         if expr.returns:
-            parts.append(f"RETURNS ({self._format_routine_params(expr.returns)})")
+            parts.append(f"RETURNS ({self.format_routine_params(expr.returns)})")
         parts.append("AS")
-        parts.append(self._format_psql_body(expr.body))
+        parts.append(self.format_psql_body(expr.body))
         return " ".join(parts), ()
 
     def format_create_function_statement(self, expr) -> Tuple[str, tuple]:
@@ -41,11 +41,11 @@ class FirebirdRoutineMixin:
 
         parts = [expr.mode.value, "FUNCTION", self.format_identifier(expr.function_name)]
         if expr.params:
-            parts.append(f"({self._format_routine_params(expr.params)})")
+            parts.append(f"({self.format_routine_params(expr.params)})")
         if getattr(expr, "returns", None):
-            parts.append(f"RETURNS {self._format_routine_return_type(expr.returns)}")
+            parts.append(f"RETURNS {self.format_routine_return_type(expr.returns)}")
         parts.append("AS")
-        parts.append(self._format_psql_body(expr.body))
+        parts.append(self.format_psql_body(expr.body))
         return " ".join(parts), ()
 
     def format_drop_routine_statement(self, expr) -> Tuple[str, tuple]:
@@ -59,20 +59,20 @@ class FirebirdRoutineMixin:
         if expr.routine_type == "FUNCTION":
             parts = [expr.mode.value, "FUNCTION", self.format_identifier(expr.routine_name)]
             if expr.params:
-                parts.append(f"({self._format_routine_params(expr.params)})")
+                parts.append(f"({self.format_routine_params(expr.params)})")
             if getattr(expr, "returns", None):
-                parts.append(f"RETURNS {self._format_routine_return_type(expr.returns)}")
+                parts.append(f"RETURNS {self.format_routine_return_type(expr.returns)}")
         else:
             parts = [expr.mode.value, "PROCEDURE", self.format_identifier(expr.routine_name)]
             if expr.params:
-                parts.append(f"({self._format_routine_params(expr.params)})")
+                parts.append(f"({self.format_routine_params(expr.params)})")
             if expr.returns:
-                parts.append(f"RETURNS ({self._format_routine_params(expr.returns)})")
+                parts.append(f"RETURNS ({self.format_routine_params(expr.returns)})")
         parts.append("AS")
-        parts.append(self._format_psql_body(expr.body))
+        parts.append(self.format_psql_body(expr.body))
         return " ".join(parts), ()
 
-    def _format_routine_params(self, params: List[Any]) -> str:
+    def format_routine_params(self, params: List[Any]) -> str:
         """Render a parameter list as 'name type, name type'."""
         rendered = []
         for param in params:
@@ -82,14 +82,14 @@ class FirebirdRoutineMixin:
                 rendered.append(" ".join(str(part) for part in param).strip())
         return ", ".join(rendered)
 
-    def _format_routine_return_type(self, returns: Any) -> str:
+    def format_routine_return_type(self, returns: Any) -> str:
         """Render a single return type (str or DataType)."""
         if hasattr(returns, "to_sql"):
             type_sql, _ = returns.to_sql()
             return type_sql
         return str(returns)
 
-    def _format_psql_body(self, body: str) -> str:
+    def format_psql_body(self, body: str) -> str:
         """Wrap a PSQL body in BEGIN ... END unless already wrapped."""
         stripped = body.strip()
         if stripped.upper().startswith("BEGIN"):

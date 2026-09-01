@@ -4,7 +4,7 @@
 
 class FirebirdTransactionMixin:
 
-    def _format_begin_sql(self, isolation_level=None, mode=None, wait=True, lock_timeout=None):
+    def format_begin_sql(self, isolation_level=None, mode=None, wait=True, lock_timeout=None):
         parts = ["SET TRANSACTION"]
 
         if isolation_level:

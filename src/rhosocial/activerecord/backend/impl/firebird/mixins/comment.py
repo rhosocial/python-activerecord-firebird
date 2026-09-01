@@ -24,7 +24,7 @@ class FirebirdCommentMixin:
         self._check_comment_version("COMMENT ON")
 
         object_type = expr.object_type.value
-        name = self._format_comment_object_name(expr)
+        name = self.format_comment_object_name(expr)
         if expr.comment is None:
             return f"COMMENT ON {object_type} {name} IS NULL", ()
         return (
@@ -32,7 +32,7 @@ class FirebirdCommentMixin:
             (),
         )
 
-    def _format_comment_object_name(self, expr) -> str:
+    def format_comment_object_name(self, expr) -> str:
         """Quote a comment target; dotted names (COLUMN relation.field,
         PARAMETER routine.param) are quoted per part."""
         if expr.object_type in (
