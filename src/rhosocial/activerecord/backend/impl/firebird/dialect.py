@@ -529,7 +529,7 @@ class FirebirdDialect(
         from rhosocial.activerecord.backend.expression import WildcardExpression
 
         if len(expr.select) > 1:
-            table_name = None
+            table = None
             for e in expr.select:
                 if isinstance(e, WildcardExpression) and e.table is None and e.schema_name is None:
                     if getattr(expr, "from_", None) is not None:
@@ -537,11 +537,11 @@ class FirebirdDialect(
                         if isinstance(src, list) and len(src) == 1:
                             src = src[0]
                         if isinstance(src, str):
-                            table_name = src
+                            table = src
                         elif src.__class__.__name__ == "TableExpression":
-                            table_name = src.alias or src.name
-                    if table_name:
-                        e.table = table_name
+                            table = src.alias or src.name
+                    if table:
+                        e.table = table
         return super().format_query_statement(expr)
 
     def supports_collate_expression(self) -> bool:

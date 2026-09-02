@@ -367,19 +367,19 @@ class FirebirdBackend(
             return QueryResult(data=results, affected_rows=affected)
         return QueryResult(data=[], affected_rows=affected)
 
-    def insert(self, table_name, values=None, returning_columns=None):
-        if isinstance(table_name, InsertOptions):
-            return super().insert(table_name)
+    def insert(self, table, values=None, returning_columns=None):
+        if isinstance(table, InsertOptions):
+            return super().insert(table)
         options = InsertOptions(
-            table=table_name,
+            table=table,
             data=values or {},
             returning_columns=returning_columns,
         )
         return super().insert(options)
 
-    def update(self, table_name, values=None, where_clause=None, returning_columns=None):
-        if isinstance(table_name, UpdateOptions):
-            return super().update(table_name)
+    def update(self, table, values=None, where_clause=None, returning_columns=None):
+        if isinstance(table, UpdateOptions):
+            return super().update(table)
         values = values or {}
         all_params = list(values.values())
         if where_clause:
@@ -389,7 +389,7 @@ class FirebirdBackend(
         for col in values:
             set_clauses.append(f"{self.dialect.format_identifier(col)} = {self.dialect.get_parameter_placeholder()}")
         where_sql = where_clause[0] if where_clause else "1=1"
-        sql = f"UPDATE {self.dialect.format_identifier(table_name)} SET {', '.join(set_clauses)} WHERE {where_sql}"
+        sql = f"UPDATE {self.dialect.format_identifier(table)} SET {', '.join(set_clauses)} WHERE {where_sql}"
         if returning_columns:
             ret_str = ', '.join(self.dialect.format_identifier(c) for c in returning_columns)
             sql += f" RETURNING {ret_str}"
@@ -397,11 +397,11 @@ class FirebirdBackend(
                 stmt_type=StatementType.DML, process_result_set=True))
         return self.execute(sql, tuple(all_params), options=ExecutionOptions(stmt_type=StatementType.DML))
 
-    def delete(self, table_name, where_clause=None, returning_columns=None):
-        if isinstance(table_name, DeleteOptions):
-            return super().delete(table_name)
+    def delete(self, table, where_clause=None, returning_columns=None):
+        if isinstance(table, DeleteOptions):
+            return super().delete(table)
         all_params = []
-        sql = f"DELETE FROM {self.dialect.format_identifier(table_name)}"
+        sql = f"DELETE FROM {self.dialect.format_identifier(table)}"
         if where_clause:
             where_sql, where_params = where_clause
             sql += f" WHERE {where_sql}"

@@ -64,7 +64,7 @@ class FirebirdTableMixin:
             parts.append("CREATE TABLE")
         if getattr(expr, 'if_not_exists', False) and not apply_exists_guard:
             parts.append("IF NOT EXISTS")
-        parts.append(self.format_identifier(expr.table_name))
+        parts.append(self.format_identifier(expr.table))
 
         if getattr(expr, 'temporary', False):
             on_commit = getattr(expr, 'on_commit_delete', True)
@@ -107,7 +107,7 @@ class FirebirdTableMixin:
             # PSQL quirk: DECLARE VARIABLE sits between AS and BEGIN, and
             # EXISTS is not a valid IF condition — hence the COUNT(*) form.
             embedded = statement.replace("'", "''")
-            table_upper = expr.table_name.upper()
+            table_upper = expr.table.upper()
             statement = (
                 "EXECUTE BLOCK AS DECLARE VARIABLE CNT INTEGER; BEGIN "
                 f"SELECT COUNT(*) FROM RDB$RELATIONS "

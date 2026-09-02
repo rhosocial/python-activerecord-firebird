@@ -122,7 +122,7 @@ class FirebirdDMLOperationMixin:
 
     def format_update_or_insert(
         self,
-        table_name: str,
+        table: str,
         insert_columns: List[str],
         insert_values: List,
         match_columns: List[str],
@@ -135,7 +135,7 @@ class FirebirdDMLOperationMixin:
         match_str = ', '.join(self.format_identifier(c) for c in match_columns)
 
         parts = [
-            f"UPDATE OR INSERT INTO {self.format_identifier(table_name)}",
+            f"UPDATE OR INSERT INTO {self.format_identifier(table)}",
             f"({cols_str})",
             f"VALUES ({val_strs})",
             f"MATCHING ({match_str})",
@@ -162,7 +162,7 @@ class FirebirdDMLOperationMixin:
         version = getattr(self, 'version', (2, 5, 0))
 
         all_params: List[Any] = []
-        target_sql, target_params = expr.target_table.to_sql()
+        target_sql, target_params = expr.target.to_sql()
         all_params.extend(target_params)
         source_sql, source_params = expr.source.to_sql()
         all_params.extend(source_params)

@@ -494,19 +494,19 @@ class AsyncFirebirdBackend(
             return QueryResult(data=results, affected_rows=affected)
         return QueryResult(data=[], affected_rows=affected)
 
-    async def insert(self, table_name, values=None, returning_columns=None):
-        if isinstance(table_name, InsertOptions):
-            return await super().insert(table_name)
+    async def insert(self, table, values=None, returning_columns=None):
+        if isinstance(table, InsertOptions):
+            return await super().insert(table)
         options = InsertOptions(
-            table=table_name,
+            table=table,
             data=values or {},
             returning_columns=returning_columns,
         )
         return await super().insert(options)
 
-    async def update(self, table_name, values=None, where_clause=None, returning_columns=None):
-        if isinstance(table_name, UpdateOptions):
-            return await super().update(table_name)
+    async def update(self, table, values=None, where_clause=None, returning_columns=None):
+        if isinstance(table, UpdateOptions):
+            return await super().update(table)
         values = values or {}
         all_params = list(values.values())
         if where_clause:
@@ -519,7 +519,7 @@ class AsyncFirebirdBackend(
             )
         where_sql = where_clause[0] if where_clause else "1=1"
         sql = (
-            f"UPDATE {self.dialect.format_identifier(table_name)} "
+            f"UPDATE {self.dialect.format_identifier(table)} "
             f"SET {', '.join(set_clauses)} WHERE {where_sql}"
         )
         if returning_columns:
@@ -534,11 +534,11 @@ class AsyncFirebirdBackend(
             options=ExecutionOptions(stmt_type=StatementType.DML),
         )
 
-    async def delete(self, table_name, where_clause=None, returning_columns=None):
-        if isinstance(table_name, DeleteOptions):
-            return await super().delete(table_name)
+    async def delete(self, table, where_clause=None, returning_columns=None):
+        if isinstance(table, DeleteOptions):
+            return await super().delete(table)
         all_params = []
-        sql = f"DELETE FROM {self.dialect.format_identifier(table_name)}"
+        sql = f"DELETE FROM {self.dialect.format_identifier(table)}"
         if where_clause:
             where_sql, where_params = where_clause
             sql += f" WHERE {where_sql}"

@@ -83,7 +83,7 @@ class FirebirdAsyncIntrospectorMixin(IntrospectorMixin):
         )
         return sql, ()
 
-    def _make_column_list_sql(self, table_name: str, schema: Optional[str] = None) -> str:
+    def _make_column_list_sql(self, table: str, schema: Optional[str] = None) -> str:
         sql = """
             SELECT
                 rf.RDB$FIELD_NAME AS COLUMN_NAME,
@@ -101,9 +101,9 @@ class FirebirdAsyncIntrospectorMixin(IntrospectorMixin):
             WHERE rf.RDB$RELATION_NAME = ?
             ORDER BY rf.RDB$POSITION
         """
-        return sql, (table_name,)
+        return sql, (table,)
 
-    def _make_index_list_sql(self, table_name: str, schema: Optional[str] = None) -> str:
+    def _make_index_list_sql(self, table: str, schema: Optional[str] = None) -> str:
         sql = """
             SELECT
                 i.RDB$INDEX_NAME AS INDEX_NAME,
@@ -118,9 +118,9 @@ class FirebirdAsyncIntrospectorMixin(IntrospectorMixin):
             WHERE i.RDB$RELATION_NAME = ?
             ORDER BY i.RDB$INDEX_NAME, isg.RDB$FIELD_POSITION
         """
-        return sql, (table_name,)
+        return sql, (table,)
 
-    def _make_primary_key_sql(self, table_name: str) -> str:
+    def _make_primary_key_sql(self, table: str) -> str:
         sql = """
             SELECT isg.RDB$FIELD_NAME
             FROM RDB$INDICES i
@@ -131,9 +131,9 @@ class FirebirdAsyncIntrospectorMixin(IntrospectorMixin):
               AND i.RDB$INDEX_NAME LIKE 'RDB$PRIMARY%'
             ORDER BY isg.RDB$FIELD_POSITION
         """
-        return sql, (table_name,)
+        return sql, (table,)
 
-    def _make_foreign_key_sql(self, table_name: str, schema: Optional[str] = None) -> str:
+    def _make_foreign_key_sql(self, table: str, schema: Optional[str] = None) -> str:
         sql = """
             SELECT
                 rc.RDB$CONSTRAINT_NAME AS CONSTRAINT_NAME,
@@ -156,7 +156,7 @@ class FirebirdAsyncIntrospectorMixin(IntrospectorMixin):
             WHERE i.RDB$RELATION_NAME = ?
             ORDER BY seg.RDB$FIELD_POSITION
         """
-        return sql, (table_name,)
+        return sql, (table,)
 
     def _make_view_list_sql(self, schema: Optional[str] = None) -> str:
         sql = """
@@ -199,7 +199,7 @@ class FirebirdAsyncIntrospectorMixin(IntrospectorMixin):
         return tables
 
     def _parse_columns(self, rows: List[Dict[str, Any]],
-                        table_name: str,
+                        table: str,
                         schema: str) -> List[ColumnInfo]:
         from rhosocial.activerecord.backend.expression.types._base import DataType
 
@@ -228,7 +228,7 @@ class FirebirdAsyncIntrospectorMixin(IntrospectorMixin):
             columns.append(
                 ColumnInfo(
                     name=str(row.get("COLUMN_NAME", "")).strip() if row.get("COLUMN_NAME") else None,
-                    table_name=table_name,
+                    table_name=table,
                     schema=schema,
                     ordinal_position=row.get("POSITION"),
                     data_type=type_name.lower() if type_name else None,
@@ -246,7 +246,7 @@ class FirebirdAsyncIntrospectorMixin(IntrospectorMixin):
         return columns
 
     def _parse_indexes(self, rows: List[Dict[str, Any]],
-                        table_name: str,
+                        table: str,
                         schema: str) -> List[IndexInfo]:
         indexes: Dict[str, IndexInfo] = {}
         for row in rows:
@@ -257,7 +257,7 @@ class FirebirdAsyncIntrospectorMixin(IntrospectorMixin):
                 is_primary = "PRIMARY" in name.upper()
                 indexes[name] = IndexInfo(
                     name=name,
-                    table_name=table_name,
+                    table_name=table,
                     schema=schema,
                     is_unique=row.get("UNIQUE_FLAG") == 1,
                     is_primary=is_primary,
@@ -276,7 +276,7 @@ class FirebirdAsyncIntrospectorMixin(IntrospectorMixin):
         return list(indexes.values())
 
     def _parse_foreign_keys(self, rows: List[Dict[str, Any]],
-                             table_name: str,
+                             table: str,
                              schema: str) -> List[ForeignKeyInfo]:
         action_map = {
             "CASCADE": ReferentialAction.CASCADE,
@@ -294,7 +294,7 @@ class FirebirdAsyncIntrospectorMixin(IntrospectorMixin):
                 delete_rule = str(row.get("DELETE_RULE", "")).strip() if row.get("DELETE_RULE") else "NO ACTION"
                 fk_map[name] = ForeignKeyInfo(
                     name=name,
-                    table_name=table_name,
+                    table_name=table,
                     schema=schema,
                     referenced_table=str(row.get("REF_TABLE", "")).strip(),
                     on_update=ReferentialAction.NO_ACTION,
@@ -333,17 +333,17 @@ class FirebirdAsyncIntrospectorMixin(IntrospectorMixin):
     def _build_table_list_sql(self, schema, include_system, include_views, table_type):
         return self._make_table_list_sql(schema, include_system, include_views, table_type)
 
-    def _build_column_list_sql(self, table_name, schema):
-        return self._make_column_list_sql(table_name, schema)
+    def _build_column_list_sql(self, table, schema):
+        return self._make_column_list_sql(table, schema)
 
-    def _build_index_list_sql(self, table_name, schema):
-        return self._make_index_list_sql(table_name, schema)
+    def _build_index_list_sql(self, table, schema):
+        return self._make_index_list_sql(table, schema)
 
-    def _build_primary_key_sql(self, table_name, schema):
-        return self._make_primary_key_sql(table_name)
+    def _build_primary_key_sql(self, table, schema):
+        return self._make_primary_key_sql(table)
 
-    def _build_foreign_key_sql(self, table_name, schema):
-        return self._make_foreign_key_sql(table_name, schema)
+    def _build_foreign_key_sql(self, table, schema):
+        return self._make_foreign_key_sql(table, schema)
 
     def _build_view_list_sql(self, schema):
         return self._make_view_list_sql(schema)
@@ -369,15 +369,15 @@ class AsyncFirebirdIntrospector(FirebirdAsyncIntrospectorMixin, AsyncAbstractInt
         return self._status_instance
 
     async def get_table_info(
-        self, table_name: str, schema: Optional[str] = None
+        self, table: str, schema: Optional[str] = None
     ) -> Optional[TableInfo]:
         from copy import copy
         tables = await self.list_tables(schema)
-        table = next((t for t in tables if t.name == table_name), None)
+        table = next((t for t in tables if t.name == table), None)
         if table is None:
             return None
         table = copy(table)
-        table.columns = await self.list_columns(table_name, schema)
-        table.indexes = await self.list_indexes(table_name, schema)
-        table.foreign_keys = await self.list_foreign_keys(table_name, schema)
+        table.columns = await self.list_columns(table, schema)
+        table.indexes = await self.list_indexes(table, schema)
+        table.foreign_keys = await self.list_foreign_keys(table, schema)
         return table

@@ -8,8 +8,8 @@ class FirebirdTriggerMixin:
 
     def format_create_trigger(
         self,
-        trigger_name: str,
-        table_name: str,
+        trigger: str,
+        table: str,
         timing: str,
         events: List[str],
         body: str,
@@ -18,13 +18,13 @@ class FirebirdTriggerMixin:
         active: bool = True,
     ) -> Tuple[str, tuple]:
         parts = ["CREATE TRIGGER"]
-        parts.append(self.format_identifier(trigger_name))
+        parts.append(self.format_identifier(trigger))
         if not active:
             parts.append("INACTIVE")
         parts.append(timing)
         parts.append(' OR '.join(events))
         parts.append("ON")
-        parts.append(self.format_identifier(table_name))
+        parts.append(self.format_identifier(table))
         parts.append(f"POSITION {position}")
         if when_condition:
             parts.append(f"WHEN ({when_condition})")

@@ -14,5 +14,5 @@ from typing import Protocol
 class FirebirdTriggerSupport(Protocol):
     """Auto-generated capability protocol (P7)."""
 
-    def format_create_trigger(self, trigger_name: str, table_name: str, timing: str, events: List[str], body: str, position: int=0, when_condition: Optional[str]=None, active: bool=True) -> Tuple[str, tuple]:
+    def format_create_trigger(self, trigger: str, table: str, timing: str, events: List[str], body: str, position: int=0, when_condition: Optional[str]=None, active: bool=True) -> Tuple[str, tuple]:
         ...  # pragma: no cover
