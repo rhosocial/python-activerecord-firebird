@@ -57,7 +57,7 @@ class FakeIntrospector:
         self.calls.append(("list_foreign_keys", name, schema))
         return [{"name": "FK_USERS_ROLE"}]
 
-    def list_triggers(self, table_name=None, schema=None):
+    def list_triggers(self, table=None, schema=None):
         self.calls.append(("list_triggers", table_name, schema))
         return [{"name": "TRG_AUDIT"}]
 

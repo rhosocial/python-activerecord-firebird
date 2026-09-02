@@ -25,7 +25,7 @@ def _make_merge(dialect, when_matched=None, when_not_matched=None, by_source=Non
     """Build a MERGE expression over a simple two-column target/source pair."""
     return MergeExpression(
         dialect,
-        target_table="tgt",
+        target="tgt",
         source=TableExpression(dialect, "src"),
         on_condition=Column(dialect, "id", "tgt") == Column(dialect, "id", "src"),
         when_matched=when_matched or [],
@@ -243,7 +243,7 @@ class TestMergeVersionBoundaries:
     def test_update_or_insert_unaffected(self):
         dialect = FirebirdDialect((2, 5, 0))
         sql, params = dialect.format_update_or_insert(
-            table_name="products",
+            table="products",
             insert_columns=["id", "name", "price"],
             insert_values=[1, "Product A", 19.99],
             match_columns=["id"],

@@ -64,7 +64,7 @@ class FirebirdTableMixin:
             parts.append("CREATE TABLE")
         if getattr(expr, 'if_not_exists', False) and not apply_exists_guard:
             parts.append("IF NOT EXISTS")
-        parts.append(self.format_identifier(expr.table))
+        parts.append(expr.table.to_sql()[0])
 
         if getattr(expr, 'temporary', False):
             on_commit = getattr(expr, 'on_commit_delete', True)
