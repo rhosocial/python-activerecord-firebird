@@ -14,7 +14,7 @@ from typing import Protocol
 class FirebirdTableSupport(Protocol):
     """Auto-generated capability protocol (P7)."""
 
-    def format_column_definition_firebird(self, col_def) -> Tuple[str, List[Any]]:
+    def format_column_definition(self, col_def) -> Tuple[str, List[Any]]:
         ...  # pragma: no cover
-    def format_table_constraint_firebird(self, t_const) -> Tuple[str, List[Any]]:
+    def format_table_constraint(self, t_const) -> Tuple[str, List[Any]]:
         ...  # pragma: no cover

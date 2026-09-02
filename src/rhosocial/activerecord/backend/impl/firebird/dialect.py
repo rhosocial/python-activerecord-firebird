@@ -170,13 +170,13 @@ class FirebirdDialect(
     ExpressionMixin,
     DateTimeMixin,
     DQLMixin,
+    FirebirdTableMixin,         # Must be before DDLColumnMixin (auto-increment)
     FirebirdAlterTableModifierMixin,  # Before DDLColumnMixin to override format_*_action
     DDLColumnMixin,
     TransactionControlMixin,
     # Firebird-specific overrides (before generic mixins to take precedence)
     FirebirdDMLOperationMixin,  # Must be before DMLMixin
     FirebirdLockingMixin,       # Must be before LockingMixin
-    FirebirdTableMixin,         # Must be before TableMixin
     FirebirdTriggerMixin,       # Must be before TriggerMixin
     FirebirdSequenceMixin,      # Must be before SequenceMixin
     FirebirdBlobMixin,
