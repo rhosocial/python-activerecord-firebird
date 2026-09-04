@@ -40,7 +40,11 @@ from rhosocial.activerecord.backend.expression.types import (
 
 from .version_boundaries import _norm_version
 from ..expression.types import (
+    FirebirdBlobSubType,
     FirebirdDecFloatType,
+    FirebirdDecimalType,
+    FirebirdDoubleType,
+    FirebirdFloatType,
     FirebirdInt128Type,
     FirebirdTimeStampTzType,
     FirebirdTimeTzType,
@@ -65,12 +69,28 @@ class FirebirdTypeSupportMixin(DDLTypeMixin, DDLTypeSupport):
     def format_data_type_float(self, data_type: FloatType) -> Tuple[str, tuple]:
         return "FLOAT", ()
 
+    @DDLTypeMixin.handles(FirebirdFloatType)
+    def format_data_type_firebird_float(self, data_type: FirebirdFloatType) -> Tuple[str, tuple]:
+        return "FLOAT", ()
+
     @DDLTypeMixin.handles(DoubleType)
     def format_data_type_double(self, data_type: DoubleType) -> Tuple[str, tuple]:
         return "DOUBLE PRECISION", ()
 
+    @DDLTypeMixin.handles(FirebirdDoubleType)
+    def format_data_type_firebird_double(self, data_type: FirebirdDoubleType) -> Tuple[str, tuple]:
+        return "DOUBLE PRECISION", ()
+
     @DDLTypeMixin.handles(DecimalType)
     def format_data_type_decimal(self, data_type: DecimalType) -> Tuple[str, tuple]:
+        if data_type.precision is not None and data_type.scale is not None:
+            return f"DECIMAL({data_type.precision}, {data_type.scale})", ()
+        if data_type.precision is not None:
+            return f"DECIMAL({data_type.precision})", ()
+        return "DECIMAL", ()
+
+    @DDLTypeMixin.handles(FirebirdDecimalType)
+    def format_data_type_firebird_decimal(self, data_type: FirebirdDecimalType) -> Tuple[str, tuple]:
         if data_type.precision is not None and data_type.scale is not None:
             return f"DECIMAL({data_type.precision}, {data_type.scale})", ()
         if data_type.precision is not None:
@@ -97,6 +117,10 @@ class FirebirdTypeSupportMixin(DDLTypeMixin, DDLTypeSupport):
     def format_data_type_blob(self, data_type: BlobType) -> Tuple[str, tuple]:
         # Firebird's default BLOB subtype 0 is binary; request it explicitly.
         return "BLOB SUB_TYPE BINARY", ()
+
+    @DDLTypeMixin.handles(FirebirdBlobSubType)
+    def format_data_type_firebird_blob_sub_type(self, data_type: FirebirdBlobSubType) -> Tuple[str, tuple]:
+        return "INTEGER", ()
 
     @DDLTypeMixin.handles(CustomType)
     def format_data_type_custom(self, data_type: CustomType) -> Tuple[str, tuple]:
