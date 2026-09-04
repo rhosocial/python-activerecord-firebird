@@ -7,6 +7,7 @@ from .alter_table import (
     SetIncrement,
     DropIdentity,
     SetPosition,
+    AlterColumnType,
 )
 from .comment import FirebirdCommentExpression, FirebirdCommentObjectType
 from .database import (

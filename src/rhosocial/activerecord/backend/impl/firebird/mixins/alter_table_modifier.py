@@ -32,6 +32,51 @@ class FirebirdAlterTableModifierMixin:
     def supports_drop_constraint_if_exists(self) -> bool:
         return False
 
+    def format_alter_column_action(self, action) -> Tuple[str, tuple]:
+        """Format ``ALTER TABLE ... ALTER COLUMN`` property operations.
+
+        The SQL-standard renderer emits ``SET DEFAULT ?`` with a bind
+        parameter, but Firebird DDL cannot take parameter placeholders —
+        ``ALTER COLUMN`` ``SET DEFAULT`` requires an inline literal. For
+        ``SET DEFAULT`` the value is therefore rendered inline (strings
+        escaped, booleans as TRUE/FALSE, everything else via ``str()``);
+        ``DROP DEFAULT`` / ``SET NOT NULL`` / ``DROP NOT NULL`` fall through
+        to the standard rendering, which already matches Firebird syntax.
+        """
+        operation = getattr(action.operation, "value", None) or str(action.operation)
+        col_name = self.format_identifier(action.column_name)
+
+        if operation == "DROP DEFAULT":
+            return f"ALTER COLUMN {col_name} DROP DEFAULT", ()
+
+        if operation == "SET DEFAULT":
+            new_value = getattr(action, "new_value", None)
+            if new_value is None:
+                raise ValueError("SET DEFAULT requires a default value")
+            if isinstance(new_value, bool):
+                return f"ALTER COLUMN {col_name} SET DEFAULT {'TRUE' if new_value else 'FALSE'}", ()
+            if isinstance(new_value, str):
+                escaped = self._escape_sql_string(new_value)
+                return f"ALTER COLUMN {col_name} SET DEFAULT '{escaped}'", ()
+            if hasattr(new_value, "to_sql"):
+                value_sql, value_params = new_value.to_sql()
+                return f"ALTER COLUMN {col_name} SET DEFAULT {value_sql}", tuple(value_params)
+            return f"ALTER COLUMN {col_name} SET DEFAULT {new_value}", ()
+
+        return super().format_alter_column_action(action)
+
+    def format_alter_column_type_action(self, action) -> Tuple[str, tuple]:
+        """Render ``ALTER TABLE ... ALTER COLUMN <col> TYPE <new_type>``.
+
+        Firebird changes column types in place with the ``TYPE`` keyword;
+        the type text is rendered ahead of time and stored inline on the
+        action because Firebird DDL cannot bind parameters.
+        """
+        return (
+            f"ALTER COLUMN {self.format_identifier(action.column_name)} TYPE {action.new_type_sql}",
+            (),
+        )
+
     def format_add_column_action(self, action) -> Tuple[str, tuple]:
         """Format ALTER TABLE ADD COLUMN for Firebird.
 

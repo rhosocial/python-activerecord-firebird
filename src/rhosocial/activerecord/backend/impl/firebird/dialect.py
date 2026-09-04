@@ -892,6 +892,33 @@ class FirebirdDialect(
     def supports_alter_table(self) -> bool:
         return True
 
+    # region CreateTableExpressionDiffSupport hooks
+
+    def _supports_alter_column_type(self) -> bool:
+        """Firebird changes column types in place via ALTER COLUMN ... TYPE."""
+        return True
+
+    def alter_column_type_action(self, old_col, new_col):
+        """Build the in-place type-change action (ALTER COLUMN <col> TYPE)."""
+        from rhosocial.activerecord.backend.impl.firebird.expression.alter_table import (
+            AlterColumnType,
+        )
+
+        type_sql, _ = self.format_data_type(new_col.data_type)
+        return AlterColumnType(self, column_name=new_col.name, new_type_sql=type_sql)
+
+    def _supports_alter_table_index_actions(self) -> bool:
+        """Firebird has no ``ALTER TABLE ADD/DROP INDEX`` statement.
+
+        Indexes are managed with independent ``CREATE INDEX`` /
+        ``DROP INDEX`` statements, and the generic ``ADD INDEX`` renderer
+        would produce non-executable SQL. Index changes therefore route to
+        a rebuild plan (the recreated table carries the new index set).
+        """
+        return False
+
+    # endregion
+
     def supports_temporary_table(self) -> bool:
         return True
 

@@ -79,6 +79,28 @@ class DropIdentity(AlterTableAction):
         return self.dialect.format_drop_identity_action(self)
 
 
+class AlterColumnType(AlterTableAction):
+    """ALTER TABLE ... ALTER [COLUMN] <column> TYPE <new_type>.
+
+    Firebird changes a column's data type with the ``TYPE`` keyword (the
+    SQL-standard ``SET DATA TYPE`` spelling is not accepted). ``new_type_sql``
+    carries the fully rendered, non-parameterised type text (Firebird DDL
+    cannot bind parameters), produced by ``format_data_type`` on the dialect.
+    """
+
+    action_type = "ALTER COLUMN TYPE"
+
+    def __init__(
+        self, dialect: "SQLDialectBase", column_name: str, new_type_sql: str
+    ):
+        super().__init__(dialect)
+        self.column_name: str = column_name
+        self.new_type_sql: str = new_type_sql
+
+    def to_sql(self) -> Tuple[str, tuple]:
+        return self.dialect.format_alter_column_type_action(self)
+
+
 class SetPosition(AlterTableAction):
     """ALTER TABLE ... ALTER COLUMN ... POSITION n."""
 
@@ -99,4 +121,5 @@ __all__ = [
     "SetIncrement",
     "DropIdentity",
     "SetPosition",
+    "AlterColumnType",
 ]
