@@ -38,20 +38,22 @@ class TestExecuteMany:
         result = fb_backend.execute_many(sql, params_list)
         assert result.affected_rows == 5, "batch insert should report all 5 affected rows"
 
-        row = fb_backend.execute(
-            f"SELECT COUNT(*) AS CNT FROM {batch_table}", fetch=True
-        )
-        count = row.data[0]["CNT"] if row and row.data else 0
+        rows = fb_backend.execute(
+            f"SELECT COUNT(*) FROM {batch_table}", fetch=True
+        ).data
+        count = rows[0]["count"] if rows else 0
         assert count == 5, "all 5 rows should be persisted"
 
     def test_empty_params_list_is_noop(self, fb_backend, batch_table):
         """An empty parameter list should insert nothing and not error."""
         result = fb_backend.execute_many(f"INSERT INTO {batch_table} (name) VALUES (?)", [])
         assert result is not None, "execute_many should return a QueryResult even for an empty batch"
-        assert result.affected_rows == 0, "empty batch should affect no rows"
+        # Firebird's driver reports -1 for an empty executemany; treat any
+        # non-positive count as "nothing inserted".
+        assert result.affected_rows <= 0, "empty batch should affect no rows"
 
-        row = fb_backend.execute(
-            f"SELECT COUNT(*) AS CNT FROM {batch_table}", fetch=True
-        )
-        count = row.data[0]["CNT"] if row and row.data else 0
+        rows = fb_backend.execute(
+            f"SELECT COUNT(*) FROM {batch_table}", fetch=True
+        ).data
+        count = rows[0]["count"] if rows else 0
         assert count == 0, "no rows should exist after an empty batch"
