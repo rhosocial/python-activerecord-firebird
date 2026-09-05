@@ -107,7 +107,7 @@ class FirebirdTableMixin:
             # PSQL quirk: DECLARE VARIABLE sits between AS and BEGIN, and
             # EXISTS is not a valid IF condition — hence the COUNT(*) form.
             embedded = statement.replace("'", "''")
-            table_upper = expr.table.to_sql()[0]
+            table_upper = expr.table.name.upper()
             statement = (
                 "EXECUTE BLOCK AS DECLARE VARIABLE CNT INTEGER; BEGIN "
                 f"SELECT COUNT(*) FROM RDB$RELATIONS "
