@@ -37,6 +37,9 @@ dependencies = [
     "firebird-driver>=2.0.0"
 ]
 
+[project.scripts]
+rhosocial-activerecord-firebird = "rhosocial.activerecord.backend.impl.firebird.__main__:main"
+
 [project.optional-dependencies]
 pooling = [
     "DBUtils>=3.0.0",
