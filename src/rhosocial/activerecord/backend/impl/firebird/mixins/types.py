@@ -20,9 +20,11 @@ from rhosocial.activerecord.backend.dialect.mixins import (
 from rhosocial.activerecord.backend.dialect.protocols import DDLTypeSupport
 from rhosocial.activerecord.backend.expression.types import (
     BigIntType,
+    BinaryType,
     BlobType,
     BooleanType,
     CharType,
+    CidrType,
     CustomType,
     DataType,
     DateType,
@@ -30,11 +32,15 @@ from rhosocial.activerecord.backend.expression.types import (
     DecimalType,
     DoubleType,
     FloatType,
+    InetType,
     IntegerType,
+    MacAddrType,
     SmallIntType,
     TextType,
     TimeType,
     TimestampType,
+    UUIDType,
+    VarBinaryType,
     VarCharType,
 )
 
@@ -167,6 +173,35 @@ class FirebirdTypeSupportMixin(DDLTypeMixin, DDLTypeSupport):
         self._check_fb4_type("INT128")
         return "INT128", ()
 
+    @DDLTypeMixin.handles(UUIDType)
+    def format_data_type_uuid(self, data_type: UUIDType) -> Tuple[str, tuple]:
+        # Firebird stores UUIDs as VARCHAR(36) by default: the string adapter
+        # and string-form UUID query parameters both round-trip correctly.
+        # CHAR(16) CHARACTER SET OCTETS is compact but requires column-aware
+        # query parameter adaptation (a framework feature not yet present),
+        # so it is opt-in only via UseSqlType(BinaryType(16), UUIDType()).
+        return "VARCHAR(36)", ()
+
+    @DDLTypeMixin.handles(InetType)
+    def format_data_type_inet(self, data_type: InetType) -> Tuple[str, tuple]:
+        return "VARCHAR(45)", ()
+
+    @DDLTypeMixin.handles(CidrType)
+    def format_data_type_cidr(self, data_type: CidrType) -> Tuple[str, tuple]:
+        return "VARCHAR(45)", ()
+
+    @DDLTypeMixin.handles(MacAddrType)
+    def format_data_type_mac_addr(self, data_type: MacAddrType) -> Tuple[str, tuple]:
+        return "VARCHAR(17)", ()
+
+    @DDLTypeMixin.handles(BinaryType)
+    def format_data_type_binary(self, data_type: BinaryType) -> Tuple[str, tuple]:
+        return f"CHAR({data_type.length}) CHARACTER SET OCTETS", ()
+
+    @DDLTypeMixin.handles(VarBinaryType)
+    def format_data_type_var_binary(self, data_type: VarBinaryType) -> Tuple[str, tuple]:
+        return "BLOB", ()
+
     def _check_fb4_type(self, feature: str) -> None:
         """Raise unless the dialect targets Firebird 4.0 or later.
 
@@ -246,18 +281,16 @@ class FirebirdTypeSupportMixin(DDLTypeMixin, DDLTypeSupport):
 class FirebirdTypeSuggestionMixin(DDLTypeSuggestionMixin):
     """Firebird ``suggest_column_type()``.
 
-    Firebird has no native UUID type; the ``FirebirdUUIDAdapter`` default
-    binds UUIDs as 16 raw bytes, so the suggestion is
-    ``CHAR(16) CHARACTER SET OCTETS`` (16-octet binary, available on all
-    supported server versions) — the same binary-storage convention as
-    MySQL/MariaDB ``BINARY(16)`` and Oracle ``RAW(16)``.
+    Firebird has no native UUID type; ``UUIDType`` renders as ``VARCHAR(36)``
+    so the string adapter and string-form UUID query parameters round-trip
+    correctly.
 
-    ``dict``/``list`` map to ``TextType`` (``BLOB SUB_TYPE TEXT``) — Firebird
-    has no native JSON type on any currently supported version, so no
-    version gating applies. All other suggestions are stable across 2.5-5.0;
-    the *version* parameter is accepted for signature compatibility only
-    (BOOLEAN requires Firebird 3.0+, gated by the dialect's capability
-    checks rather than here).
+    ``dict``/``list``/``set``/``tuple`` map to ``TextType`` (``BLOB SUB_TYPE
+    TEXT``) — Firebird has no native JSON type on any currently supported
+    version, so no version gating applies. All other suggestions are stable
+    across 2.5-5.0; the *version* parameter is accepted for signature
+    compatibility only (BOOLEAN requires Firebird 3.0+, gated by the
+    dialect's capability checks rather than here).
     """
 
     def suggest_column_type(
@@ -266,10 +299,8 @@ class FirebirdTypeSuggestionMixin(DDLTypeSuggestionMixin):
         import datetime as _dt
         import decimal as _dec
         import enum as _enum
+        import ipaddress as _ip
         import uuid as _uuid
-
-        if python_type is _uuid.UUID:
-            return CustomType(dialect=self, raw="CHAR(16) CHARACTER SET OCTETS")
 
         mapping = {
             str: VarCharType,
@@ -281,9 +312,17 @@ class FirebirdTypeSuggestionMixin(DDLTypeSuggestionMixin):
             _dt.date: DateType,
             _dt.time: TimeType,
             _dec.Decimal: DecimalType,
+            _uuid.UUID: UUIDType,
             dict: TextType,
             list: TextType,
+            set: TextType,
+            frozenset: TextType,
+            tuple: TextType,
             _enum.Enum: VarCharType,
+            _ip.IPv4Address: InetType,
+            _ip.IPv6Address: InetType,
+            _ip.IPv4Network: CidrType,
+            _ip.IPv6Network: CidrType,
         }
         factory = mapping.get(python_type)
         if factory is not None:

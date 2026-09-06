@@ -168,6 +168,8 @@ class FirebirdBackendMixin:
             (int, int), (float, float), (str, str), (bytes, bytes),
             (bool, bool), (dt.datetime, dt.datetime), (dt.date, dt.date),
             (dt.time, dt.time), (Decimal, Decimal), (dict, str), (list, str),
+            # UUID uses the string adapter, matching the default VARCHAR(36)
+            # storage (string-form query parameters round-trip correctly).
             (UUID, str),
         ]
 
