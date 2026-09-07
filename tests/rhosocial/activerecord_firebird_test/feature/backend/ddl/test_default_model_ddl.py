@@ -6,6 +6,7 @@ derives the column types via its own suggestion mapping. Firebird uppercases
 identifiers by default.
 """
 
+from rhosocial.activerecord.base import UseSqlType
 from rhosocial.activerecord.backend.impl.firebird.dialect import FirebirdDialect
 from rhosocial.activerecord.examples.ddl_default_types import DefaultUser
 
@@ -16,7 +17,11 @@ def _render() -> str:
 
 
 def test_default_user_has_no_explicit_sql_types():
-    assert DefaultUser.__table_field_sql_types__ == {}
+    assert not any(
+        isinstance(m, UseSqlType)
+        for f in DefaultUser.model_fields.values()
+        for m in f.metadata
+    )
 
 
 def test_firebird_default_user_ddl_columns():

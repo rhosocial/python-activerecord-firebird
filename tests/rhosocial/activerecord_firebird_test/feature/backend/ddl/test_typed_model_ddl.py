@@ -7,6 +7,7 @@ by default. Dialect instantiation needs no DB server; only ``to_sql()`` is
 exercised here.
 """
 
+from rhosocial.activerecord.base import UseSqlType
 from rhosocial.activerecord.backend.impl.firebird.dialect import FirebirdDialect
 from rhosocial.activerecord.examples.ddl_types import TypedUser
 
@@ -34,6 +35,6 @@ def test_firebird_typed_user_ddl_columns():
 
 
 def test_firebird_typed_user_no_per_dialect_string_keys():
-    for _field_name, marker in TypedUser.__table_field_sql_types__.items():
+    for marker in [m for f in TypedUser.model_fields.values() for m in f.metadata if isinstance(m, UseSqlType)]:
         assert not hasattr(marker, "dialect_types")
         assert marker.data_type is not None
