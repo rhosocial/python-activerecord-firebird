@@ -94,7 +94,7 @@ class FirebirdTableMixin:
     def _format_column_definition(self, col_def) -> Tuple[str, List[Any]]:
         from rhosocial.activerecord.backend.expression.statements import ColumnConstraintType
 
-        type_sql, _ = col_def.data_type.to_sql(self)
+        type_sql, _ = col_def.data_type.to_sql()
         parts = [self.format_identifier(col_def.name), type_sql]
         params: List[Any] = []
 
