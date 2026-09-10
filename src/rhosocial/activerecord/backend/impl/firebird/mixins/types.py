@@ -17,6 +17,7 @@ from rhosocial.activerecord.backend.dialect.mixins import DDLTypeMixin
 from rhosocial.activerecord.backend.dialect.protocols import DDLTypeSupport
 from rhosocial.activerecord.backend.expression.types import (
     BigIntType,
+    BlobType,
     BooleanType,
     CharType,
     CustomType,
@@ -45,27 +46,26 @@ from ..expression.types import (
 
 class FirebirdTypeSupportMixin(DDLTypeMixin, DDLTypeSupport):
 
-    @DDLTypeMixin.handles(IntegerType)
+    # --- Core types (pure names) rendered to real Firebird SQL ---
+
     def format_data_type_integer(self, data_type: IntegerType) -> Tuple[str, tuple]:
         return "INTEGER", ()
 
-    @DDLTypeMixin.handles(BigIntType)
+    def format_data_type_int(self, data_type: IntegerType) -> Tuple[str, tuple]:
+        return "INTEGER", ()
+
     def format_data_type_bigint(self, data_type: BigIntType) -> Tuple[str, tuple]:
         return "BIGINT", ()
 
-    @DDLTypeMixin.handles(SmallIntType)
     def format_data_type_smallint(self, data_type: SmallIntType) -> Tuple[str, tuple]:
         return "SMALLINT", ()
 
-    @DDLTypeMixin.handles(FloatType)
     def format_data_type_float(self, data_type: FloatType) -> Tuple[str, tuple]:
         return "FLOAT", ()
 
-    @DDLTypeMixin.handles(DoubleType)
     def format_data_type_double(self, data_type: DoubleType) -> Tuple[str, tuple]:
         return "DOUBLE PRECISION", ()
 
-    @DDLTypeMixin.handles(DecimalType)
     def format_data_type_decimal(self, data_type: DecimalType) -> Tuple[str, tuple]:
         if data_type.precision is not None and data_type.scale is not None:
             return f"DECIMAL({data_type.precision}, {data_type.scale})", ()
@@ -73,61 +73,73 @@ class FirebirdTypeSupportMixin(DDLTypeMixin, DDLTypeSupport):
             return f"DECIMAL({data_type.precision})", ()
         return "DECIMAL", ()
 
-    @DDLTypeMixin.handles(BooleanType)
     def format_data_type_boolean(self, data_type: BooleanType) -> Tuple[str, tuple]:
         return "BOOLEAN", ()
 
-    @DDLTypeMixin.handles(VarCharType)
     def format_data_type_varchar(self, data_type: VarCharType) -> Tuple[str, tuple]:
         return (f"VARCHAR({data_type.length})" if data_type.length is not None else "VARCHAR(255)"), ()
 
-    @DDLTypeMixin.handles(CharType)
     def format_data_type_char(self, data_type: CharType) -> Tuple[str, tuple]:
         return (f"CHAR({data_type.length})" if data_type.length is not None else "CHAR(1)"), ()
 
-    @DDLTypeMixin.handles(TextType)
     def format_data_type_text(self, data_type: TextType) -> Tuple[str, tuple]:
         return "BLOB SUB_TYPE TEXT", ()
 
-    @DDLTypeMixin.handles(DateTimeType)
     def format_data_type_datetime(self, data_type: DateTimeType) -> Tuple[str, tuple]:
         return "TIMESTAMP", ()
 
-    @DDLTypeMixin.handles(DateType)
     def format_data_type_date(self, data_type: DateType) -> Tuple[str, tuple]:
         return "DATE", ()
 
-    @DDLTypeMixin.handles(TimeType)
     def format_data_type_time(self, data_type: TimeType) -> Tuple[str, tuple]:
         return "TIME", ()
 
-    @DDLTypeMixin.handles(TimestampType)
     def format_data_type_timestamp(self, data_type: TimestampType) -> Tuple[str, tuple]:
         return "TIMESTAMP", ()
 
-    @DDLTypeMixin.handles(FirebirdTimeStampTzType)
-    def format_data_type_timestamptz(self, data_type: FirebirdTimeStampTzType) -> Tuple[str, tuple]:
+    def format_data_type_blob(self, data_type: BlobType) -> Tuple[str, tuple]:
+        return "BLOB", ()
+
+    def format_data_type_custom(self, data_type: CustomType) -> Tuple[str, tuple]:
+        return data_type.raw, ()
+
+    # --- Firebird-specific type formatters (dispatch key = type name) ---
+
+    def format_data_type_firebird_timestamptz(self, data_type: FirebirdTimeStampTzType) -> Tuple[str, tuple]:
         """Format TIMESTAMP WITH TIME ZONE (Firebird 4.0+)."""
         self._check_fb4_type("TIMESTAMP WITH TIME ZONE")
         return "TIMESTAMP WITH TIME ZONE", ()
 
-    @DDLTypeMixin.handles(FirebirdTimeTzType)
-    def format_data_type_timetz(self, data_type: FirebirdTimeTzType) -> Tuple[str, tuple]:
+    def format_data_type_firebird_timetz(self, data_type: FirebirdTimeTzType) -> Tuple[str, tuple]:
         """Format TIME WITH TIME ZONE (Firebird 4.0+)."""
         self._check_fb4_type("TIME WITH TIME ZONE")
         return "TIME WITH TIME ZONE", ()
 
-    @DDLTypeMixin.handles(FirebirdDecFloatType)
-    def format_data_type_decfloat(self, data_type: FirebirdDecFloatType) -> Tuple[str, tuple]:
+    def format_data_type_firebird_decfloat(self, data_type: FirebirdDecFloatType) -> Tuple[str, tuple]:
         """Format DECFLOAT(16|34) (Firebird 4.0+)."""
         self._check_fb4_type("DECFLOAT")
         return f"DECFLOAT({data_type.precision})", ()
 
-    @DDLTypeMixin.handles(FirebirdInt128Type)
-    def format_data_type_int128(self, data_type: FirebirdInt128Type) -> Tuple[str, tuple]:
+    def format_data_type_firebird_int128(self, data_type: FirebirdInt128Type) -> Tuple[str, tuple]:
         """Format INT128 (Firebird 4.0+)."""
         self._check_fb4_type("INT128")
         return "INT128", ()
+
+    def format_data_type_firebird_decimal(self, data_type: FirebirdDecimalType) -> Tuple[str, tuple]:
+        if data_type.precision is not None and data_type.scale is not None:
+            return f"DECIMAL({data_type.precision}, {data_type.scale})", ()
+        if data_type.precision is not None:
+            return f"DECIMAL({data_type.precision})", ()
+        return "DECIMAL", ()
+
+    def format_data_type_firebird_float(self, data_type: FirebirdFloatType) -> Tuple[str, tuple]:
+        return "FLOAT", ()
+
+    def format_data_type_firebird_double(self, data_type: FirebirdDoubleType) -> Tuple[str, tuple]:
+        return "DOUBLE PRECISION", ()
+
+    def format_data_type_firebird_blob_subtype(self, data_type: FirebirdBlobSubType) -> Tuple[str, tuple]:
+        return "BLOB SUB_TYPE TEXT", ()
 
     def _check_fb4_type(self, feature: str) -> None:
         """Raise unless the dialect targets Firebird 4.0 or later.

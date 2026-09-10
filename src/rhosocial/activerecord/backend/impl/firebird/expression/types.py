@@ -15,32 +15,32 @@ from rhosocial.activerecord.backend.expression.types import (
 
 class FirebirdDecimalType(DecimalType):
     """Firebird DECIMAL type."""
-    pass
+    name = "firebird_decimal"
 
 
 class FirebirdFloatType(FloatType):
     """Firebird FLOAT type."""
-    pass
+    name = "firebird_float"
 
 
 class FirebirdDoubleType(FloatType):
     """Firebird DOUBLE PRECISION type."""
-    pass
+    name = "firebird_double"
 
 
 class FirebirdBlobSubType(IntegerType):
     """Firebird BLOB SUB_TYPE type."""
-    pass
+    name = "firebird_blob_subtype"
 
 
 class FirebirdTimeStampTzType(TimestampTzType):
     """Firebird TIMESTAMP WITH TIME ZONE type (Firebird 4.0+)."""
-    pass
+    name = "firebird_timestamptz"
 
 
 class FirebirdTimeTzType(TimeTzType):
     """Firebird TIME WITH TIME ZONE type (Firebird 4.0+)."""
-    pass
+    name = "firebird_timetz"
 
 
 class FirebirdDecFloatType(DataType):
@@ -50,7 +50,9 @@ class FirebirdDecFloatType(DataType):
     precision of either 16 or 34 decimal digits.
     """
 
-    def __init__(self, precision: int = 16, dialect: Optional[object] = None):
+    name = "firebird_decfloat"
+
+    def __init__(self, precision: int = 16, dialect=None):
         super().__init__(dialect)
         if precision not in (16, 34):
             raise ValueError(f"DECFLOAT precision must be 16 or 34, got {precision}")
@@ -74,7 +76,8 @@ class FirebirdInt128Type(DataType):
     Firebird 4.0 introduced the INT128 fixed-point integer type holding
     values from -2**127 to 2**127 - 1.
     """
-    pass
+
+    name = "firebird_int128"
 
 
 __all__ = [

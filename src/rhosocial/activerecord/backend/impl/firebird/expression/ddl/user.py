@@ -8,7 +8,7 @@ Each expression delegates SQL generation to the dialect's
 separation pattern.
 """
 
-from typing import TYPE_CHECKING, Optional, Tuple
+from typing import TYPE_CHECKING, Optional
 
 from rhosocial.activerecord.backend.expression.bases import BaseExpression
 
@@ -38,8 +38,9 @@ class FirebirdCreateUserExpression(BaseExpression):
         self.last_name: Optional[str] = last_name
         self.grant_admin_role: bool = grant_admin_role
 
-    def to_sql(self) -> Tuple[str, tuple]:
-        return self.dialect.format_create_user_statement(self)
+    @property
+    def format_method(self) -> str:
+        return "format_create_user_statement"
 
 
 class FirebirdAlterUserExpression(BaseExpression):
@@ -66,8 +67,9 @@ class FirebirdAlterUserExpression(BaseExpression):
         self.grant_admin_role: bool = grant_admin_role
         self.revoke_admin_role: bool = revoke_admin_role
 
-    def to_sql(self) -> Tuple[str, tuple]:
-        return self.dialect.format_alter_user_statement(self)
+    @property
+    def format_method(self) -> str:
+        return "format_alter_user_statement"
 
 
 class FirebirdDropUserExpression(BaseExpression):
@@ -77,8 +79,9 @@ class FirebirdDropUserExpression(BaseExpression):
         super().__init__(dialect)
         self.username: str = username
 
-    def to_sql(self) -> Tuple[str, tuple]:
-        return self.dialect.format_drop_user_statement(self)
+    @property
+    def format_method(self) -> str:
+        return "format_drop_user_statement"
 
 
 __all__ = [

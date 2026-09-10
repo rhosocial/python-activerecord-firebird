@@ -8,7 +8,7 @@ expression delegates SQL generation to the dialect's ``format_*_package_statemen
 methods, following the Expression-Dialect separation pattern.
 """
 
-from typing import TYPE_CHECKING, Tuple
+from typing import TYPE_CHECKING
 
 from rhosocial.activerecord.backend.expression.bases import BaseExpression
 
@@ -24,8 +24,9 @@ class FirebirdCreatePackageExpression(BaseExpression):
         self.package_name: str = package_name
         self.body: str = body
 
-    def to_sql(self) -> Tuple[str, tuple]:
-        return self.dialect.format_create_package_statement(self)
+    @property
+    def format_method(self) -> str:
+        return "format_create_package_statement"
 
 
 class FirebirdCreatePackageBodyExpression(BaseExpression):
@@ -36,8 +37,9 @@ class FirebirdCreatePackageBodyExpression(BaseExpression):
         self.package_name: str = package_name
         self.body: str = body
 
-    def to_sql(self) -> Tuple[str, tuple]:
-        return self.dialect.format_create_package_body_statement(self)
+    @property
+    def format_method(self) -> str:
+        return "format_create_package_body_statement"
 
 
 class FirebirdDropPackageExpression(BaseExpression):
@@ -48,8 +50,9 @@ class FirebirdDropPackageExpression(BaseExpression):
         self.package_name: str = package_name
         self.body: bool = body
 
-    def to_sql(self) -> Tuple[str, tuple]:
-        return self.dialect.format_drop_package_statement(self)
+    @property
+    def format_method(self) -> str:
+        return "format_drop_package_statement"
 
 
 __all__ = [

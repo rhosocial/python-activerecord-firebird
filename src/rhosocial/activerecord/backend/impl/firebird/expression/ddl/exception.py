@@ -7,7 +7,7 @@ expression delegates SQL generation to the dialect's ``format_*_exception_statem
 method, following the Expression-Dialect separation pattern.
 """
 
-from typing import TYPE_CHECKING, Tuple
+from typing import TYPE_CHECKING
 
 from rhosocial.activerecord.backend.expression.bases import BaseExpression
 
@@ -23,8 +23,9 @@ class FirebirdCreateExceptionExpression(BaseExpression):
         self.exception_name: str = exception_name
         self.message: str = message
 
-    def to_sql(self) -> Tuple[str, tuple]:
-        return self.dialect.format_create_exception_statement(self)
+    @property
+    def format_method(self) -> str:
+        return "format_create_exception_statement"
 
 
 class FirebirdAlterExceptionExpression(BaseExpression):
@@ -35,8 +36,9 @@ class FirebirdAlterExceptionExpression(BaseExpression):
         self.exception_name: str = exception_name
         self.message: str = message
 
-    def to_sql(self) -> Tuple[str, tuple]:
-        return self.dialect.format_alter_exception_statement(self)
+    @property
+    def format_method(self) -> str:
+        return "format_alter_exception_statement"
 
 
 class FirebirdDropExceptionExpression(BaseExpression):
@@ -46,8 +48,9 @@ class FirebirdDropExceptionExpression(BaseExpression):
         super().__init__(dialect)
         self.exception_name: str = exception_name
 
-    def to_sql(self) -> Tuple[str, tuple]:
-        return self.dialect.format_drop_exception_statement(self)
+    @property
+    def format_method(self) -> str:
+        return "format_drop_exception_statement"
 
 
 __all__ = [

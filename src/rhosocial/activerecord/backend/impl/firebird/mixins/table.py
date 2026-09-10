@@ -74,12 +74,12 @@ class FirebirdTableMixin:
 
         column_parts = []
         for col_def in expr.columns:
-            col_sql, col_params = self._format_column_definition_firebird(col_def)
+            col_sql, col_params = self._format_column_definition(col_def)
             column_parts.append(col_sql)
             all_params.extend(col_params)
 
         for t_const in expr.table_constraints:
-            const_sql, const_params = self._format_table_constraint_firebird(t_const)
+            const_sql, const_params = self._format_table_constraint(t_const)
             column_parts.append(const_sql)
             all_params.extend(const_params)
 
@@ -91,7 +91,7 @@ class FirebirdTableMixin:
 
         return ' '.join(parts), tuple(all_params)
 
-    def _format_column_definition_firebird(self, col_def) -> Tuple[str, List[Any]]:
+    def _format_column_definition(self, col_def) -> Tuple[str, List[Any]]:
         from rhosocial.activerecord.backend.expression.statements import ColumnConstraintType
 
         type_sql, _ = col_def.data_type.to_sql(self)
@@ -160,7 +160,7 @@ class FirebirdTableMixin:
 
         return ' '.join(parts), params
 
-    def _format_table_constraint_firebird(self, t_const) -> Tuple[str, List[Any]]:
+    def _format_table_constraint(self, t_const) -> Tuple[str, List[Any]]:
         from rhosocial.activerecord.backend.expression.statements import (
             ForeignKeyConstraint,
             ReferentialAction,

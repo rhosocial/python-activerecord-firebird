@@ -9,7 +9,7 @@ following the Expression-Dialect separation pattern.
 """
 
 from enum import Enum
-from typing import TYPE_CHECKING, Any, List, Optional, Tuple, Union
+from typing import TYPE_CHECKING, Any, List, Optional, Union
 
 from rhosocial.activerecord.backend.expression.bases import BaseExpression
 
@@ -26,7 +26,7 @@ class FirebirdRoutineMode(Enum):
     DROP = "DROP"
 
 
-RoutineParam = Union[Tuple[str, str], dict]
+RoutineParam = Union[tuple, dict]
 
 
 class FirebirdCreateProcedureExpression(BaseExpression):
@@ -48,8 +48,9 @@ class FirebirdCreateProcedureExpression(BaseExpression):
         self.body: str = body
         self.mode: FirebirdRoutineMode = mode
 
-    def to_sql(self) -> Tuple[str, tuple]:
-        return self.dialect.format_create_procedure_statement(self)
+    @property
+    def format_method(self) -> str:
+        return "format_create_procedure_statement"
 
 
 class FirebirdCreateFunctionExpression(BaseExpression):
@@ -74,8 +75,9 @@ class FirebirdCreateFunctionExpression(BaseExpression):
         self.body: str = body
         self.mode: FirebirdRoutineMode = mode
 
-    def to_sql(self) -> Tuple[str, tuple]:
-        return self.dialect.format_create_function_statement(self)
+    @property
+    def format_method(self) -> str:
+        return "format_create_function_statement"
 
 
 class FirebirdDropRoutineExpression(BaseExpression):
@@ -104,8 +106,9 @@ class FirebirdDropRoutineExpression(BaseExpression):
         self.returns: Any = returns
         self.body: str = body
 
-    def to_sql(self) -> Tuple[str, tuple]:
-        return self.dialect.format_drop_routine_statement(self)
+    @property
+    def format_method(self) -> str:
+        return "format_drop_routine_statement"
 
 
 __all__ = [

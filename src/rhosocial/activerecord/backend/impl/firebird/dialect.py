@@ -456,7 +456,7 @@ class FirebirdDialect(
     def format_extract_expression(self, expr: "Any") -> Tuple[str, Tuple]:
         source_sql, source_params = expr.source.to_sql()
         sql = f"EXTRACT({expr.field.value.upper()} FROM {source_sql})"
-        return self._apply_value_expression_modifiers(sql, source_params, expr)
+        return self.apply_alias(sql, source_params, expr)
 
     def format_date_part_expression(self, expr: "Any") -> Tuple[str, Tuple]:
         return self.format_extract_expression(expr)
@@ -483,7 +483,7 @@ class FirebirdDialect(
             sql = source_sql
         else:
             raise UnsupportedFeatureError(self.name, f"date_trunc({expr.field.value})")
-        return self._apply_value_expression_modifiers(sql, source_params, expr)
+        return self.apply_alias(sql, source_params, expr)
 
     def format_interval_expression(self, expr: "Any") -> Tuple[str, Tuple]:
         raise UnsupportedFeatureError(
@@ -498,7 +498,7 @@ class FirebirdDialect(
         value = expr.interval.value * 7 if unit == "WEEK" else expr.interval.value
         unit = "DAY" if unit == "WEEK" else unit
         sql = f"DATEADD(? {unit} TO {source_sql})"
-        return self._apply_value_expression_modifiers(sql, (value,) + source_params, expr)
+        return self.apply_alias(sql, (value,) + source_params, expr)
 
     def format_datetime_subtract_expression(self, expr: "Any") -> Tuple[str, Tuple]:
         source_sql, source_params = expr.source.to_sql()
@@ -506,7 +506,7 @@ class FirebirdDialect(
         value = expr.interval.value * 7 if unit == "WEEK" else expr.interval.value
         unit = "DAY" if unit == "WEEK" else unit
         sql = f"DATEADD(? {unit} TO {source_sql})"
-        return self._apply_value_expression_modifiers(sql, (-value,) + source_params, expr)
+        return self.apply_alias(sql, (-value,) + source_params, expr)
 
     def format_datetime_diff_expression(self, expr: "Any") -> Tuple[str, Tuple]:
         start_sql, start_params = expr.start.to_sql()
@@ -515,7 +515,7 @@ class FirebirdDialect(
         sql = f"DATEDIFF({unit} FROM {start_sql} TO {end_sql})"
         if expr.unit.value == "week":
             sql = f"({sql} / 7)"
-        return self._apply_value_expression_modifiers(sql, start_params + end_params, expr)
+        return self.apply_alias(sql, start_params + end_params, expr)
 
     def format_query_statement(self, expr: Any) -> Tuple[str, Tuple]:
         """Format a SELECT statement, qualifying a bare wildcard when mixed with columns.
@@ -1325,10 +1325,10 @@ class FirebirdDialect(
     def format_create_table_statement(self, expr: "CreateTableExpression") -> Tuple[str, tuple]:
         return FirebirdTableMixin.format_create_table_statement(self, expr)
 
-    def _format_column_definition_firebird(self, col_def) -> Tuple[str, List[Any]]:
-        return FirebirdTableMixin._format_column_definition_firebird(self, col_def)
+    def _format_column_definition(self, col_def) -> Tuple[str, List[Any]]:
+        return FirebirdTableMixin._format_column_definition(self, col_def)
 
-    def _format_table_constraint_firebird(self, t_const) -> Tuple[str, List[Any]]:
-        return FirebirdTableMixin._format_table_constraint_firebird(self, t_const)
+    def _format_table_constraint(self, t_const) -> Tuple[str, List[Any]]:
+        return FirebirdTableMixin._format_table_constraint(self, t_const)
 
     # endregion

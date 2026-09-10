@@ -10,7 +10,7 @@ separation pattern.
 """
 
 from enum import Enum
-from typing import TYPE_CHECKING, List, Optional, Tuple
+from typing import TYPE_CHECKING, List, Optional
 
 from rhosocial.activerecord.backend.expression.bases import BaseExpression
 
@@ -39,8 +39,9 @@ class FirebirdCreateRoleExpression(BaseExpression):
         super().__init__(dialect)
         self.role_name: str = role_name
 
-    def to_sql(self) -> Tuple[str, tuple]:
-        return self.dialect.format_create_role_statement(self)
+    @property
+    def format_method(self) -> str:
+        return "format_create_role_statement"
 
 
 class FirebirdAlterRoleExpression(BaseExpression):
@@ -59,8 +60,9 @@ class FirebirdAlterRoleExpression(BaseExpression):
         self.clause: FirebirdRoleAlterClause = clause
         self.system_privileges: Optional[List[str]] = system_privileges
 
-    def to_sql(self) -> Tuple[str, tuple]:
-        return self.dialect.format_alter_role_statement(self)
+    @property
+    def format_method(self) -> str:
+        return "format_alter_role_statement"
 
 
 class FirebirdDropRoleExpression(BaseExpression):
@@ -70,8 +72,9 @@ class FirebirdDropRoleExpression(BaseExpression):
         super().__init__(dialect)
         self.role_name: str = role_name
 
-    def to_sql(self) -> Tuple[str, tuple]:
-        return self.dialect.format_drop_role_statement(self)
+    @property
+    def format_method(self) -> str:
+        return "format_drop_role_statement"
 
 
 __all__ = [
