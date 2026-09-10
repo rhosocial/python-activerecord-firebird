@@ -37,14 +37,14 @@ def _build_table(dialect):
     return CreateTableExpression(
         dialect=dialect, table="test_tbl",
         columns=[
-            ColumnDefinition(dialect, "id", IntegerType(), constraints=_pk(dialect)),
-            ColumnDefinition(dialect, "name", TextType(),
+            ColumnDefinition(dialect, "id", IntegerType(dialect), constraints=_pk(dialect)),
+            ColumnDefinition(dialect, "name", TextType(dialect),
                 constraints=[ColumnConstraint(dialect, ColumnConstraintType.NOT_NULL)]),
-            ColumnDefinition(dialect, "flag", BooleanType(),
+            ColumnDefinition(dialect, "flag", BooleanType(dialect),
                 constraints=[ColumnConstraint(dialect, ColumnConstraintType.NOT_NULL),
                              ColumnConstraint(dialect, ColumnConstraintType.DEFAULT, default_value=True)]),
-            ColumnDefinition(dialect, "code", VarCharType(16)),
-            ColumnDefinition(dialect, "created_at", TimestampType()),
+            ColumnDefinition(dialect, "code", VarCharType(dialect, 16)),
+            ColumnDefinition(dialect, "created_at", TimestampType(dialect)),
         ],
     )
 
@@ -66,8 +66,8 @@ class TestAutoIncrementDDL:
         expr = CreateTableExpression(
             dialect=dialect, table="bool_test",
             columns=[
-                ColumnDefinition(dialect, "id", IntegerType(), constraints=_pk(dialect)),
-                ColumnDefinition(dialect, "flag", BooleanType(),
+                ColumnDefinition(dialect, "id", IntegerType(dialect), constraints=_pk(dialect)),
+                ColumnDefinition(dialect, "flag", BooleanType(dialect),
                     constraints=[ColumnConstraint(dialect, ColumnConstraintType.NOT_NULL),
                                  ColumnConstraint(dialect, ColumnConstraintType.DEFAULT, default_value=True)]),
             ],
@@ -79,8 +79,8 @@ class TestAutoIncrementDDL:
         expr = CreateTableExpression(
             dialect=dialect, table="ts_test",
             columns=[
-                ColumnDefinition(dialect, "id", IntegerType(), constraints=_pk(dialect)),
-                ColumnDefinition(dialect, "created_at", TimestampType()),
+                ColumnDefinition(dialect, "id", IntegerType(dialect), constraints=_pk(dialect)),
+                ColumnDefinition(dialect, "created_at", TimestampType(dialect)),
             ],
         )
         sql, _ = dialect.format_create_table_statement(expr)
