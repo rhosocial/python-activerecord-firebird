@@ -353,8 +353,8 @@ class FirebirdDialect(
             if res_sql.strip() == self.get_parameter_placeholder() and res_params:
                 fb_type = self._python_type_to_firebird_sql(res_params[0])
                 if fb_type:
-                    res_sql, res_params = self.format_cast_expression(
-                        res_sql, fb_type, res_params, None
+                    res_sql, res_params = self._cast_sql(
+                        res_sql, fb_type, res_params
                     )
             wrapped_conditions.append((cond_sql, res_sql, cond_params, res_params))
 
@@ -364,8 +364,8 @@ class FirebirdDialect(
                 and wrapped_else_params):
             fb_type = self._python_type_to_firebird_sql(wrapped_else_params[0])
             if fb_type:
-                wrapped_else_sql, wrapped_else_params = self.format_cast_expression(
-                    wrapped_else_sql, fb_type, wrapped_else_params, None
+                wrapped_else_sql, wrapped_else_params = self._cast_sql(
+                    wrapped_else_sql, fb_type, wrapped_else_params
                 )
 
         return super().format_case_expression(
@@ -393,8 +393,31 @@ class FirebirdDialect(
         if sql.strip() == placeholder and params and len(params) == 1:
             fb_type = self._python_type_to_firebird_sql(params[0])
             if fb_type:
-                sql, _ = self.format_cast_expression(sql, fb_type, params, None)
+                sql, _ = self._cast_sql(sql, fb_type, params)
         return sql
+
+    def _cast_sql(self, inner_sql: str, target_type: str, inner_params: tuple) -> Tuple[str, tuple]:
+        """Wrap an SQL fragment in CAST(... AS target_type) using CastExpression."""
+        from rhosocial.activerecord.backend.expression.core import CastExpression, Literal
+        inner = Literal(inner_params[0]) if inner_params else Literal(inner_sql)
+        inner._dialect = self
+        # Build a simple expression that renders to the inner SQL
+        class _SqlFragment:
+            def __init__(self, dialect, sql_str, params):
+                self._dialect = dialect
+                self._sql = sql_str
+                self._params = params
+            def to_sql(self):
+                return self._sql, self._params
+            @property
+            def dialect(self):
+                return self._dialect
+            @dialect.setter
+            def dialect(self, v):
+                self._dialect = v
+        frag = _SqlFragment(self, inner_sql, inner_params)
+        cast_expr = CastExpression(self, frag, target_type)
+        return cast_expr.to_sql()
 
     def format_function_call(
         self, expr: "bases.BaseExpression", filter_predicate: Optional["bases.SQLPredicate"] = None
@@ -422,8 +445,8 @@ class FirebirdDialect(
             alias_sql = ""
             if " AS " in sql:
                 sql, alias_sql = sql.split(" AS ", 1)
-            cast_sql, params = self.format_cast_expression(
-                sql, "DECIMAL(18,2)", params, None
+            cast_sql, params = self._cast_sql(
+                sql, "DECIMAL(18,2)", params
             )
             sql = f"{cast_sql} AS {alias_sql}" if alias_sql else cast_sql
         return sql, params
