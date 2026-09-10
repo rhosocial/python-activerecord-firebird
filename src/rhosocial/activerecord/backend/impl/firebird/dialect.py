@@ -397,27 +397,8 @@ class FirebirdDialect(
         return sql
 
     def _cast_sql(self, inner_sql: str, target_type: str, inner_params: tuple) -> Tuple[str, tuple]:
-        """Wrap an SQL fragment in CAST(... AS target_type) using CastExpression."""
-        from rhosocial.activerecord.backend.expression.core import CastExpression, Literal
-        inner = Literal(inner_params[0]) if inner_params else Literal(inner_sql)
-        inner._dialect = self
-        # Build a simple expression that renders to the inner SQL
-        class _SqlFragment:
-            def __init__(self, dialect, sql_str, params):
-                self._dialect = dialect
-                self._sql = sql_str
-                self._params = params
-            def to_sql(self):
-                return self._sql, self._params
-            @property
-            def dialect(self):
-                return self._dialect
-            @dialect.setter
-            def dialect(self, v):
-                self._dialect = v
-        frag = _SqlFragment(self, inner_sql, inner_params)
-        cast_expr = CastExpression(self, frag, target_type)
-        return cast_expr.to_sql()
+        """Wrap an SQL fragment in CAST(... AS target_type)."""
+        return f"CAST({inner_sql} AS {target_type})", inner_params
 
     def format_function_call(
         self, expr: "bases.BaseExpression", filter_predicate: Optional["bases.SQLPredicate"] = None
