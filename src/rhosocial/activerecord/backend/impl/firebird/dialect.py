@@ -435,9 +435,7 @@ class FirebirdDialect(
             sql = f"{sql} AS {self.format_identifier(alias)}"
         return sql, inner_params
 
-    def format_function_call(
-        self, expr: "bases.BaseExpression", filter_predicate: Optional["bases.SQLPredicate"] = None
-    ) -> Tuple[str, Tuple]:
+    def format_function_call(self, expr: "bases.BaseExpression") -> Tuple[str, Tuple]:
         """Format a function call, remapping names Firebird does not provide.
 
         Firebird 5 does not expose a ``LENGTH`` scalar function (the name is a
@@ -453,18 +451,18 @@ class FirebirdDialect(
         if isinstance(func_name, str) and func_name.upper() == "LENGTH":
             expr.func_name = "CHAR_LENGTH"
             try:
-                return super().format_function_call(expr, filter_predicate=filter_predicate)
+                return super().format_function_call(expr)
             finally:
                 expr.func_name = func_name
         if isinstance(func_name, str) and func_name.upper() in ("SUM", "AVG"):
             saved_alias = expr.alias
             expr.alias = None
             try:
-                inner_sql, inner_params = super().format_function_call(expr, filter_predicate=filter_predicate)
+                inner_sql, inner_params = super().format_function_call(expr)
             finally:
                 expr.alias = saved_alias
             return self._cast_sql(inner_sql, inner_params, "DECIMAL(18,2)", saved_alias)
-        return super().format_function_call(expr, filter_predicate=filter_predicate)
+        return super().format_function_call(expr)
 
     def format_window_function_call(self, call: "Any") -> Tuple[str, tuple]:
         """Format a window function call, pinning SUM/AVG result types.
