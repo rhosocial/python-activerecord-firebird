@@ -108,7 +108,7 @@ class TestFB4TypeGateUnsupportedSide:
 
 class TestBaseDataTypeRendering:
     @pytest.mark.parametrize("data_type,expected", [
-        (IntegerType(), "INTEGER"),
+        (IntegerType(dialect), "INTEGER"),
         (BigIntType(), "BIGINT"),
         (SmallIntType(), "SMALLINT"),
         (FloatType(), "FLOAT"),
@@ -339,8 +339,8 @@ class TestSequenceBranches:
 class TestCreateTableRebuildSnapshots:
     def test_basic_table(self, dialect):
         expr = CreateTableExpression(dialect, "users", [
-            _column(dialect, "id", IntegerType(), ColumnConstraint(ColumnConstraintType.PRIMARY_KEY)),
-            _column(dialect, "name", VarCharType(100)),
+            _column(dialect, "id", IntegerType(dialect), ColumnConstraint(dialect, ColumnConstraintType.PRIMARY_KEY)),
+            _column(dialect, "name", VarCharType(100, dialect=dialect)),
         ])
         assert expr.to_sql() == (
             'CREATE TABLE "USERS" ("ID" INTEGER PRIMARY KEY, "NAME" VARCHAR(100))', ()
@@ -351,7 +351,7 @@ class TestCreateTableRebuildSnapshots:
         (False, 'ON COMMIT PRESERVE ROWS'),
     ])
     def test_global_temporary_table(self, dialect, on_commit_delete, expected_tail):
-        expr = CreateTableExpression(dialect, "tmp_t", [_column(dialect, "id", IntegerType())], temporary=True)
+        expr = CreateTableExpression(dialect, "tmp_t", [_column(dialect, "id", IntegerType(dialect))], temporary=True)
         expr.on_commit_delete = on_commit_delete
         sql, _ = expr.to_sql()
         assert sql.startswith('CREATE GLOBAL TEMPORARY TABLE "TMP_T"')
@@ -363,7 +363,7 @@ class TestCreateTableRebuildSnapshots:
     ])
     def test_global_temporary_word_order_snapshot(self, dialect, on_commit_delete, expected):
         """F5 anchor: exact to_sql() snapshot of the corrected word order."""
-        expr = CreateTableExpression(dialect, "gt_a", [_column(dialect, "id", IntegerType())], temporary=True)
+        expr = CreateTableExpression(dialect, "gt_a", [_column(dialect, "id", IntegerType(dialect))], temporary=True)
         expr.on_commit_delete = on_commit_delete
         assert expr.to_sql() == (expected, ())
 
@@ -373,20 +373,20 @@ class TestCreateTableRebuildSnapshots:
         Previously the clause was rendered unconditionally; it must now be
         rejected through supports_if_not_exists_table().
         """
-        expr = CreateTableExpression(dialect, "tbl_c", [_column(dialect, "id", IntegerType())], if_not_exists=True)
+        expr = CreateTableExpression(dialect, "tbl_c", [_column(dialect, "id", IntegerType(dialect))], if_not_exists=True)
         with pytest.raises(UnsupportedFeatureError) as excinfo:
             expr.to_sql()
         assert "IF NOT EXISTS" in str(excinfo.value)
 
     def test_if_not_exists_renders_when_capability_present(self, dialect):
-        expr = CreateTableExpression(dialect, "tbl_c", [_column(dialect, "id", IntegerType())], if_not_exists=True)
+        expr = CreateTableExpression(dialect, "tbl_c", [_column(dialect, "id", IntegerType(dialect))], if_not_exists=True)
         from unittest import mock
         with mock.patch.object(FirebirdDialect, "supports_if_not_exists_table", return_value=True):
             sql, _ = expr.to_sql()
         assert sql.startswith('CREATE TABLE IF NOT EXISTS "TBL_C"')
 
     def test_external_file_clause(self, dialect):
-        expr = CreateTableExpression(dialect, "ext_t", [_column(dialect, "id", IntegerType())])
+        expr = CreateTableExpression(dialect, "ext_t", [_column(dialect, "id", IntegerType(dialect))])
         expr.external_file = "/data/ext.fdb"
         assert expr.to_sql() == ('CREATE TABLE "EXT_T" ("ID" INTEGER) EXTERNAL FILE \'/data/ext.fdb\'', ())
 
@@ -400,7 +400,7 @@ class TestCreateTableRebuildSnapshots:
         )
 
     def test_identity_with_start_and_increment(self, dialect):
-        col = _column(dialect, "id", IntegerType())
+        col = _column(dialect, "id", IntegerType(dialect))
         col.identity = True
         col.identity_generated = "ALWAYS"
         col.identity_start = 1000
@@ -482,7 +482,7 @@ class TestCreateTableRebuildSnapshots:
 
     def test_partition_rejected(self, dialect):
         partition = E.PartitionClause(dialect, method=E.PartitionStrategy.HASH, keys=[E.Column(dialect, "id")])
-        expr = CreateTableExpression(dialect, "pt", [_column(dialect, "id", IntegerType())], partition=partition)
+        expr = CreateTableExpression(dialect, "pt", [_column(dialect, "id", IntegerType(dialect))], partition=partition)
         with pytest.raises(UnsupportedFeatureError) as excinfo:
             expr.to_sql()
         assert "PARTITION BY clause" in str(excinfo.value)
