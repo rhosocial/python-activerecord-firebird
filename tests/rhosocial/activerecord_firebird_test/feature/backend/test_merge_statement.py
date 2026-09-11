@@ -36,6 +36,7 @@ def _make_merge(dialect, when_matched=None, when_not_matched=None, by_source=Non
 
 def _update_action(dialect, **assignments):
     return MergeAction(
+        dialect,
         MergeActionType.UPDATE,
         assignments={
             col: Column(dialect, col, "src") for col in assignments
@@ -45,6 +46,7 @@ def _update_action(dialect, **assignments):
 
 def _insert_action(dialect, **assignments):
     return MergeAction(
+        dialect,
         MergeActionType.INSERT,
         assignments={
             col: Column(dialect, col, "src") for col in assignments
@@ -96,7 +98,7 @@ class TestMergeMatchedBranches:
         dialect = FirebirdDialect((3, 0, 0))
         expr = _make_merge(
             dialect,
-            when_matched=[MergeAction(MergeActionType.DELETE)],
+            when_matched=[MergeAction(dialect, MergeActionType.DELETE)],
         )
         sql, params = expr.to_sql()
         assert sql == (
@@ -109,7 +111,7 @@ class TestMergeMatchedBranches:
         dialect = FirebirdDialect((2, 5, 0))
         expr = _make_merge(
             dialect,
-            when_matched=[MergeAction(MergeActionType.DELETE)],
+            when_matched=[MergeAction(dialect, MergeActionType.DELETE)],
         )
         with pytest.raises(UnsupportedFeatureError):
             expr.to_sql()
@@ -134,7 +136,7 @@ class TestMergeNotMatchedBranches:
         dialect = FirebirdDialect((5, 0, 0))
         expr = _make_merge(
             dialect,
-            when_not_matched=[MergeAction(MergeActionType.DELETE)],
+            when_not_matched=[MergeAction(dialect, MergeActionType.DELETE)],
         )
         with pytest.raises(UnsupportedFeatureError):
             expr.to_sql()
@@ -143,7 +145,7 @@ class TestMergeNotMatchedBranches:
         dialect = FirebirdDialect((5, 0, 0))
         expr = _make_merge(
             dialect,
-            when_not_matched=[MergeAction(MergeActionType.INSERT)],
+            when_not_matched=[MergeAction(dialect, MergeActionType.INSERT)],
         )
         with pytest.raises(UnsupportedFeatureError):
             expr.to_sql()
@@ -167,7 +169,7 @@ class TestMergeBySource:
         dialect = FirebirdDialect((5, 0, 0))
         expr = _make_merge(
             dialect,
-            by_source=[MergeAction(MergeActionType.DELETE)],
+            by_source=[MergeAction(dialect, MergeActionType.DELETE)],
         )
         sql, params = expr.to_sql()
         assert sql == (
@@ -180,7 +182,7 @@ class TestMergeBySource:
         dialect = FirebirdDialect((3, 0, 0))
         expr = _make_merge(
             dialect,
-            by_source=[MergeAction(MergeActionType.DELETE)],
+            by_source=[MergeAction(dialect, MergeActionType.DELETE)],
         )
         with pytest.raises(UnsupportedFeatureError):
             expr.to_sql()
@@ -189,7 +191,7 @@ class TestMergeBySource:
         dialect = FirebirdDialect((2, 5, 0))
         expr = _make_merge(
             dialect,
-            by_source=[MergeAction(MergeActionType.DELETE)],
+            by_source=[MergeAction(dialect, MergeActionType.DELETE)],
         )
         with pytest.raises(UnsupportedFeatureError):
             expr.to_sql()
@@ -202,10 +204,10 @@ class TestMergeVersionBoundaries:
             dialect,
             when_matched=[
                 _update_action(dialect, name=True),
-                MergeAction(MergeActionType.DELETE),
+                MergeAction(dialect, MergeActionType.DELETE),
             ],
             when_not_matched=[_insert_action(dialect, id=True, name=True)],
-            by_source=[MergeAction(MergeActionType.DELETE)],
+            by_source=[MergeAction(dialect, MergeActionType.DELETE)],
         )
         sql, params = expr.to_sql()
         assert sql == (
@@ -222,9 +224,9 @@ class TestMergeVersionBoundaries:
         dialect = FirebirdDialect((2, 5, 0))
         expr = _make_merge(
             dialect,
-            when_matched=[MergeAction(MergeActionType.DELETE)],
+            when_matched=[MergeAction(dialect, MergeActionType.DELETE)],
             when_not_matched=[_insert_action(dialect, id=True)],
-            by_source=[MergeAction(MergeActionType.DELETE)],
+            by_source=[MergeAction(dialect, MergeActionType.DELETE)],
         )
         with pytest.raises(UnsupportedFeatureError):
             expr.to_sql()
@@ -233,9 +235,9 @@ class TestMergeVersionBoundaries:
         dialect = FirebirdDialect((3, 0, 0))
         expr = _make_merge(
             dialect,
-            when_matched=[MergeAction(MergeActionType.DELETE)],
+            when_matched=[MergeAction(dialect, MergeActionType.DELETE)],
             when_not_matched=[_insert_action(dialect, id=True)],
-            by_source=[MergeAction(MergeActionType.DELETE)],
+            by_source=[MergeAction(dialect, MergeActionType.DELETE)],
         )
         with pytest.raises(UnsupportedFeatureError):
             expr.to_sql()
