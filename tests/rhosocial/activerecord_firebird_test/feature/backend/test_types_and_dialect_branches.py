@@ -81,7 +81,7 @@ class TestFB4TypeGateSupportedSide:
     def test_fb4_types_render_on_4_0(self, version, data_type, expected):
         sql = FirebirdDialect(version).format_data_type(data_type)
         assert sql == (expected, ())
-        assert data_type.to_sql(FirebirdDialect(version)) == (expected, ())
+        assert data_type.to_sql() == (expected, ())
 
     def test_support_flags_agree_with_rendering(self):
         for version in ((4, 0, 0), (4, 0)):
