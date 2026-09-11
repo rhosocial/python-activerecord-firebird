@@ -44,7 +44,7 @@ def _build_table(dialect):
                 constraints=[ColumnConstraint(dialect, ColumnConstraintType.NOT_NULL),
                              ColumnConstraint(dialect, ColumnConstraintType.DEFAULT, default_value=True)]),
             ColumnDefinition(dialect, "code", VarCharType(16, dialect=dialect)),
-            ColumnDefinition(dialect, "created_at", TimestampType(dialect)),
+            ColumnDefinition(dialect, "created_at", TimestampType(dialect=dialect)),
         ],
     )
 
@@ -80,7 +80,7 @@ class TestAutoIncrementDDL:
             dialect=dialect, table="ts_test",
             columns=[
                 ColumnDefinition(dialect, "id", IntegerType(dialect), constraints=_pk(dialect)),
-                ColumnDefinition(dialect, "created_at", TimestampType(dialect)),
+                ColumnDefinition(dialect, "created_at", TimestampType(dialect=dialect)),
             ],
         )
         sql, _ = dialect.format_create_table_statement(expr)
