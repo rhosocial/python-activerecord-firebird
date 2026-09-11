@@ -339,66 +339,82 @@ class FirebirdDialect(
             return "DECIMAL(18, 4)"
         return None
 
-    def format_case_expression(
-        self,
-        value_sql: Optional[str],
-        value_params: Optional[tuple],
-        conditions_results: List[Tuple[str, str, tuple, tuple]],
-        else_result_sql: Optional[str],
-        else_result_params: Optional[tuple],
-        alias: Optional[str] = None,
-    ) -> Tuple[str, Tuple]:
-        wrapped_conditions = []
-        for cond_sql, res_sql, cond_params, res_params in conditions_results:
-            if res_sql.strip() == self.get_parameter_placeholder() and res_params:
-                fb_type = self._python_type_to_firebird_sql(res_params[0])
+    def format_case_expression(self, expr: "bases.BaseExpression") -> Tuple[str, Tuple]:
+        """Format a CASE expression, wrapping result values in CAST for type inference.
+
+        Firebird cannot infer the type of a ``?`` parameter used as a CASE
+        result. When the CASE has a value expression and a result is a literal
+        parameter whose Python type maps to a Firebird SQL type, wrap the
+        result in ``CAST(... AS fb_type)`` so Firebird can resolve the type.
+        """
+        from rhosocial.activerecord.backend.expression.core import CastExpression, Literal
+
+        value = getattr(expr, "value", None)
+        cases = getattr(expr, "cases", [])
+        else_result = getattr(expr, "else_result", None)
+        alias = getattr(expr, "alias", None)
+
+        wrapped_cases = []
+        for condition, result in cases:
+            wrapped_result = result
+            if value is not None:
+                res_sql, res_params = result.to_sql()
+                placeholder = self.get_parameter_placeholder()
+                if res_sql.strip() == placeholder and res_params:
+                    fb_type = self._python_type_to_firebird_sql(res_params[0])
+                    if fb_type:
+                        literal = Literal(self, res_params[0])
+                        wrapped_result = CastExpression(self, literal, fb_type)
+            wrapped_cases.append((condition, wrapped_result))
+
+        wrapped_else = else_result
+        if else_result is not None:
+            else_sql, else_params = else_result.to_sql()
+            placeholder = self.get_parameter_placeholder()
+            if else_sql.strip() == placeholder and else_params:
+                fb_type = self._python_type_to_firebird_sql(else_params[0])
                 if fb_type:
-                    res_sql, res_params = self._cast_sql(
-                        res_sql, fb_type, res_params
-                    )
-            wrapped_conditions.append((cond_sql, res_sql, cond_params, res_params))
+                    literal = Literal(self, else_params[0])
+                    wrapped_else = CastExpression(self, literal, fb_type)
 
-        wrapped_else_sql = else_result_sql
-        wrapped_else_params = else_result_params
-        if (wrapped_else_sql and wrapped_else_sql.strip() == self.get_parameter_placeholder()
-                and wrapped_else_params):
-            fb_type = self._python_type_to_firebird_sql(wrapped_else_params[0])
-            if fb_type:
-                wrapped_else_sql, wrapped_else_params = self._cast_sql(
-                    wrapped_else_sql, fb_type, wrapped_else_params
-                )
+        from rhosocial.activerecord.backend.expression.advanced_functions import CaseExpression
+        wrapped_expr = CaseExpression(self, value=value, cases=wrapped_cases, else_result=wrapped_else, alias=alias)
+        return super().format_case_expression(wrapped_expr)
 
-        return super().format_case_expression(
-            value_sql, value_params,
-            wrapped_conditions,
-            wrapped_else_sql, wrapped_else_params,
-            alias,
-        )
-
-    def format_binary_arithmetic_expression(
-        self, op: str, left_sql: str, right_sql: str, left_params: tuple, right_params: tuple
-    ) -> Tuple[str, Tuple]:
+    def format_binary_arithmetic_expression(self, expr) -> Tuple[str, Tuple]:
         """Format a binary arithmetic expression with typed phantom parameters.
 
         Firebird cannot infer the type of a ``?`` parameter used inside an
         arithmetic expression (e.g. ``col + ?`` raises -804 Data type unknown).
         Wrap literal ``?`` operands in an explicit CAST based on the bound value.
         """
-        placeholder = self.get_parameter_placeholder()
-        left_sql = self._cast_literal_operand(left_sql, left_params, placeholder)
-        right_sql = self._cast_literal_operand(right_sql, right_params, placeholder)
-        return f"{left_sql} {op} {right_sql}", left_params + right_params
+        from rhosocial.activerecord.backend.expression.core import CastExpression, Literal
+        from rhosocial.activerecord.backend.expression.operators import BinaryArithmeticExpression
 
-    def _cast_literal_operand(self, sql: str, params: tuple, placeholder: str) -> str:
-        if sql.strip() == placeholder and params and len(params) == 1:
-            fb_type = self._python_type_to_firebird_sql(params[0])
-            if fb_type:
-                sql, _ = self._cast_sql(sql, fb_type, params)
-        return sql
+        left = expr.left
+        right = expr.right
+        op = expr.op
 
-    def _cast_sql(self, inner_sql: str, target_type: str, inner_params: tuple) -> Tuple[str, tuple]:
-        """Wrap an SQL fragment in CAST(... AS target_type)."""
-        return f"CAST({inner_sql} AS {target_type})", inner_params
+        # Cast literal operands that Firebird can't type-infer
+        left = self._maybe_cast_operand(left)
+        right = self._maybe_cast_operand(right)
+
+        # Rebuild expression with wrapped operands
+        wrapped = BinaryArithmeticExpression(self, left, op, right)
+        wrapped.alias = getattr(expr, 'alias', None)
+        return super().format_binary_arithmetic_expression(wrapped)
+
+    def _maybe_cast_operand(self, operand):
+        """Wrap a Literal operand in CastExpression if Firebird needs explicit typing."""
+        from rhosocial.activerecord.backend.expression.core import Literal, CastExpression
+
+        if not isinstance(operand, Literal):
+            return operand
+        value = operand.value
+        fb_type = self._python_type_to_firebird_sql(value)
+        if fb_type:
+            return CastExpression(self, operand, fb_type)
+        return operand
 
     def format_function_call(
         self, expr: "bases.BaseExpression", filter_predicate: Optional["bases.SQLPredicate"] = None
@@ -414,6 +430,7 @@ class FirebirdDialect(
         aggregate result is explicitly cast to ``DECIMAL(18,2)`` to pin the
         return type. This matches the precision used by the testsuite schemas.
         """
+        from rhosocial.activerecord.backend.expression.core import CastExpression
         func_name = getattr(expr, "func_name", None)
         if isinstance(func_name, str) and func_name.upper() == "LENGTH":
             expr.func_name = "CHAR_LENGTH"
@@ -421,16 +438,11 @@ class FirebirdDialect(
                 return super().format_function_call(expr, filter_predicate=filter_predicate)
             finally:
                 expr.func_name = func_name
-        sql, params = super().format_function_call(expr, filter_predicate=filter_predicate)
         if isinstance(func_name, str) and func_name.upper() in ("SUM", "AVG"):
-            alias_sql = ""
-            if " AS " in sql:
-                sql, alias_sql = sql.split(" AS ", 1)
-            cast_sql, params = self._cast_sql(
-                sql, "DECIMAL(18,2)", params
-            )
-            sql = f"{cast_sql} AS {alias_sql}" if alias_sql else cast_sql
-        return sql, params
+            cast_expr = CastExpression(self, expr, "DECIMAL(18,2)")
+            cast_expr.alias = getattr(expr, 'alias', None)
+            return super().format_function_call(cast_expr, filter_predicate=filter_predicate)
+        return super().format_function_call(expr, filter_predicate=filter_predicate)
 
     def format_window_function_call(self, call: "Any") -> Tuple[str, tuple]:
         """Format a window function call, pinning SUM/AVG result types.
@@ -440,18 +452,13 @@ class FirebirdDialect(
         a window expression, so wrap the whole ``SUM(...) OVER (...)`` call in
         an explicit ``CAST(... AS DECIMAL(18,2))``.
         """
-        sql, params = super().format_window_function_call(call)
+        from rhosocial.activerecord.backend.expression.core import CastExpression
         function_name = getattr(call, "function_name", None)
         if isinstance(function_name, str) and function_name.upper() in ("SUM", "AVG"):
-            alias_sql = ""
-            if " AS " in sql:
-                sql, alias_sql = sql.split(" AS ", 1)
-            cast_sql, params = self.format_cast_expression(
-                sql, "DECIMAL(18,2)", tuple(params), None
-            )
-            params = list(params)
-            sql = f"{cast_sql} AS {alias_sql}" if alias_sql else cast_sql
-        return sql, params
+            cast_expr = CastExpression(self, call, "DECIMAL(18,2)")
+            cast_expr.alias = getattr(call, 'alias', None)
+            return super().format_window_function_call(cast_expr)
+        return super().format_window_function_call(call)
 
     def get_parameter_placeholder(self, position: int = 0) -> str:
         """Firebird uses ? as positional parameter placeholder."""
