@@ -108,7 +108,7 @@ class TestFB4TypeGateUnsupportedSide:
 
 class TestBaseDataTypeRendering:
     @pytest.mark.parametrize("data_type,expected", [
-        (IntegerType(dialect), "INTEGER"),
+        (IntegerType(), "INTEGER"),
         (BigIntType(), "BIGINT"),
         (SmallIntType(), "SMALLINT"),
         (FloatType(), "FLOAT"),
