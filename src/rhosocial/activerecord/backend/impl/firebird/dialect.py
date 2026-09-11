@@ -416,6 +416,25 @@ class FirebirdDialect(
             return CastExpression(self, operand, fb_type)
         return operand
 
+    def _cast_sql(self, inner_sql: str, inner_params: tuple,
+                   target_type: str, alias: Optional[str] = None) -> Tuple[str, Tuple]:
+        """Wrap already-rendered SQL in a CAST expression.
+
+        Used when the inner expression (e.g. a window function or aggregate)
+        must be explicitly typed but cannot be wrapped in a CastExpression node
+        before rendering (because the base formatter accesses node-specific
+        attributes that CastExpression doesn't carry).
+        """
+        if not self._validate_data_type(target_type):
+            raise ValueError(
+                f"Invalid target type '{target_type}': "
+                "must contain only alphanumeric characters, spaces, parentheses, and commas."
+            )
+        sql = f"CAST({inner_sql} AS {target_type})"
+        if alias:
+            sql = f"{sql} AS {self.format_identifier(alias)}"
+        return sql, inner_params
+
     def format_function_call(
         self, expr: "bases.BaseExpression", filter_predicate: Optional["bases.SQLPredicate"] = None
     ) -> Tuple[str, Tuple]:
@@ -430,7 +449,6 @@ class FirebirdDialect(
         aggregate result is explicitly cast to ``DECIMAL(18,2)`` to pin the
         return type. This matches the precision used by the testsuite schemas.
         """
-        from rhosocial.activerecord.backend.expression.core import CastExpression
         func_name = getattr(expr, "func_name", None)
         if isinstance(func_name, str) and func_name.upper() == "LENGTH":
             expr.func_name = "CHAR_LENGTH"
@@ -439,9 +457,13 @@ class FirebirdDialect(
             finally:
                 expr.func_name = func_name
         if isinstance(func_name, str) and func_name.upper() in ("SUM", "AVG"):
-            cast_expr = CastExpression(self, expr, "DECIMAL(18,2)")
-            cast_expr.alias = getattr(expr, 'alias', None)
-            return super().format_function_call(cast_expr, filter_predicate=filter_predicate)
+            saved_alias = expr.alias
+            expr.alias = None
+            try:
+                inner_sql, inner_params = super().format_function_call(expr, filter_predicate=filter_predicate)
+            finally:
+                expr.alias = saved_alias
+            return self._cast_sql(inner_sql, inner_params, "DECIMAL(18,2)", saved_alias)
         return super().format_function_call(expr, filter_predicate=filter_predicate)
 
     def format_window_function_call(self, call: "Any") -> Tuple[str, tuple]:
@@ -452,12 +474,15 @@ class FirebirdDialect(
         a window expression, so wrap the whole ``SUM(...) OVER (...)`` call in
         an explicit ``CAST(... AS DECIMAL(18,2))``.
         """
-        from rhosocial.activerecord.backend.expression.core import CastExpression
         function_name = getattr(call, "function_name", None)
         if isinstance(function_name, str) and function_name.upper() in ("SUM", "AVG"):
-            cast_expr = CastExpression(self, call, "DECIMAL(18,2)")
-            cast_expr.alias = getattr(call, 'alias', None)
-            return super().format_window_function_call(cast_expr)
+            saved_alias = call.alias
+            call.alias = None
+            try:
+                inner_sql, inner_params = super().format_window_function_call(call)
+            finally:
+                call.alias = saved_alias
+            return self._cast_sql(inner_sql, inner_params, "DECIMAL(18,2)", saved_alias)
         return super().format_window_function_call(call)
 
     def get_parameter_placeholder(self, position: int = 0) -> str:
