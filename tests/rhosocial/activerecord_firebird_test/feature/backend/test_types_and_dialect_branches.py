@@ -71,15 +71,15 @@ class TestFB4TypeGateSupportedSide:
     """
 
     @pytest.mark.parametrize("version", [(4, 0, 0), (4, 0)])
-    @pytest.mark.parametrize("data_type,expected", [
-        (FirebirdTimeStampTzType(), "TIMESTAMP WITH TIME ZONE"),
-        (FirebirdTimeTzType(), "TIME WITH TIME ZONE"),
-        (FirebirdDecFloatType(precision=16), "DECFLOAT(16)"),
-        (FirebirdDecFloatType(precision=34), "DECFLOAT(34)"),
-        (FirebirdInt128Type(), "INT128"),
+    @pytest.mark.parametrize("data_type_cls,kwargs,expected", [
+        (FirebirdTimeStampTzType, {}, "TIMESTAMP WITH TIME ZONE"),
+        (FirebirdTimeTzType, {}, "TIME WITH TIME ZONE"),
+        (FirebirdDecFloatType, {"precision": 16}, "DECFLOAT(16)"),
+        (FirebirdDecFloatType, {"precision": 34}, "DECFLOAT(34)"),
+        (FirebirdInt128Type, {}, "INT128"),
     ])
-    def test_fb4_types_render_on_4_0(self, version, data_type, expected):
-        sql = FirebirdDialect(version).format_data_type(data_type)
+    def test_fb4_types_render_on_4_0(self, version, data_type_cls, kwargs, expected):
+        sql = FirebirdDialect(version).format_data_type(data_type_cls(**kwargs))
         assert sql == (expected, ())
 
     def test_support_flags_agree_with_rendering(self):
@@ -90,14 +90,15 @@ class TestFB4TypeGateSupportedSide:
 class TestFB4TypeGateUnsupportedSide:
     """The same types must raise on a (3, 0, 0) dialect."""
 
-    @pytest.mark.parametrize("data_type,feature", [
-        (FirebirdTimeStampTzType(), "TIMESTAMP WITH TIME ZONE"),
-        (FirebirdTimeTzType(), "TIME WITH TIME ZONE"),
-        (FirebirdDecFloatType(dialect), "DECFLOAT"),
-        (FirebirdInt128Type(), "INT128"),
+    @pytest.mark.parametrize("data_type_cls,kwargs,feature", [
+        (FirebirdTimeStampTzType, {}, "TIMESTAMP WITH TIME ZONE"),
+        (FirebirdTimeTzType, {}, "TIME WITH TIME ZONE"),
+        (FirebirdDecFloatType, {"precision": 16}, "DECFLOAT"),
+        (FirebirdInt128Type, {}, "INT128"),
     ])
-    def test_fb4_types_raise_on_3_0(self, data_type, feature):
+    def test_fb4_types_raise_on_3_0(self, data_type_cls, kwargs, feature):
         dialect = FirebirdDialect((3, 0))
+        data_type = data_type_cls(dialect=dialect, **kwargs)
         with pytest.raises(UnsupportedFeatureError) as excinfo:
             dialect.format_data_type(data_type)
         assert feature in str(excinfo.value)
@@ -107,32 +108,34 @@ class TestFB4TypeGateUnsupportedSide:
 
 
 class TestBaseDataTypeRendering:
-    @pytest.mark.parametrize("data_type,expected", [
-        (IntegerType(dialect), "INTEGER"),
-        (BigIntType(dialect), "BIGINT"),
-        (SmallIntType(dialect), "SMALLINT"),
-        (FloatType(dialect), "FLOAT"),
-        (DoubleType(), "DOUBLE PRECISION"),
-        (BooleanType(dialect), "BOOLEAN"),
-        (VarCharType(length=50), "VARCHAR(50)"),
-        (VarCharType(None), "VARCHAR(255)"),
-        (CharType(length=10), "CHAR(10)"),
-        (CharType(None), "CHAR(1)"),
-        (TextType(dialect), "BLOB SUB_TYPE TEXT"),
-        (DateTimeType(), "TIMESTAMP"),
-        (TimestampType(), "TIMESTAMP"),
-        (DateType(), "DATE"),
-        (TimeType(), "TIME"),
+    @pytest.mark.parametrize("data_type_cls,kwargs,expected", [
+        (IntegerType, {}, "INTEGER"),
+        (BigIntType, {}, "BIGINT"),
+        (SmallIntType, {}, "SMALLINT"),
+        (FloatType, {}, "FLOAT"),
+        (DoubleType, {}, "DOUBLE PRECISION"),
+        (BooleanType, {}, "BOOLEAN"),
+        (VarCharType, {"length": 50}, "VARCHAR(50)"),
+        (VarCharType, {}, "VARCHAR(255)"),
+        (CharType, {"length": 10}, "CHAR(10)"),
+        (CharType, {}, "CHAR(1)"),
+        (TextType, {}, "BLOB SUB_TYPE TEXT"),
+        (DateTimeType, {}, "TIMESTAMP"),
+        (TimestampType, {}, "TIMESTAMP"),
+        (DateType, {}, "DATE"),
+        (TimeType, {}, "TIME"),
     ])
-    def test_format_data_type(self, dialect, data_type, expected):
+    def test_format_data_type(self, dialect, data_type_cls, kwargs, expected):
+        data_type = data_type_cls(dialect=dialect, **kwargs)
         assert dialect.format_data_type(data_type) == (expected, ())
 
-    @pytest.mark.parametrize("data_type,expected", [
-        (DecimalType(precision=10, scale=2), "DECIMAL(10, 2)"),
-        (DecimalType(precision=18), "DECIMAL(18)"),
-        (DecimalType(), "DECIMAL"),
+    @pytest.mark.parametrize("kwargs,expected", [
+        ({"precision": 10, "scale": 2}, "DECIMAL(10, 2)"),
+        ({"precision": 18}, "DECIMAL(18)"),
+        ({}, "DECIMAL"),
     ])
-    def test_decimal_variants(self, dialect, data_type, expected):
+    def test_decimal_variants(self, dialect, kwargs, expected):
+        data_type = DecimalType(dialect=dialect, **kwargs)
         assert dialect.format_data_type(data_type) == (expected, ())
 
     def test_parse_type_integer_family(self, dialect):
