@@ -52,19 +52,12 @@ class FirebirdDecFloatType(DataType):
 
     name = "firebird_decfloat"
 
-    def __init__(self, precision: int = 16, dialect=None):
-        super().__init__(dialect)
+    def __init__(self, dialect=None, precision: int = 16,
+                 dialect_options=None):
+        super().__init__(dialect, dialect_options=dialect_options)
         if precision not in (16, 34):
             raise ValueError(f"DECFLOAT precision must be 16 or 34, got {precision}")
         self.precision: int = precision
-
-    def __eq__(self, other: object) -> bool:
-        if type(self) is not type(other):
-            return False
-        return self.precision == other.precision
-
-    def __hash__(self) -> int:
-        return hash((type(self), self.precision))
 
     def _type_params(self) -> Tuple[int]:
         return (self.precision,)
