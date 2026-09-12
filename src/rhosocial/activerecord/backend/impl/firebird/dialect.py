@@ -343,9 +343,11 @@ class FirebirdDialect(
         """Format a CASE expression, wrapping result values in CAST for type inference.
 
         Firebird cannot infer the type of a ``?`` parameter used as a CASE
-        result. When the CASE has a value expression and a result is a literal
-        parameter whose Python type maps to a Firebird SQL type, wrap the
-        result in ``CAST(... AS fb_type)`` so Firebird can resolve the type.
+        result. When a result is a literal parameter whose Python type maps
+        to a Firebird SQL type, wrap the result in ``CAST(... AS fb_type)``
+        so Firebird can resolve the type.  This applies to both simple CASE
+        (``CASE col WHEN val THEN …``) and searched CASE
+        (``CASE WHEN cond THEN …``) expressions.
         """
         from rhosocial.activerecord.backend.expression.core import CastExpression, Literal
 
@@ -357,14 +359,13 @@ class FirebirdDialect(
         wrapped_cases = []
         for condition, result in cases:
             wrapped_result = result
-            if value is not None:
-                res_sql, res_params = result.to_sql()
-                placeholder = self.get_parameter_placeholder()
-                if res_sql.strip() == placeholder and res_params:
-                    fb_type = self._python_type_to_firebird_sql(res_params[0])
-                    if fb_type:
-                        literal = Literal(self, res_params[0])
-                        wrapped_result = CastExpression(self, literal, fb_type)
+            res_sql, res_params = result.to_sql()
+            placeholder = self.get_parameter_placeholder()
+            if res_sql.strip() == placeholder and res_params:
+                fb_type = self._python_type_to_firebird_sql(res_params[0])
+                if fb_type:
+                    literal = Literal(self, res_params[0])
+                    wrapped_result = CastExpression(self, literal, fb_type)
             wrapped_cases.append((condition, wrapped_result))
 
         wrapped_else = else_result
