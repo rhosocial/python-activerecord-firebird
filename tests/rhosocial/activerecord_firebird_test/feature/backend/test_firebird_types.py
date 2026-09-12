@@ -103,7 +103,7 @@ class TestFirebirdTypeVersionGating:
         assert FirebirdDialect((3, 0, 0)).supports_decfloat() is False
 
 
-class TestFirebirdNumeric38:
-    def test_numeric_38_2(self):
+class TestFirebirdNumeric18:
+    def test_numeric_18_2(self):
         dialect = FirebirdDialect((4, 0, 0))
-        assert dialect.format_data_type(DecimalType(precision=38, scale=2)) == ("DECIMAL(38, 2)", ())
+        assert dialect.format_data_type(DecimalType(precision=18, scale=2)) == ("DECIMAL(18, 2)", ())

@@ -221,7 +221,7 @@ class TestFB4TypeGating:
         for data_type in (
             FirebirdTimeStampTzType(),
             FirebirdTimeTzType(),
-            FirebirdDecFloatType(dialect),
+            FirebirdDecFloatType(),
             FirebirdInt128Type(),
         ):
             with pytest.raises(Exception):
