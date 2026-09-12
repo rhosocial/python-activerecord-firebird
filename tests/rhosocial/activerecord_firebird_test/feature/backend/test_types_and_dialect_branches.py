@@ -172,7 +172,7 @@ class TestBaseDataTypeRendering:
         assert isinstance(dialect.parse_type("DATE"), DateType)
         assert isinstance(dialect.parse_type("TIME"), TimeType)
         assert isinstance(dialect.parse_type("BOOLEAN"), BooleanType)
-        assert dialect.parse_type("SOMETHING WEIRD") == CustomType("SOMETHING WEIRD")
+        assert dialect.parse_type("SOMETHING WEIRD") == CustomType(raw="SOMETHING WEIRD")
 
     def test_parse_type_timestamp_takes_precedence_over_time(self, dialect):
         """F7 anchor: startswith("TIME") used to swallow TIMESTAMP strings."""
@@ -394,7 +394,7 @@ class TestCreateTableRebuildSnapshots:
         assert expr.to_sql() == ('CREATE TABLE "EXT_T" ("ID" INTEGER) EXTERNAL FILE \'/data/ext.fdb\'', ())
 
     def test_computed_by_column(self, dialect):
-        col = _column(dialect, "full_name", VarCharType(length=200))
+        col = _column(dialect, "full_name", VarCharType(length=200, dialect=dialect))
         col.computed_by = '"FIRST_NAME" || \' \' || "LAST_NAME"'
         assert CreateTableExpression(dialect, "emp", [col]).to_sql() == (
             'CREATE TABLE "EMP" '
