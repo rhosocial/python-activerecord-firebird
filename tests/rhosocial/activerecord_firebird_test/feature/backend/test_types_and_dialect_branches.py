@@ -74,8 +74,8 @@ class TestFB4TypeGateSupportedSide:
     @pytest.mark.parametrize("data_type,expected", [
         (FirebirdTimeStampTzType(), "TIMESTAMP WITH TIME ZONE"),
         (FirebirdTimeTzType(), "TIME WITH TIME ZONE"),
-        (FirebirdDecFloatType(16), "DECFLOAT(16)"),
-        (FirebirdDecFloatType(34), "DECFLOAT(34)"),
+        (FirebirdDecFloatType(precision=16), "DECFLOAT(16)"),
+        (FirebirdDecFloatType(precision=34), "DECFLOAT(34)"),
         (FirebirdInt128Type(), "INT128"),
     ])
     def test_fb4_types_render_on_4_0(self, version, data_type, expected):
@@ -114,9 +114,9 @@ class TestBaseDataTypeRendering:
         (FloatType(), "FLOAT"),
         (DoubleType(), "DOUBLE PRECISION"),
         (BooleanType(), "BOOLEAN"),
-        (VarCharType(50), "VARCHAR(50)"),
+        (VarCharType(length=50), "VARCHAR(50)"),
         (VarCharType(None), "VARCHAR(255)"),
-        (CharType(10), "CHAR(10)"),
+        (CharType(length=10), "CHAR(10)"),
         (CharType(None), "CHAR(1)"),
         (TextType(), "BLOB SUB_TYPE TEXT"),
         (DateTimeType(), "TIMESTAMP"),
@@ -158,11 +158,11 @@ class TestBaseDataTypeRendering:
         assert parsed.scale == scale
 
     def test_parse_type_string_family(self, dialect):
-        assert dialect.parse_type("VARCHAR(50)") == VarCharType(50)
-        assert dialect.parse_type("VARCHAR") == VarCharType(255)
-        assert dialect.parse_type("CHAR(10)") == CharType(10)
-        assert dialect.parse_type("CHARACTER(5)") == CharType(5)
-        assert dialect.parse_type("CHAR") == CharType(1)
+        assert dialect.parse_type("VARCHAR(50)") == VarCharType(length=50)
+        assert dialect.parse_type("VARCHAR") == VarCharType(length=255)
+        assert dialect.parse_type("CHAR(10)") == CharType(length=10)
+        assert dialect.parse_type("CHARACTER(5)") == CharType(length=5)
+        assert dialect.parse_type("CHAR") == CharType(length=1)
 
     def test_parse_type_misc(self, dialect):
         assert isinstance(dialect.parse_type("BLOB SUB_TYPE TEXT"), TextType)
@@ -340,7 +340,7 @@ class TestCreateTableRebuildSnapshots:
     def test_basic_table(self, dialect):
         expr = CreateTableExpression(dialect, "users", [
             _column(dialect, "id", IntegerType(dialect), ColumnConstraint(dialect, ColumnConstraintType.PRIMARY_KEY)),
-            _column(dialect, "name", VarCharType(100, dialect=dialect)),
+            _column(dialect, "name", VarCharType(length=100, dialect=dialect)),
         ])
         assert expr.to_sql() == (
             'CREATE TABLE "USERS" ("ID" INTEGER PRIMARY KEY, "NAME" VARCHAR(100))', ()
@@ -391,7 +391,7 @@ class TestCreateTableRebuildSnapshots:
         assert expr.to_sql() == ('CREATE TABLE "EXT_T" ("ID" INTEGER) EXTERNAL FILE \'/data/ext.fdb\'', ())
 
     def test_computed_by_column(self, dialect):
-        col = _column(dialect, "full_name", VarCharType(200))
+        col = _column(dialect, "full_name", VarCharType(length=200))
         col.computed_by = '"FIRST_NAME" || \' \' || "LAST_NAME"'
         assert CreateTableExpression(dialect, "emp", [col]).to_sql() == (
             'CREATE TABLE "EMP" '
@@ -422,7 +422,7 @@ class TestCreateTableRebuildSnapshots:
 
     def test_string_default_escaped_and_ordered_before_not_null(self, dialect):
         col = _column(
-            dialect, "status", VarCharType(20, dialect=dialect),
+            dialect, "status", VarCharType(length=20, dialect=dialect),
             ColumnConstraint(dialect, ColumnConstraintType.DEFAULT, default_value="O'Brien"),
             ColumnConstraint(dialect, ColumnConstraintType.NOT_NULL),
         )
@@ -441,7 +441,7 @@ class TestCreateTableRebuildSnapshots:
 
     def test_numeric_default_with_explicit_null(self, dialect):
         col = _column(
-            dialect, "amount", DecimalType(18, 2, dialect=dialect),
+            dialect, "amount", DecimalType(precision=18, scale=2, dialect=dialect),
             ColumnConstraint(dialect, ColumnConstraintType.DEFAULT, default_value=0),
             ColumnConstraint(dialect, ColumnConstraintType.NULL),
         )
@@ -466,8 +466,8 @@ class TestCreateTableRebuildSnapshots:
             [
                 _column(dialect, "id", IntegerType(dialect)),
                 _column(dialect, "customer_id", IntegerType(dialect)),
-                _column(dialect, "email", VarCharType(255, dialect=dialect)),
-                _column(dialect, "amount", DecimalType(18, 2, dialect=dialect)),
+                _column(dialect, "email", VarCharType(length=255, dialect=dialect)),
+                 _column(dialect, "amount", DecimalType(precision=18, scale=2, dialect=dialect)),
             ],
             table_constraints=[pk, unique, fk, check],
         )
