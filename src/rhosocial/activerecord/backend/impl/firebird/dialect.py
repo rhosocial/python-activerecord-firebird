@@ -401,7 +401,7 @@ class FirebirdDialect(
         right = self._maybe_cast_operand(right)
 
         # Rebuild expression with wrapped operands
-        wrapped = BinaryArithmeticExpression(self, left, op, right)
+        wrapped = BinaryArithmeticExpression(self, op, left, right)
         wrapped.alias = getattr(expr, 'alias', None)
         return super().format_binary_arithmetic_expression(wrapped)
 
