@@ -49,7 +49,7 @@ class TestFirebirdTzTypes:
 class TestFirebirdDecFloat:
     def test_decfloat_16(self):
         dialect = FirebirdDialect((4, 0, 0))
-        assert dialect.format_data_type(FirebirdDecFloatType()) == ("DECFLOAT(16)", ())
+        assert dialect.format_data_type(FirebirdDecFloatType(dialect)) == ("DECFLOAT(16)", ())
 
     def test_decfloat_34(self):
         dialect = FirebirdDialect((4, 0, 0))
@@ -80,7 +80,7 @@ class TestFirebirdTypeVersionGating:
         for data_type in (
             FirebirdTimeStampTzType(),
             FirebirdTimeTzType(),
-            FirebirdDecFloatType(),
+            FirebirdDecFloatType(dialect),
             FirebirdDecFloatType(precision=34),
             FirebirdInt128Type(),
         ):
@@ -92,7 +92,7 @@ class TestFirebirdTypeVersionGating:
         for data_type in (
             FirebirdTimeStampTzType(),
             FirebirdTimeTzType(),
-            FirebirdDecFloatType(),
+            FirebirdDecFloatType(dialect),
             FirebirdInt128Type(),
         ):
             with pytest.raises(UnsupportedFeatureError):

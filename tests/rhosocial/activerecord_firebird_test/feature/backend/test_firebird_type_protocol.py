@@ -193,7 +193,7 @@ class TestDialectRangeValidation:
         assert sql == "FLOAT(24)"
 
     def test_float_no_precision_renders(self, dialect):
-        sql, _ = dialect.format_data_type(FloatType())
+        sql, _ = dialect.format_data_type(FloatType(dialect))
         assert sql == "FLOAT"
 
 
@@ -221,7 +221,7 @@ class TestFB4TypeGating:
         for data_type in (
             FirebirdTimeStampTzType(),
             FirebirdTimeTzType(),
-            FirebirdDecFloatType(),
+            FirebirdDecFloatType(dialect),
             FirebirdInt128Type(),
         ):
             with pytest.raises(Exception):

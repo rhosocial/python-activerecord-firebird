@@ -93,7 +93,7 @@ class TestFB4TypeGateUnsupportedSide:
     @pytest.mark.parametrize("data_type,feature", [
         (FirebirdTimeStampTzType(), "TIMESTAMP WITH TIME ZONE"),
         (FirebirdTimeTzType(), "TIME WITH TIME ZONE"),
-        (FirebirdDecFloatType(), "DECFLOAT"),
+        (FirebirdDecFloatType(dialect), "DECFLOAT"),
         (FirebirdInt128Type(), "INT128"),
     ])
     def test_fb4_types_raise_on_3_0(self, data_type, feature):
@@ -108,17 +108,17 @@ class TestFB4TypeGateUnsupportedSide:
 
 class TestBaseDataTypeRendering:
     @pytest.mark.parametrize("data_type,expected", [
-        (IntegerType(), "INTEGER"),
-        (BigIntType(), "BIGINT"),
-        (SmallIntType(), "SMALLINT"),
-        (FloatType(), "FLOAT"),
+        (IntegerType(dialect), "INTEGER"),
+        (BigIntType(dialect), "BIGINT"),
+        (SmallIntType(dialect), "SMALLINT"),
+        (FloatType(dialect), "FLOAT"),
         (DoubleType(), "DOUBLE PRECISION"),
-        (BooleanType(), "BOOLEAN"),
+        (BooleanType(dialect), "BOOLEAN"),
         (VarCharType(length=50), "VARCHAR(50)"),
         (VarCharType(None), "VARCHAR(255)"),
         (CharType(length=10), "CHAR(10)"),
         (CharType(None), "CHAR(1)"),
-        (TextType(), "BLOB SUB_TYPE TEXT"),
+        (TextType(dialect), "BLOB SUB_TYPE TEXT"),
         (DateTimeType(), "TIMESTAMP"),
         (TimestampType(), "TIMESTAMP"),
         (DateType(), "DATE"),
