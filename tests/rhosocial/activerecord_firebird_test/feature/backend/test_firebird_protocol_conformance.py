@@ -65,6 +65,7 @@ FIREBIRD_PROTOCOLS = [
     dialect_protocols.AdvancedGroupingSupport,
     dialect_protocols.AlterTableModifierSupport,
     dialect_protocols.ArraySupport,
+    dialect_protocols.AutoIncrementSupport,
     dialect_protocols.CTESupport,
     dialect_protocols.CollationSupport,
     dialect_protocols.ConstraintSupport,
@@ -115,12 +116,6 @@ FIREBIRD_NOT_IMPLEMENTED = [
     # Firebird has no SQL/PGQ property-graph tables (GRAPH_TABLE). It does
     # support the generic graph query/recursive capabilities (GraphSupport).
     dialect_protocols.GraphTableSupport,
-    # --- Known gaps (feature exists, generic protocol not yet declared) ---
-    # TODO: Firebird 3.0+ supports GENERATED ... AS IDENTITY columns, exposed via
-    # supports_identity_columns()/supports_generated_always() rather than the
-    # generic supports_auto_increment(). Implement supports_auto_increment()
-    # and move this to FIREBIRD_PROTOCOLS.
-    dialect_protocols.AutoIncrementSupport,
 ]
 
 

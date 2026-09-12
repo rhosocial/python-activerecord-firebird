@@ -774,6 +774,9 @@ class FirebirdDialect(
     def supports_identity_columns(self) -> bool:
         return _norm_version(self.version) >= (3, 0, 0)
 
+    def supports_auto_increment(self) -> bool:
+        return _norm_version(self.version) >= (3, 0, 0)
+
     def supports_external_file(self) -> bool:
         return True
 
