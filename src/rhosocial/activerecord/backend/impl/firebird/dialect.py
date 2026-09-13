@@ -740,6 +740,18 @@ class FirebirdDialect(
     def supports_auto_increment(self) -> bool:
         return _norm_version(self.version) >= (3, 0, 0)
 
+    # FirebirdTableMixin overrides the table/column formatters, but it is
+    # composed after DDLColumnMixin/TableMixin in the MRO; bridge explicitly
+    # so the Firebird implementations (e.g. IDENTITY auto-increment) win.
+    def format_create_table_statement(self, expr) -> Tuple[str, tuple]:
+        return FirebirdTableMixin.format_create_table_statement(self, expr)
+
+    def format_column_definition(self, col_def) -> Tuple[str, tuple]:
+        return FirebirdTableMixin.format_column_definition(self, col_def)
+
+    def format_table_constraint(self, expr) -> Tuple[str, tuple]:
+        return FirebirdTableMixin.format_table_constraint(self, expr)
+
     def supports_external_file(self) -> bool:
         return True
 
