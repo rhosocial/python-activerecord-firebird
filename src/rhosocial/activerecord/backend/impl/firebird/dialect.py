@@ -93,6 +93,7 @@ from rhosocial.activerecord.backend.dialect.exceptions import UnsupportedFeature
 
 from .collation import validate_firebird_collation_name
 from .mixins.version_boundaries import _norm_version
+from .reserved_words import FIREBIRD_RESERVED_WORDS
 from .mixins import (
     FirebirdAlterTableModifierMixin,
     FirebirdDMLOperationMixin,
@@ -300,6 +301,7 @@ class FirebirdDialect(
 
     def __init__(self, version: Optional[Tuple[int, int, int]] = None):
         super().__init__()
+        self._reserved_words = FIREBIRD_RESERVED_WORDS
         if version is not None:
             self.version = version
 
@@ -588,13 +590,24 @@ class FirebirdDialect(
             raise UnsupportedFeatureError(self.name, f"COLLATE options: {unsupported}")
         return validate_firebird_collation_name(expr.collation_name, getattr(self, "version", None))
 
-    def format_identifier(self, identifier: str) -> str:
+    def format_identifier(self, identifier: str, need_quote: bool = True) -> str:
         """Format identifier using Firebird's double-quote quoting.
 
         Firebird by default folds identifiers to uppercase unless quoted.
         This uppercases the identifier so that quoted and unquoted references
         are consistent with Firebird's default behavior.
         """
+        if not need_quote:
+            if self.is_reserved_word(identifier):
+                import warnings
+                from rhosocial.activerecord.backend.warnings import IdentifierQuotingWarning
+                warnings.warn(
+                    f"Identifier '{identifier}' is a reserved word in {self.name} "
+                    f"and may cause SQL errors without quoting.",
+                    IdentifierQuotingWarning,
+                    stacklevel=2,
+                )
+            return identifier
         escaped = identifier.upper().replace('"', '""')
         return f'"{escaped}"'
 
