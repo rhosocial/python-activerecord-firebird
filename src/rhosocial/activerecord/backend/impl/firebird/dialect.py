@@ -487,17 +487,8 @@ class FirebirdDialect(
             return self._cast_sql(inner_sql, inner_params, "DECIMAL(18,2)", saved_alias)
         return super().format_window_function_call(call)
 
-    def get_parameter_placeholder(self, position: int = 0) -> str:
-        """Firebird uses ? as positional parameter placeholder."""
-        return "?"
 
-    def format_extract_expression(self, expr: "Any") -> Tuple[str, Tuple]:
-        source_sql, source_params = expr.source.to_sql()
-        sql = f"EXTRACT({expr.field.value.upper()} FROM {source_sql})"
-        return self.apply_alias(sql, source_params, expr)
 
-    def format_date_part_expression(self, expr: "Any") -> Tuple[str, Tuple]:
-        return self.format_extract_expression(expr)
 
     def format_date_trunc_expression(self, expr: "Any") -> Tuple[str, Tuple]:
         source_sql, source_params = expr.source.to_sql()
@@ -620,8 +611,6 @@ class FirebirdDialect(
     def supports_recursive_cte(self) -> bool:
         return _norm_version(self.version) >= (3, 0, 0)
 
-    def supports_materialized_cte(self) -> bool:
-        return False
 
     def supports_window_functions(self) -> bool:
         return _norm_version(self.version) >= (3, 0, 0)
@@ -638,24 +627,12 @@ class FirebirdDialect(
     def supports_returning_delete(self) -> bool:
         return True
 
-    def supports_json_type(self) -> bool:
-        return False
 
-    def supports_json_table(self) -> bool:
-        return False
 
     def supports_filter_clause(self) -> bool:
         return _norm_version(self.version) >= (3, 0, 0)
 
-    def supports_intersect(self) -> bool:
-        # Firebird supports only UNION/UNION ALL as set operations.
-        # INTERSECT/EXCEPT are not part of the SELECT grammar (Firebird 5.0
-        # Language Reference: SELECT syntax lists UNION as the only set
-        # operator), and DSQL rejects them with SQLSTATE -104 "Token unknown".
-        return False
 
-    def supports_except(self) -> bool:
-        return False
 
     def supports_sequence(self) -> bool:
         return True
@@ -676,41 +653,21 @@ class FirebirdDialect(
         """Firebird has no ON CONFLICT clause form; upsert is UPDATE OR INSERT."""
         return False
 
-    def supports_multiple_on_conflict_clauses(self) -> bool:
-        return False
 
-    def supports_explain_analyze(self) -> bool:
-        return False
 
-    def supports_explain_format(self, format_type: str) -> bool:
-        return False
 
     def supports_rollup(self) -> bool:
         return True
 
-    def supports_cube(self) -> bool:
-        return False
 
-    def supports_grouping_sets(self) -> bool:
-        return False
 
     def supports_array_type(self) -> bool:
         return True
 
-    def supports_array_constructor(self) -> bool:
-        return False
 
-    def supports_array_access(self) -> bool:
-        return False
 
-    def supports_graph_match(self) -> bool:
-        return False
 
-    def supports_ordered_set_aggregation(self) -> bool:
-        return False
 
-    def supports_qualify_clause(self) -> bool:
-        return False
 
     def supports_merge_statement(self) -> bool:
         return True
@@ -722,11 +679,7 @@ class FirebirdDialect(
         """Firebird 4.0 introduced joins with LATERAL derived tables."""
         return _norm_version(self.version) >= (4, 0, 0)
 
-    def supports_ilike(self) -> bool:
-        return False
 
-    def supports_temporal_tables(self) -> bool:
-        return False
 
     # endregion
 
@@ -759,8 +712,6 @@ class FirebirdDialect(
         concrete FB3+ gate; delegate to the locking mixin explicitly."""
         return FirebirdLockingMixin.supports_for_update(self)
 
-    def supports_for_update_with_lock(self) -> bool:
-        return _norm_version(self.version) >= (3, 0, 0)
 
     def supports_skip_locked(self) -> bool:
         """SKIP LOCKED was introduced in Firebird 4.0; single source of
@@ -779,8 +730,6 @@ class FirebirdDialect(
     def supports_lock_timeout(self) -> bool:
         return True
 
-    def supports_computed_by(self) -> bool:
-        return True
 
     def supports_generated_always(self) -> bool:
         return True
@@ -883,11 +832,7 @@ class FirebirdDialect(
     def supports_monitoring(self) -> bool:
         return True
 
-    def supports_roles(self) -> bool:
-        return True
 
-    def supports_create_role(self) -> bool:
-        return True
 
     def supports_autonomous_transaction(self) -> bool:
         return _norm_version(self.version) >= (3, 0, 0)
@@ -904,11 +849,7 @@ class FirebirdDialect(
     def supports_character_set(self) -> bool:
         return True
 
-    def supports_exception(self) -> bool:
-        return True
 
-    def supports_create_exception(self) -> bool:
-        return True
 
     def supports_context_variables(self) -> bool:
         return True
@@ -951,13 +892,7 @@ class FirebirdDialect(
     def supports_if_exists_table(self) -> bool:
         return False
 
-    def supports_drop_table_cascade(self) -> bool:
-        """Firebird has no CASCADE keyword on DROP TABLE."""
-        return False
 
-    def supports_drop_table_restrict(self) -> bool:
-        """Firebird has no RESTRICT keyword on DROP TABLE."""
-        return False
 
     def supports_rename_table(self) -> bool:
         return True
@@ -968,8 +903,6 @@ class FirebirdDialect(
     def supports_drop_column(self) -> bool:
         return True
 
-    def supports_table_partitioning(self) -> bool:
-        return False
 
     def supports_table_tablespace(self) -> bool:
         return False
@@ -983,77 +916,35 @@ class FirebirdDialect(
     def supports_unique_index(self) -> bool:
         return True
 
-    def supports_index_if_exists(self) -> bool:
-        return False
 
-    def supports_index_if_not_exists(self) -> bool:
-        return False
 
-    def supports_partial_index(self) -> bool:
-        return False
 
     def supports_functional_index(self) -> bool:
         return True
 
-    def supports_concurrent_index(self) -> bool:
-        return False
 
-    def supports_index_type(self) -> bool:
-        return False
 
-    def supports_index_tablespace(self) -> bool:
-        return False
 
-    def supports_fulltext_boolean_mode(self) -> bool:
-        return False
 
-    def supports_fulltext_parser(self) -> bool:
-        return False
 
-    def supports_fulltext_query_expansion(self) -> bool:
-        return False
 
-    def supports_index_include(self) -> bool:
-        return False
 
     def supports_generated_columns(self) -> bool:
         return True
 
-    def supports_stored_generated_columns(self) -> bool:
-        return False
 
-    def supports_virtual_generated_columns(self) -> bool:
-        return False
 
-    def supports_truncate(self) -> bool:
-        return True
 
-    def supports_truncate_table_keyword(self) -> bool:
-        return True
 
-    def supports_truncate_restart_identity(self) -> bool:
-        return False
 
-    def supports_truncate_cascade(self) -> bool:
-        return False
 
-    def supports_create_view(self) -> bool:
-        return True
 
-    def supports_drop_view(self) -> bool:
-        return True
 
     def supports_or_replace_view(self) -> bool:
         return True
 
-    def supports_temporary_view(self) -> bool:
-        return False
 
-    def supports_materialized_view(self) -> bool:
-        return False
 
-    def supports_if_exists_view(self) -> bool:
-        return False
 
     def supports_view_check_option(self) -> bool:
         return True
@@ -1085,15 +976,8 @@ class FirebirdDialect(
     def supports_trigger_if_not_exists(self) -> bool:
         return False
 
-    def supports_schema(self) -> bool:
-        """Firebird has no schema namespaces; the database is the whole namespace."""
-        return False
 
-    def supports_create_schema(self) -> bool:
-        return False
 
-    def supports_drop_schema(self) -> bool:
-        return False
 
     def supports_function(self) -> bool:
         return True
@@ -1310,25 +1194,12 @@ class FirebirdDialect(
 
     # region Returning clause
 
-    def format_returning_clause(self, clause: "ReturningClause") -> Tuple[str, tuple]:
-        all_params = []
-        expr_parts = []
-        for expr in clause.expressions:
-            expr_sql, expr_params = expr.to_sql()
-            expr_parts.append(expr_sql)
-            all_params.extend(expr_params)
-        returning_sql = f"RETURNING {', '.join(expr_parts)}"
-        return returning_sql, tuple(all_params)
 
     # endregion
 
     # region Generator/Sequence formatting
 
-    def format_gen_id(self, generator_name: str, step: int = 1) -> Tuple[str, tuple]:
-        return f"GEN_ID({self.format_identifier(generator_name)}, {step})", ()
 
-    def format_next_value_for(self, sequence_name: str) -> Tuple[str, tuple]:
-        return f"NEXT VALUE FOR {self.format_identifier(sequence_name)}", ()
 
     # endregion
 
@@ -1342,14 +1213,8 @@ class FirebirdDialect(
 
     # region DML overrides
 
-    def format_insert_statement(self, expr) -> Tuple[str, tuple]:
-        return FirebirdDMLOperationMixin.format_insert_statement(self, expr)
 
-    def format_update_statement(self, expr) -> Tuple[str, tuple]:
-        return FirebirdDMLOperationMixin.format_update_statement(self, expr)
 
-    def format_delete_statement(self, expr) -> Tuple[str, tuple]:
-        return FirebirdDMLOperationMixin.format_delete_statement(self, expr)
 
     def format_limit_offset_clause(self, clause) -> Tuple[str, tuple]:
         """Format LIMIT/OFFSET clause for Firebird using ROWS/FETCH syntax."""
@@ -1374,13 +1239,7 @@ class FirebirdDialect(
 
     # region CREATE TABLE override
 
-    def format_create_table_statement(self, expr: "CreateTableExpression") -> Tuple[str, tuple]:
-        return FirebirdTableMixin.format_create_table_statement(self, expr)
 
-    def format_column_definition(self, col_def) -> Tuple[str, tuple]:
-        return FirebirdTableMixin.format_column_definition(self, col_def)
 
-    def format_table_constraint(self, expr: "TableConstraint") -> Tuple[str, tuple]:
-        return FirebirdTableMixin.format_table_constraint(self, expr)
 
     # endregion
