@@ -14,6 +14,14 @@ from rhosocial.activerecord.backend.dialect.exceptions import UnsupportedFeature
 
 class FirebirdExceptionMixin:
 
+    def supports_exception(self) -> bool:
+        """Whether EXCEPTION statements are supported (Firebird 2.5+)."""
+        return _norm_version(getattr(self, 'version', (2, 5, 0))) >= (2, 5, 0)
+
+    def supports_create_exception(self) -> bool:
+        """Whether CREATE EXCEPTION is supported (Firebird 2.5+)."""
+        return self.supports_exception()
+
     def format_create_exception_statement(self, expr) -> Tuple[str, tuple]:
         """Format CREATE EXCEPTION name 'message'."""
         self._check_exception_version("CREATE EXCEPTION")
