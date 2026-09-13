@@ -74,12 +74,12 @@ class FirebirdTableMixin:
 
         column_parts = []
         for col_def in expr.columns:
-            col_sql, col_params = self._format_column_definition(col_def)
+            col_sql, col_params = self.format_column_definition(col_def)
             column_parts.append(col_sql)
             all_params.extend(col_params)
 
         for t_const in expr.table_constraints:
-            const_sql, const_params = self._format_table_constraint(t_const)
+            const_sql, const_params = self.format_table_constraint(t_const)
             column_parts.append(const_sql)
             all_params.extend(const_params)
 
@@ -91,7 +91,7 @@ class FirebirdTableMixin:
 
         return ' '.join(parts), tuple(all_params)
 
-    def _format_column_definition(self, col_def) -> Tuple[str, List[Any]]:
+    def format_column_definition(self, col_def) -> Tuple[str, tuple]:
         from rhosocial.activerecord.backend.expression.statements import ColumnConstraintType
 
         type_sql, _ = col_def.data_type.to_sql()
@@ -158,9 +158,9 @@ class FirebirdTableMixin:
         if collation:
             parts.append(f"COLLATE {collation}")
 
-        return ' '.join(parts), params
+        return ' '.join(parts), tuple(params)
 
-    def _format_table_constraint(self, t_const) -> Tuple[str, List[Any]]:
+    def format_table_constraint(self, expr: "TableConstraint") -> Tuple[str, tuple]:
         from rhosocial.activerecord.backend.expression.statements import (
             ForeignKeyConstraint,
             ReferentialAction,
@@ -170,34 +170,34 @@ class FirebirdTableMixin:
         parts = []
         params: List[Any] = []
 
-        if t_const.name:
-            parts.append(f"CONSTRAINT {self.format_identifier(t_const.name)}")
+        if expr.name:
+            parts.append(f"CONSTRAINT {self.format_identifier(expr.name)}")
 
-        if t_const.constraint_type == TableConstraintType.PRIMARY_KEY:
-            if t_const.columns:
-                cols = ', '.join(self.format_identifier(c) for c in t_const.columns)
+        if expr.constraint_type == TableConstraintType.PRIMARY_KEY:
+            if expr.columns:
+                cols = ', '.join(self.format_identifier(c) for c in expr.columns)
                 parts.append(f"PRIMARY KEY ({cols})")
-        elif t_const.constraint_type == TableConstraintType.UNIQUE:
-            if t_const.columns:
-                cols = ', '.join(self.format_identifier(c) for c in t_const.columns)
+        elif expr.constraint_type == TableConstraintType.UNIQUE:
+            if expr.columns:
+                cols = ', '.join(self.format_identifier(c) for c in expr.columns)
                 parts.append(f"UNIQUE ({cols})")
-        elif t_const.constraint_type == TableConstraintType.FOREIGN_KEY:
-            if t_const.columns and t_const.foreign_key_table and t_const.foreign_key_columns:
-                cols = ', '.join(self.format_identifier(c) for c in t_const.columns)
-                ref_cols = ', '.join(self.format_identifier(c) for c in t_const.foreign_key_columns)
-                ref_table = self.format_identifier(t_const.foreign_key_table)
+        elif expr.constraint_type == TableConstraintType.FOREIGN_KEY:
+            if expr.columns and expr.foreign_key_table and expr.foreign_key_columns:
+                cols = ', '.join(self.format_identifier(c) for c in expr.columns)
+                ref_cols = ', '.join(self.format_identifier(c) for c in expr.foreign_key_columns)
+                ref_table = self.format_identifier(expr.foreign_key_table)
                 parts.append(f"FOREIGN KEY ({cols}) REFERENCES {ref_table} ({ref_cols})")
-            if isinstance(t_const, ForeignKeyConstraint):
-                if t_const.on_delete != ReferentialAction.NO_ACTION:
-                    parts.append(f"ON DELETE {t_const.on_delete.value}")
-                if t_const.on_update != ReferentialAction.NO_ACTION:
-                    parts.append(f"ON UPDATE {t_const.on_update.value}")
-        elif t_const.constraint_type == TableConstraintType.CHECK and t_const.check_condition:
-            check_sql, check_params = t_const.check_condition.to_sql()
+            if isinstance(expr, ForeignKeyConstraint):
+                if expr.on_delete != ReferentialAction.NO_ACTION:
+                    parts.append(f"ON DELETE {expr.on_delete.value}")
+                if expr.on_update != ReferentialAction.NO_ACTION:
+                    parts.append(f"ON UPDATE {expr.on_update.value}")
+        elif expr.constraint_type == TableConstraintType.CHECK and expr.check_condition:
+            check_sql, check_params = expr.check_condition.to_sql()
             parts.append(f"CHECK ({check_sql})")
             params.extend(check_params)
 
-        return ' '.join(parts), params
+        return ' '.join(parts), tuple(params)
 
     def supports_computed_by(self) -> bool:
         return True

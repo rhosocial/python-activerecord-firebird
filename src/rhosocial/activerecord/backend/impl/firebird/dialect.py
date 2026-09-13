@@ -13,7 +13,7 @@ Firebird SQL dialect features and version support:
   - DECFLOAT (FB 4.0+)
 """
 
-from typing import Any, Dict, List, Optional, Tuple, TYPE_CHECKING
+from typing import Any, Dict, Optional, Tuple, TYPE_CHECKING
 
 from rhosocial.activerecord.backend.dialect.base import SQLDialectBase
 from rhosocial.activerecord.backend.dialect.protocols import (
@@ -80,7 +80,6 @@ from rhosocial.activerecord.backend.dialect.mixins import (
     FunctionMixin,
     IntrospectionMixin,
     # Core infrastructure mixins (shared by all modern backends)
-    IdentifierMixin,
     PredicateMixin,
     ExpressionMixin,
     DateTimeMixin,
@@ -165,7 +164,6 @@ _SUGGESTION_TEMPORAL = "Firebird does not support temporal tables."
 class FirebirdDialect(
     SQLDialectBase,
     # Core infrastructure mixins (shared by all modern backends)
-    IdentifierMixin,
     PredicateMixin,
     ExpressionMixin,
     DateTimeMixin,
@@ -391,7 +389,6 @@ class FirebirdDialect(
         arithmetic expression (e.g. ``col + ?`` raises -804 Data type unknown).
         Wrap literal ``?`` operands in an explicit CAST based on the bound value.
         """
-        from rhosocial.activerecord.backend.expression.core import CastExpression, Literal
         from rhosocial.activerecord.backend.expression.operators import BinaryArithmeticExpression
 
         left = expr.left
@@ -1376,10 +1373,10 @@ class FirebirdDialect(
     def format_create_table_statement(self, expr: "CreateTableExpression") -> Tuple[str, tuple]:
         return FirebirdTableMixin.format_create_table_statement(self, expr)
 
-    def _format_column_definition(self, col_def) -> Tuple[str, List[Any]]:
-        return FirebirdTableMixin._format_column_definition(self, col_def)
+    def format_column_definition(self, col_def) -> Tuple[str, tuple]:
+        return FirebirdTableMixin.format_column_definition(self, col_def)
 
-    def _format_table_constraint(self, t_const) -> Tuple[str, List[Any]]:
-        return FirebirdTableMixin._format_table_constraint(self, t_const)
+    def format_table_constraint(self, expr: "TableConstraint") -> Tuple[str, tuple]:
+        return FirebirdTableMixin.format_table_constraint(self, expr)
 
     # endregion
