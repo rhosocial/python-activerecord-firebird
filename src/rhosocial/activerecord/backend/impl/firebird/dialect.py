@@ -58,6 +58,8 @@ from rhosocial.activerecord.backend.dialect.mixins import (
     JSONMixin,
     ReturningMixin,
     SetOperationMixin,
+    TableMixin,
+    ConstraintMixin,
     UpsertMixin,
     ExplainMixin,
     JoinMixin,
@@ -175,6 +177,8 @@ class FirebirdDialect(
     FirebirdDMLOperationMixin,  # Must be before DMLMixin
     FirebirdLockingMixin,       # Must be before LockingMixin
     FirebirdTableMixin,         # Must be before TableMixin
+    TableMixin,
+    ConstraintMixin,
     FirebirdTriggerMixin,       # Must be before TriggerMixin
     FirebirdSequenceMixin,      # Must be before SequenceMixin
     FirebirdBlobMixin,
