@@ -4,7 +4,7 @@
 from typing import Any, List, Tuple, TYPE_CHECKING
 
 if TYPE_CHECKING:  # pragma: no cover
-    pass  # noinspection PyUnresolvedReferences
+    from rhosocial.activerecord.backend.expression.statements import ColumnDefinition, TableConstraint
 
 from rhosocial.activerecord.backend.dialect.mixins.ddl_table import TableMixin
 
@@ -91,7 +91,7 @@ class FirebirdTableMixin:
 
         return ' '.join(parts), tuple(all_params)
 
-    def format_column_definition(self, col_def) -> Tuple[str, tuple]:
+    def format_column_definition(self, col_def: "ColumnDefinition") -> Tuple[str, tuple]:
         from rhosocial.activerecord.backend.expression.statements import ColumnConstraintType
 
         type_sql, _ = col_def.data_type.to_sql()
