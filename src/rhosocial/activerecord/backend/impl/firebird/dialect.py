@@ -115,6 +115,23 @@ from .mixins import (
     FirebirdUserMixin,
     FirebirdCommentMixin,
     FirebirdDatabaseMixin,
+    FirebirdTransactionMixin,
+    FirebirdExpressionMixin,
+    FirebirdWindowFunctionMixin,
+    FirebirdDateTimeMixin,
+    FirebirdDQLMixin,
+    FirebirdCollationMixin,
+    FirebirdIdentifierMixin,
+    FirebirdCTEMixin,
+    FirebirdReturningMixin,
+    FirebirdFilterClauseMixin,
+    FirebirdUpsertMixin,
+    FirebirdGroupingMixin,
+    FirebirdArrayMixin,
+    FirebirdExplainMixin,
+    FirebirdGeneratedColumnMixin,
+    FirebirdFunctionMixin,
+    FirebirdTruncateMixin,
 )
 from .protocols import (
     FirebirdDMLOperationSupport,
@@ -192,6 +209,24 @@ class FirebirdDialect(
     FirebirdUserMixin,
     FirebirdCommentMixin,
     FirebirdDatabaseMixin,
+    FirebirdTransactionMixin,
+    # New Firebird-specific mixins (before generic mixins to take precedence)
+    FirebirdExpressionMixin,    # Must be before ExpressionMixin
+    FirebirdWindowFunctionMixin, # Must be before WindowFunctionMixin
+    FirebirdDateTimeMixin,      # Must be before DateTimeMixin
+    FirebirdDQLMixin,           # Must be before DQLMixin
+    FirebirdCollationMixin,     # Must be before CollationMixin
+    FirebirdIdentifierMixin,    # Must be before IdentifierMixin
+    FirebirdCTEMixin,           # Must be before CTEMixin
+    FirebirdReturningMixin,     # Must be before ReturningMixin
+    FirebirdFilterClauseMixin,  # Must be before FilterClauseMixin
+    FirebirdUpsertMixin,        # Must be before UpsertMixin
+    FirebirdGroupingMixin,      # Must be before AdvancedGroupingMixin
+    FirebirdArrayMixin,         # Must be before ArrayMixin
+    FirebirdExplainMixin,       # Must be before ExplainMixin
+    FirebirdGeneratedColumnMixin, # Must be before GeneratedColumnMixin
+    FirebirdFunctionMixin,      # Must be before FunctionMixin
+    FirebirdTruncateMixin,      # Must be before TruncateMixin
     # Core feature mixins (no duplicates)
     DMLMixin,
     CollationMixin,
@@ -307,367 +342,13 @@ class FirebirdDialect(
         if version is not None:
             self.version = version
 
-    _PY_TYPE_TO_FIREBIRD_SQL = {
-        int: "INTEGER",
-        float: "DOUBLE PRECISION",
-        bool: "SMALLINT",
-        str: "VARCHAR(255)",
-        bytes: "BLOB",
-    }
-
-    @staticmethod
-    def _python_type_to_firebird_sql(value: Any) -> Optional[str]:
-        """Map a Python value to its Firebird SQL type for explicit CAST.
-
-        Returns None for types that don't need explicit casting (e.g. None).
-        """
-        if value is None:
-            return None
-        import datetime
-        import decimal
-        if isinstance(value, bool):
-            return "SMALLINT"
-        if isinstance(value, int):
-            return "INTEGER"
-        if isinstance(value, float):
-            return "DOUBLE PRECISION"
-        if isinstance(value, str):
-            return "VARCHAR(255)"
-        if isinstance(value, bytes):
-            return "BLOB"
-        if isinstance(value, datetime.date):
-            return "DATE"
-        if isinstance(value, datetime.datetime):
-            return "TIMESTAMP"
-        if isinstance(value, decimal.Decimal):
-            return "DECIMAL(18, 4)"
-        return None
-
-    def format_case_expression(self, expr: "bases.BaseExpression") -> Tuple[str, Tuple]:
-        """Format a CASE expression, wrapping result values in CAST for type inference.
-
-        Firebird cannot infer the type of a ``?`` parameter used as a CASE
-        result. When a result is a literal parameter whose Python type maps
-        to a Firebird SQL type, wrap the result in ``CAST(... AS fb_type)``
-        so Firebird can resolve the type.  This applies to both simple CASE
-        (``CASE col WHEN val THEN …``) and searched CASE
-        (``CASE WHEN cond THEN …``) expressions.
-        """
-        from rhosocial.activerecord.backend.expression.core import CastExpression, Literal
-
-        value = getattr(expr, "value", None)
-        cases = getattr(expr, "cases", [])
-        else_result = getattr(expr, "else_result", None)
-        alias = getattr(expr, "alias", None)
-
-        wrapped_cases = []
-        for condition, result in cases:
-            wrapped_result = result
-            res_sql, res_params = result.to_sql()
-            placeholder = self.get_parameter_placeholder()
-            if res_sql.strip() == placeholder and res_params:
-                fb_type = self._python_type_to_firebird_sql(res_params[0])
-                if fb_type:
-                    literal = Literal(self, res_params[0])
-                    wrapped_result = CastExpression(self, literal, fb_type)
-            wrapped_cases.append((condition, wrapped_result))
-
-        wrapped_else = else_result
-        if else_result is not None:
-            else_sql, else_params = else_result.to_sql()
-            placeholder = self.get_parameter_placeholder()
-            if else_sql.strip() == placeholder and else_params:
-                fb_type = self._python_type_to_firebird_sql(else_params[0])
-                if fb_type:
-                    literal = Literal(self, else_params[0])
-                    wrapped_else = CastExpression(self, literal, fb_type)
-
-        from rhosocial.activerecord.backend.expression.advanced_functions import CaseExpression
-        wrapped_expr = CaseExpression(self, value=value, cases=wrapped_cases, else_result=wrapped_else, alias=alias)
-        return super().format_case_expression(wrapped_expr)
-
-    def format_binary_arithmetic_expression(self, expr) -> Tuple[str, Tuple]:
-        """Format a binary arithmetic expression with typed phantom parameters.
-
-        Firebird cannot infer the type of a ``?`` parameter used inside an
-        arithmetic expression (e.g. ``col + ?`` raises -804 Data type unknown).
-        Wrap literal ``?`` operands in an explicit CAST based on the bound value.
-        """
-        from rhosocial.activerecord.backend.expression.operators import BinaryArithmeticExpression
-
-        left = expr.left
-        right = expr.right
-        op = expr.op
-
-        # Cast literal operands that Firebird can't type-infer
-        left = self._maybe_cast_operand(left)
-        right = self._maybe_cast_operand(right)
-
-        # Rebuild expression with wrapped operands
-        wrapped = BinaryArithmeticExpression(self, op, left, right)
-        wrapped.alias = getattr(expr, 'alias', None)
-        return super().format_binary_arithmetic_expression(wrapped)
-
-    def _maybe_cast_operand(self, operand):
-        """Wrap a Literal operand in CastExpression if Firebird needs explicit typing."""
-        from rhosocial.activerecord.backend.expression.core import Literal, CastExpression
-
-        if not isinstance(operand, Literal):
-            return operand
-        value = operand.value
-        fb_type = self._python_type_to_firebird_sql(value)
-        if fb_type:
-            return CastExpression(self, operand, fb_type)
-        return operand
-
-    def _cast_sql(self, inner_sql: str, inner_params: tuple,
-                   target_type: str, alias: Optional[str] = None) -> Tuple[str, Tuple]:
-        """Wrap already-rendered SQL in a CAST expression.
-
-        Used when the inner expression (e.g. a window function or aggregate)
-        must be explicitly typed but cannot be wrapped in a CastExpression node
-        before rendering (because the base formatter accesses node-specific
-        attributes that CastExpression doesn't carry).
-        """
-        if not self._validate_data_type(target_type):
-            raise ValueError(
-                f"Invalid target type '{target_type}': "
-                "must contain only alphanumeric characters, spaces, parentheses, and commas."
-            )
-        sql = f"CAST({inner_sql} AS {target_type})"
-        if alias:
-            sql = f"{sql} AS {self.format_identifier(alias)}"
-        return sql, inner_params
-
-    def format_function_call(self, expr: "bases.BaseExpression") -> Tuple[str, Tuple]:
-        """Format a function call, remapping names Firebird does not provide.
-
-        Firebird 5 does not expose a ``LENGTH`` scalar function (the name is a
-        reserved keyword); the canonical length function is ``CHAR_LENGTH`` for
-        characters and ``OCTET_LENGTH`` for bytes.
-
-        Firebird 5/6-snapshot fails to infer the result type of ``SUM``/``AVG``
-        over a ``DECIMAL`` column ("Data type unknown" at prepare time), so the
-        aggregate result is explicitly cast to ``DECIMAL(18,2)`` to pin the
-        return type. This matches the precision used by the testsuite schemas.
-        """
-        func_name = getattr(expr, "func_name", None)
-        if isinstance(func_name, str) and func_name.upper() == "LENGTH":
-            expr.func_name = "CHAR_LENGTH"
-            try:
-                return super().format_function_call(expr)
-            finally:
-                expr.func_name = func_name
-        if isinstance(func_name, str) and func_name.upper() in ("SUM", "AVG"):
-            saved_alias = expr.alias
-            expr.alias = None
-            try:
-                inner_sql, inner_params = super().format_function_call(expr)
-            finally:
-                expr.alias = saved_alias
-            return self._cast_sql(inner_sql, inner_params, "DECIMAL(18,2)", saved_alias)
-        return super().format_function_call(expr)
-
-    def format_window_function_call(self, call: "Any") -> Tuple[str, tuple]:
-        """Format a window function call, pinning SUM/AVG result types.
-
-        Mirrors :meth:`format_function_call`: Firebird 5/6-snapshot fails to
-        infer the result type of ``SUM``/``AVG`` over a DECIMAL column inside
-        a window expression, so wrap the whole ``SUM(...) OVER (...)`` call in
-        an explicit ``CAST(... AS DECIMAL(18,2))``.
-        """
-        function_name = getattr(call, "function_name", None)
-        if isinstance(function_name, str) and function_name.upper() in ("SUM", "AVG"):
-            saved_alias = call.alias
-            call.alias = None
-            try:
-                inner_sql, inner_params = super().format_window_function_call(call)
-            finally:
-                call.alias = saved_alias
-            return self._cast_sql(inner_sql, inner_params, "DECIMAL(18,2)", saved_alias)
-        return super().format_window_function_call(call)
-
-
-
-
-    def format_date_trunc_expression(self, expr: "Any") -> Tuple[str, Tuple]:
-        source_sql, source_params = expr.source.to_sql()
-        if expr.field.value == "year":
-            sql = f"CAST(EXTRACT(YEAR FROM {source_sql}) || '-01-01 00:00:00' AS TIMESTAMP)"
-        elif expr.field.value == "month":
-            sql = (
-                f"CAST(EXTRACT(YEAR FROM {source_sql}) || '-' || "
-                f"EXTRACT(MONTH FROM {source_sql}) || '-01 00:00:00' AS TIMESTAMP)"
-            )
-        elif expr.field.value == "day":
-            sql = f"CAST(CAST({source_sql} AS DATE) AS TIMESTAMP)"
-        elif expr.field.value == "hour":
-            sql = (
-                f"DATEADD(EXTRACT(MINUTE FROM {source_sql}) * -1 MINUTE TO "
-                f"DATEADD(EXTRACT(SECOND FROM {source_sql}) * -1 SECOND TO {source_sql}))"
-            )
-        elif expr.field.value == "minute":
-            sql = f"DATEADD(EXTRACT(SECOND FROM {source_sql}) * -1 SECOND TO {source_sql})"
-        elif expr.field.value == "second":
-            sql = source_sql
-        else:
-            raise UnsupportedFeatureError(self.name, f"date_trunc({expr.field.value})")
-        return self.apply_alias(sql, source_params, expr)
-
-    def format_interval_expression(self, expr: "Any") -> Tuple[str, Tuple]:
-        raise UnsupportedFeatureError(
-            self.name,
-            "standalone INTERVAL expression",
-            "Use date_add() or date_sub() for Firebird date arithmetic.",
-        )
-
-    def format_datetime_add_expression(self, expr: "Any") -> Tuple[str, Tuple]:
-        source_sql, source_params = expr.source.to_sql()
-        unit = expr.interval.unit.value.upper()
-        value = expr.interval.value * 7 if unit == "WEEK" else expr.interval.value
-        unit = "DAY" if unit == "WEEK" else unit
-        sql = f"DATEADD(? {unit} TO {source_sql})"
-        return self.apply_alias(sql, (value,) + source_params, expr)
-
-    def format_datetime_subtract_expression(self, expr: "Any") -> Tuple[str, Tuple]:
-        source_sql, source_params = expr.source.to_sql()
-        unit = expr.interval.unit.value.upper()
-        value = expr.interval.value * 7 if unit == "WEEK" else expr.interval.value
-        unit = "DAY" if unit == "WEEK" else unit
-        sql = f"DATEADD(? {unit} TO {source_sql})"
-        return self.apply_alias(sql, (-value,) + source_params, expr)
-
-    def format_datetime_diff_expression(self, expr: "Any") -> Tuple[str, Tuple]:
-        start_sql, start_params = expr.start.to_sql()
-        end_sql, end_params = expr.end.to_sql()
-        unit = "DAY" if expr.unit.value == "week" else expr.unit.value.upper()
-        sql = f"DATEDIFF({unit} FROM {start_sql} TO {end_sql})"
-        if expr.unit.value == "week":
-            sql = f"({sql} / 7)"
-        return self.apply_alias(sql, start_params + end_params, expr)
-
-    def format_query_statement(self, expr: Any) -> Tuple[str, Tuple]:
-        """Format a SELECT statement, qualifying a bare wildcard when mixed with columns.
-
-        Firebird rejects ``SELECT *, extra_col ...`` (Token unknown, error -104) and
-        requires an explicit column list or a table-qualified wildcard such as
-        ``SELECT "T".*, extra_col ...`` when additional expressions are selected.
-        """
-        from rhosocial.activerecord.backend.expression import WildcardExpression
-
-        if len(expr.select) > 1:
-            table_name = None
-            for e in expr.select:
-                if isinstance(e, WildcardExpression) and e.table is None and e.schema_name is None:
-                    if getattr(expr, "from_", None) is not None:
-                        src = expr.from_
-                        if isinstance(src, list) and len(src) == 1:
-                            src = src[0]
-                        if isinstance(src, str):
-                            table_name = src
-                        elif src.__class__.__name__ == "TableExpression":
-                            table_name = src.alias or src.name
-                    if table_name:
-                        e.table = table_name
-        return super().format_query_statement(expr)
-
-    def supports_collate_expression(self) -> bool:
-        """Firebird supports expression-level COLLATE."""
-        return True
-
-    def validate_collation_name(self, expr: "CollateExpression") -> str:
-        """Validate Firebird collation names and return their SQL representation."""
-        if expr.collation_options:
-            unsupported = ", ".join(sorted(expr.collation_options))
-            raise UnsupportedFeatureError(self.name, f"COLLATE options: {unsupported}")
-        return validate_firebird_collation_name(expr.collation_name, getattr(self, "version", None))
-
-    def format_identifier(self, identifier: str, need_quote: bool = True) -> str:
-        """Format identifier using Firebird's double-quote quoting.
-
-        Firebird by default folds identifiers to uppercase unless quoted.
-        This uppercases the identifier so that quoted and unquoted references
-        are consistent with Firebird's default behavior.
-        """
-        if not need_quote:
-            if self.is_reserved_word(identifier):
-                import warnings
-                from rhosocial.activerecord.backend.warnings import IdentifierQuotingWarning
-                warnings.warn(
-                    f"Identifier '{identifier}' is a reserved word in {self.name} "
-                    f"and may cause SQL errors without quoting.",
-                    IdentifierQuotingWarning,
-                    stacklevel=2,
-                )
-            return identifier
-        escaped = identifier.upper().replace('"', '""')
-        return f'"{escaped}"'
-
     # region Version-based feature detection
-
-    def supports_basic_cte(self) -> bool:
-        return _norm_version(self.version) >= (3, 0, 0)
-
-    def supports_recursive_cte(self) -> bool:
-        return _norm_version(self.version) >= (3, 0, 0)
-
 
     def supports_window_functions(self) -> bool:
         return _norm_version(self.version) >= (3, 0, 0)
 
     def supports_window_frame_clause(self) -> bool:
         return _norm_version(self.version) >= (3, 0, 0)
-
-    def supports_returning_insert(self) -> bool:
-        return True
-
-    def supports_returning_update(self) -> bool:
-        return True
-
-    def supports_returning_delete(self) -> bool:
-        return True
-
-
-
-    def supports_filter_clause(self) -> bool:
-        return _norm_version(self.version) >= (3, 0, 0)
-
-
-
-    def supports_sequence(self) -> bool:
-        return True
-
-    def supports_create_sequence(self) -> bool:
-        return True
-
-    def supports_alter_sequence(self) -> bool:
-        return True
-
-    def supports_upsert(self) -> bool:
-        return True
-
-    def get_upsert_syntax_type(self) -> str:
-        return "UPDATE OR INSERT"
-
-    def supports_on_conflict_clause(self) -> bool:
-        """Firebird has no ON CONFLICT clause form; upsert is UPDATE OR INSERT."""
-        return False
-
-
-
-
-    def supports_rollup(self) -> bool:
-        return True
-
-
-
-    def supports_array_type(self) -> bool:
-        return True
-
-
-
-
-
 
     def supports_merge_statement(self) -> bool:
         return True
@@ -697,26 +378,11 @@ class FirebirdDialect(
     def supports_execute_block(self) -> bool:
         return True
 
-    def supports_create_generator(self) -> bool:
-        return True
-
-    def supports_blob(self) -> bool:
-        return True
-
-    def supports_blob_sub_type(self, sub_type: int) -> bool:
-        return sub_type in (0, 1, 2, 3, 4, 5)
-
     def supports_for_update(self) -> bool:
         """C3 re-bind: DQLMixin precedes FirebirdLockingMixin in the base
         list, so its empty ``supports_for_update()`` stub would shadow the
         concrete FB3+ gate; delegate to the locking mixin explicitly."""
         return FirebirdLockingMixin.supports_for_update(self)
-
-
-    def supports_skip_locked(self) -> bool:
-        """SKIP LOCKED was introduced in Firebird 4.0; single source of
-        truth for both this gate and FirebirdLockingMixin's rendering."""
-        return _norm_version(self.version) >= (4, 0, 0)
 
     def supports_snapshot_isolation(self) -> bool:
         return True
@@ -730,16 +396,6 @@ class FirebirdDialect(
     def supports_lock_timeout(self) -> bool:
         return True
 
-
-    def supports_generated_always(self) -> bool:
-        return True
-
-    def supports_identity_columns(self) -> bool:
-        return _norm_version(self.version) >= (3, 0, 0)
-
-    def supports_auto_increment(self) -> bool:
-        return _norm_version(self.version) >= (3, 0, 0)
-
     # FirebirdTableMixin overrides the table/column formatters, but it is
     # composed after DDLColumnMixin/TableMixin in the MRO; bridge explicitly
     # so the Firebird implementations (e.g. IDENTITY auto-increment) win.
@@ -751,9 +407,6 @@ class FirebirdDialect(
 
     def format_table_constraint(self, expr) -> Tuple[str, tuple]:
         return FirebirdTableMixin.format_table_constraint(self, expr)
-
-    def supports_external_file(self) -> bool:
-        return True
 
     def supports_trigger_position(self) -> bool:
         return True
@@ -768,12 +421,6 @@ class FirebirdDialect(
 
     def supports_mon_tables(self) -> bool:
         return True
-
-    def supports_explain_plan(self) -> bool:
-        # ``EXPLAIN PLAN FOR`` is an isql client command, not a valid DSQL
-        # statement. Firebird's engine rejects it with SQLSTATE -104 "Token
-        # unknown - EXPLAIN", so plan extraction is not available in DSQL.
-        return False
 
     def supports_list_function(self) -> bool:
         return True
@@ -869,20 +516,6 @@ class FirebirdDialect(
     # endregion
 
     # region Unsupported feature formatting
-
-    def format_array_expression(self, _expr: "bases.BaseExpression") -> Tuple[str, Tuple]:
-        raise UnsupportedFeatureError(self.name, "Array operations", _SUGGESTION_ARRAY)
-
-    def format_match_clause(self, _clause) -> Tuple[str, tuple]:
-        raise UnsupportedFeatureError(self.name, "graph MATCH clause", _SUGGESTION_GRAPH_MATCH)
-
-    def format_ordered_set_aggregation(self, _aggregation) -> Tuple[str, Tuple]:
-        raise UnsupportedFeatureError(self.name, "ordered-set aggregate functions", _SUGGESTION_ORDERED_SET_AGG)
-
-    def format_qualify_clause(self, clause) -> Tuple[str, tuple]:
-        raise UnsupportedFeatureError(self.name, "QUALIFY clause", _SUGGESTION_QUALIFY)
-
-    # endregion
 
     # region DDL Support
 
@@ -1045,213 +678,5 @@ class FirebirdDialect(
 
     def supports_drop_constraint(self) -> bool:
         return True
-
-    # endregion
-
-    # region TransactionControlSupport
-
-    def supports_transaction_mode(self) -> bool:
-        return True
-
-    def supports_isolation_level_in_begin(self) -> bool:
-        return True
-
-    def supports_read_only_transaction(self) -> bool:
-        return True
-
-    def supports_deferrable_transaction(self) -> bool:
-        return False
-
-    def supports_savepoint(self) -> bool:
-        return True
-
-    def format_begin_transaction(self, expr) -> Tuple[str, tuple]:
-        from rhosocial.activerecord.backend.transaction import IsolationLevel
-        level_map = {
-            IsolationLevel.READ_UNCOMMITTED: "READ COMMITTED",
-            IsolationLevel.READ_COMMITTED: "READ COMMITTED",
-            IsolationLevel.REPEATABLE_READ: "SNAPSHOT",
-            IsolationLevel.SERIALIZABLE: "SNAPSHOT TABLE STABILITY",
-        }
-
-        parts = ["SET TRANSACTION"]
-        if expr._isolation_level is not None:
-            fb_level = level_map.get(expr._isolation_level, "READ COMMITTED")
-            parts.append(f"ISOLATION LEVEL {fb_level}")
-
-        from rhosocial.activerecord.backend.transaction import TransactionMode
-        if expr._mode == TransactionMode.READ_ONLY:
-            parts.append("READ ONLY")
-        elif expr._mode == TransactionMode.READ_WRITE:
-            parts.append("READ WRITE")
-        else:
-            parts.append("READ WRITE")
-
-        parts.append("WAIT")
-        return " ".join(parts), ()
-
-    def format_set_transaction(self, expr) -> Tuple[str, tuple]:
-        from rhosocial.activerecord.backend.transaction import IsolationLevel, TransactionMode
-
-        parts = ["SET TRANSACTION"]
-        if expr._isolation_level is not None:
-            level_map = {
-                IsolationLevel.READ_UNCOMMITTED: "READ COMMITTED",
-                IsolationLevel.READ_COMMITTED: "READ COMMITTED",
-                IsolationLevel.REPEATABLE_READ: "SNAPSHOT",
-                IsolationLevel.SERIALIZABLE: "SNAPSHOT TABLE STABILITY",
-            }
-            fb_level = level_map.get(expr._isolation_level, "READ COMMITTED")
-            parts.append(f"ISOLATION LEVEL {fb_level}")
-        if expr._mode == TransactionMode.READ_ONLY:
-            parts.append("READ ONLY")
-        elif expr._mode == TransactionMode.READ_WRITE:
-            parts.append("READ WRITE")
-        return " ".join(parts), ()
-
-    # endregion
-
-    # region Explain
-
-    def format_explain_statement(self, expr) -> Tuple[str, tuple]:
-        statement_sql, statement_params = expr.statement.to_sql()
-        return f"EXPLAIN PLAN FOR {statement_sql}", statement_params
-
-    # endregion
-
-    # region Function support
-
-    _FIREBIRD_FUNCTION_VERSIONS = {
-        "gen_uuid": ((2, 5, 0), None),
-        "uuid_to_char": ((3, 0, 0), None),
-        "char_to_uuid": ((3, 0, 0), None),
-        "list": ((2, 5, 0), None),
-        "dateadd": ((2, 5, 0), None),
-        "datediff": ((2, 5, 0), None),
-        "replace": ((2, 5, 0), None),
-        "position": ((2, 5, 0), None),
-        "iif": ((2, 5, 0), None),
-        "decode": ((2, 5, 0), None),
-        "lpad": ((2, 5, 0), None),
-        "rpad": ((2, 5, 0), None),
-    }
-
-    def supports_functions(self) -> Dict[str, bool]:
-        from rhosocial.activerecord.backend.expression.functions import __all__ as core_functions
-        expression_constructors = {
-            "xmlagg",
-            "xmlattributes",
-            "xmlcomment",
-            "xmlconcat",
-            "xmlelement",
-            "xmlexists",
-            "xmlforest",
-            "xmlparse",
-            "xmlpi",
-            "xmlquery",
-            "xmlroot",
-            "xmlserialize",
-            "xmltable",
-        }
-        result = {}
-        for func_name in core_functions:
-            if func_name not in expression_constructors:
-                result[func_name] = True
-        for func_name, (_min_ver, _max_ver) in self._FIREBIRD_FUNCTION_VERSIONS.items():
-            result[func_name] = self._is_firebird_function_supported(func_name)
-        return result
-
-    def _is_firebird_function_supported(self, func_name: str) -> bool:
-        version_range = self._FIREBIRD_FUNCTION_VERSIONS.get(func_name)
-        if version_range is None:
-            return True
-        min_version, max_version = version_range
-        if min_version is not None and _norm_version(self.version) < min_version:
-            return False
-        if max_version is not None and _norm_version(self.version) > max_version:
-            return False
-        return True
-
-    # endregion
-
-    # region Pagination
-
-    def format_limit_offset(self, limit: Optional[int] = None,
-                             offset: Optional[int] = None) -> Tuple[str, tuple]:
-        """Format LIMIT/OFFSET for Firebird.
-
-        Firebird 2.5+: ROWS m TO n
-        Firebird 3.0+: OFFSET m ROWS FETCH NEXT n ROWS ONLY
-        """
-        if limit is None and offset is None:
-            return "", ()
-
-        if _norm_version(self.version) >= (3, 0, 0):
-            parts = []
-            if offset is not None and offset > 0:
-                parts.append(f"OFFSET {offset} ROWS")
-            if limit is not None:
-                parts.append(f"FETCH NEXT {limit} ROWS ONLY")
-            return " ".join(parts), ()
-        else:
-            if limit is not None:
-                if offset is not None and offset > 0:
-                    return f"ROWS {offset + 1} TO {offset + limit}", ()
-                return f"ROWS 1 TO {limit}", ()
-            if offset is not None and offset > 0:
-                return f"ROWS {offset + 1} TO {999999999}", ()
-            return "", ()
-
-    # endregion
-
-    # region Returning clause
-
-
-    # endregion
-
-    # region Generator/Sequence formatting
-
-
-
-    # endregion
-
-    # region Blob formatting
-
-    def format_blob_literal(self, value: bytes, sub_type: int = 0) -> Tuple[str, tuple]:
-        escaped = value.hex()
-        return f"X'{escaped}'", ()
-
-    # endregion
-
-    # region DML overrides
-
-
-
-
-    def format_limit_offset_clause(self, clause) -> Tuple[str, tuple]:
-        """Format LIMIT/OFFSET clause for Firebird using ROWS/FETCH syntax."""
-        all_params = []
-        if clause.limit is None and clause.offset is None:
-            return "", ()
-
-        if _norm_version(self.version) >= (3, 0, 0):
-            parts = []
-            if clause.offset is not None:
-                parts.append(f"OFFSET {clause.offset} ROWS")
-            if clause.limit is not None:
-                parts.append(f"FETCH NEXT {clause.limit} ROWS ONLY")
-            return " ".join(parts), tuple(all_params)
-        else:
-            limit = clause.limit or 999999999
-            if clause.offset is not None and clause.offset > 0:
-                return f"ROWS {clause.offset + 1} TO {clause.offset + limit}", tuple(all_params)
-            return f"ROWS 1 TO {limit}", tuple(all_params)
-
-    # endregion
-
-    # region CREATE TABLE override
-
-
-
 
     # endregion

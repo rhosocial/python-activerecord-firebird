@@ -28,6 +28,22 @@ from .role import FirebirdRoleMixin
 from .user import FirebirdUserMixin
 from .comment import FirebirdCommentMixin
 from .database import FirebirdDatabaseMixin
+from .expression import FirebirdExpressionMixin
+from .window import FirebirdWindowFunctionMixin
+from .datetime import FirebirdDateTimeMixin
+from .dql import FirebirdDQLMixin
+from .collation import FirebirdCollationMixin
+from .identifier import FirebirdIdentifierMixin
+from .cte import FirebirdCTEMixin
+from .returning import FirebirdReturningMixin
+from .filter_clause import FirebirdFilterClauseMixin
+from .upsert import FirebirdUpsertMixin
+from .grouping import FirebirdGroupingMixin
+from .array import FirebirdArrayMixin
+from .explain import FirebirdExplainMixin
+from .generated_column import FirebirdGeneratedColumnMixin
+from .function import FirebirdFunctionMixin
+from .truncate import FirebirdTruncateMixin
 
 __all__ = [
     "FIREBIRD_VERSION_BOUNDARIES",
@@ -57,4 +73,20 @@ __all__ = [
     "FirebirdUserMixin",
     "FirebirdCommentMixin",
     "FirebirdDatabaseMixin",
+    "FirebirdExpressionMixin",
+    "FirebirdWindowFunctionMixin",
+    "FirebirdDateTimeMixin",
+    "FirebirdDQLMixin",
+    "FirebirdCollationMixin",
+    "FirebirdIdentifierMixin",
+    "FirebirdCTEMixin",
+    "FirebirdReturningMixin",
+    "FirebirdFilterClauseMixin",
+    "FirebirdUpsertMixin",
+    "FirebirdGroupingMixin",
+    "FirebirdArrayMixin",
+    "FirebirdExplainMixin",
+    "FirebirdGeneratedColumnMixin",
+    "FirebirdFunctionMixin",
+    "FirebirdTruncateMixin",
 ]

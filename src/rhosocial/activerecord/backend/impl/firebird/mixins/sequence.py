@@ -28,3 +28,15 @@ class FirebirdSequenceMixin:
 
     def format_next_value_for(self, sequence_name: str) -> Tuple[str, tuple]:
         return f"NEXT VALUE FOR {self.format_identifier(sequence_name)}", ()
+
+    def supports_sequence(self) -> bool:
+        return True
+
+    def supports_create_sequence(self) -> bool:
+        return True
+
+    def supports_alter_sequence(self) -> bool:
+        return True
+
+    def supports_create_generator(self) -> bool:
+        return True
