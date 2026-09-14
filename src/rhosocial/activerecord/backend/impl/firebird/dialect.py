@@ -132,6 +132,7 @@ from .mixins import (
     FirebirdGeneratedColumnMixin,
     FirebirdFunctionMixin,
     FirebirdTruncateMixin,
+    FirebirdUnsupportedFeaturesMixin,
 )
 from .protocols import (
     FirebirdDMLOperationSupport,
@@ -182,6 +183,28 @@ _SUGGESTION_TEMPORAL = "Firebird does not support temporal tables."
 
 class FirebirdDialect(
     SQLDialectBase,
+    # Firebird-specific mixins MUST precede their generic counterparts so that
+    # the C3 linearization resolves the overrides to the Firebird versions.
+    # (SQLDialectBase is intentionally first; the two methods it defines that
+    # Firebird must override are re-declared on this class below.)
+    FirebirdTransactionMixin,    # Before TransactionControlMixin
+    FirebirdExpressionMixin,     # Before ExpressionMixin
+    FirebirdWindowFunctionMixin, # Before WindowFunctionMixin
+    FirebirdDateTimeMixin,       # Before DateTimeMixin
+    FirebirdDQLMixin,            # Before DQLMixin
+    FirebirdCollationMixin,      # Before CollationMixin
+    FirebirdIdentifierMixin,     # Before IdentifierMixin
+    FirebirdCTEMixin,            # Before CTEMixin
+    FirebirdReturningMixin,      # Before ReturningMixin
+    FirebirdFilterClauseMixin,   # Before FilterClauseMixin
+    FirebirdUpsertMixin,         # Before UpsertMixin
+    FirebirdGroupingMixin,       # Before AdvancedGroupingMixin
+    FirebirdArrayMixin,          # Before ArrayMixin
+    FirebirdExplainMixin,        # Before ExplainMixin
+    FirebirdGeneratedColumnMixin, # Before GeneratedColumnMixin
+    FirebirdFunctionMixin,       # Before FunctionMixin
+    FirebirdTruncateMixin,       # Before TruncateMixin
+    FirebirdUnsupportedFeaturesMixin,  # Before Array/Graph/OrderedSet/Qualify mixins
     # Core infrastructure mixins (shared by all modern backends)
     PredicateMixin,
     ExpressionMixin,
@@ -209,24 +232,6 @@ class FirebirdDialect(
     FirebirdUserMixin,
     FirebirdCommentMixin,
     FirebirdDatabaseMixin,
-    FirebirdTransactionMixin,
-    # New Firebird-specific mixins (before generic mixins to take precedence)
-    FirebirdExpressionMixin,    # Must be before ExpressionMixin
-    FirebirdWindowFunctionMixin, # Must be before WindowFunctionMixin
-    FirebirdDateTimeMixin,      # Must be before DateTimeMixin
-    FirebirdDQLMixin,           # Must be before DQLMixin
-    FirebirdCollationMixin,     # Must be before CollationMixin
-    FirebirdIdentifierMixin,    # Must be before IdentifierMixin
-    FirebirdCTEMixin,           # Must be before CTEMixin
-    FirebirdReturningMixin,     # Must be before ReturningMixin
-    FirebirdFilterClauseMixin,  # Must be before FilterClauseMixin
-    FirebirdUpsertMixin,        # Must be before UpsertMixin
-    FirebirdGroupingMixin,      # Must be before AdvancedGroupingMixin
-    FirebirdArrayMixin,         # Must be before ArrayMixin
-    FirebirdExplainMixin,       # Must be before ExplainMixin
-    FirebirdGeneratedColumnMixin, # Must be before GeneratedColumnMixin
-    FirebirdFunctionMixin,      # Must be before FunctionMixin
-    FirebirdTruncateMixin,      # Must be before TruncateMixin
     # Core feature mixins (no duplicates)
     DMLMixin,
     CollationMixin,
@@ -356,6 +361,11 @@ class FirebirdDialect(
     def supports_for_update_skip_locked(self) -> bool:
         return self.supports_skip_locked()
 
+    def supports_skip_locked(self) -> bool:
+        """SKIP LOCKED was introduced in Firebird 4.0; single source of
+        truth for both this gate and FirebirdLockingMixin's rendering."""
+        return _norm_version(self.version) >= (4, 0, 0)
+
     def supports_lateral_join(self) -> bool:
         """Firebird 4.0 introduced joins with LATERAL derived tables."""
         return _norm_version(self.version) >= (4, 0, 0)
@@ -395,6 +405,15 @@ class FirebirdDialect(
 
     def supports_lock_timeout(self) -> bool:
         return True
+
+    # SQLDialectBase is the first base, so the methods it defines cannot be
+    # overridden by any mixin that follows it in the MRO. Re-declare the two
+    # that Firebird needs to override so the Firebird behavior wins.
+    def format_identifier(self, identifier: str, need_quote: bool = True) -> str:
+        return FirebirdIdentifierMixin.format_identifier(self, identifier, need_quote)
+
+    def supports_explain_plan(self) -> bool:
+        return FirebirdExplainMixin.supports_explain_plan(self)
 
     # FirebirdTableMixin overrides the table/column formatters, but it is
     # composed after DDLColumnMixin/TableMixin in the MRO; bridge explicitly

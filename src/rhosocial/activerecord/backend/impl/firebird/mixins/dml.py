@@ -122,7 +122,7 @@ class FirebirdDMLOperationMixin:
 
     def format_update_or_insert(
         self,
-        expr_or_table_name,
+        table_name,
         insert_columns: List[str] = None,
         insert_values: List = None,
         match_columns: List[str] = None,
@@ -132,15 +132,13 @@ class FirebirdDMLOperationMixin:
             UpdateOrInsertExpression,
         )
 
-        if isinstance(expr_or_table_name, UpdateOrInsertExpression):
-            expr = expr_or_table_name
+        if isinstance(table_name, UpdateOrInsertExpression):
+            expr = table_name
             table_name = expr._table_name
             insert_columns = expr._insert_columns
             insert_values = expr._insert_values
             match_columns = expr._match_columns
             returning_columns = expr._returning_columns
-        else:
-            table_name = expr_or_table_name
 
         all_params = list(insert_values)
 

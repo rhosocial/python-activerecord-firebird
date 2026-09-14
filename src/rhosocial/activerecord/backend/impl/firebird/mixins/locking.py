@@ -58,8 +58,3 @@ class FirebirdLockingMixin:
     def supports_lateral_join(self) -> bool:
         """Firebird 4.0 introduced joins with LATERAL derived tables."""
         return _norm_version(getattr(self, 'version', (4, 0, 0))) >= (4, 0, 0)
-
-    def supports_skip_locked(self) -> bool:
-        """SKIP LOCKED was introduced in Firebird 4.0; single source of
-        truth for both this gate and FirebirdLockingMixin's rendering."""
-        return _norm_version(getattr(self, 'version', (4, 0, 0))) >= (4, 0, 0)

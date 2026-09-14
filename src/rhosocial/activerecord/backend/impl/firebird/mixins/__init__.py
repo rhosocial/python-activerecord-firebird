@@ -44,6 +44,7 @@ from .explain import FirebirdExplainMixin
 from .generated_column import FirebirdGeneratedColumnMixin
 from .function import FirebirdFunctionMixin
 from .truncate import FirebirdTruncateMixin
+from .unsupported import FirebirdUnsupportedFeaturesMixin
 
 __all__ = [
     "FIREBIRD_VERSION_BOUNDARIES",
@@ -89,4 +90,5 @@ __all__ = [
     "FirebirdGeneratedColumnMixin",
     "FirebirdFunctionMixin",
     "FirebirdTruncateMixin",
+    "FirebirdUnsupportedFeaturesMixin",
 ]

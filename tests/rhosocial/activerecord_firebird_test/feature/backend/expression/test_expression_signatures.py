@@ -24,7 +24,7 @@ class TestBlobColumnExpression:
         sql, params = BlobColumnExpression(
             dialect, "photo", sub_type=0, segment_size=65536,
         ).to_sql()
-        assert sql == '"photo" BLOB SUB_TYPE 0 SEGMENT SIZE 65536'
+        assert sql == '"PHOTO" BLOB SUB_TYPE 0 SEGMENT SIZE 65536'
         assert params == ()
 
     def test_blob_column_expression_with_charset(self):
@@ -32,7 +32,7 @@ class TestBlobColumnExpression:
         sql, params = BlobColumnExpression(
             dialect, "data", sub_type=1, character_set="UTF8",
         ).to_sql()
-        assert sql == '"data" BLOB SUB_TYPE 1 CHARACTER SET UTF8 SEGMENT SIZE 65536'
+        assert sql == '"DATA" BLOB SUB_TYPE 1 CHARACTER SET UTF8 SEGMENT SIZE 65536'
         assert params == ()
 
 
@@ -63,8 +63,8 @@ class TestUpdateOrInsertExpression:
             ["email"],
         ).to_sql()
         assert sql == (
-            'UPDATE OR INSERT INTO "users" ("name", "email") '
-            'VALUES (?, ?) MATCHING ("email")'
+            'UPDATE OR INSERT INTO "USERS" ("NAME", "EMAIL") '
+            'VALUES (?, ?) MATCHING ("EMAIL")'
         )
         assert params == ("Alice", "alice@example.com")
 
@@ -79,8 +79,8 @@ class TestUpdateOrInsertExpression:
             returning_columns=["id", "name"],
         ).to_sql()
         assert sql == (
-            'UPDATE OR INSERT INTO "users" ("name") VALUES (?) '
-            'MATCHING ("name") RETURNING "id", "name"'
+            'UPDATE OR INSERT INTO "USERS" ("NAME") VALUES (?) '
+            'MATCHING ("NAME") RETURNING "ID", "NAME"'
         )
         assert params == ("Bob",)
 
