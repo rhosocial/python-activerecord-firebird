@@ -1,9 +1,9 @@
 # tests/rhosocial/activerecord_firebird_test/feature/backend/expression/test_expression_signatures.py
 """Tests for Firebird expression class signatures.
 
-Each ``format_*`` method that previously accepted only plain parameters now
-also accepts the corresponding Expression object.  This test suite validates
-that both calling conventions produce identical SQL output.
+Each expression-dispatched ``format_*`` method has the
+``(self, expr) -> Tuple[str, tuple]`` signature and reads its rendering data
+from the expression node it is handed.
 
 All tests are pure construction — no database connection.
 """
@@ -15,6 +15,9 @@ from rhosocial.activerecord.backend.impl.firebird.expression import (
     UpdateOrInsertExpression,
     AutonomousTransactionDoExpression,
     ExecuteBlockExpression,
+)
+from rhosocial.activerecord.backend.impl.firebird.expression.generator import (
+    GenIdExpression,
 )
 
 
@@ -129,3 +132,17 @@ class TestExecuteBlockExpression:
             "AS\nBEGIN\nINSERT INTO log VALUES (:p_val);\nEND"
         )
         assert params == (42,)
+
+
+class TestGenIdExpression:
+    def test_gen_id_expression_default_step(self):
+        dialect = FirebirdDialect((4, 0, 0))
+        sql, params = GenIdExpression(dialect, "gen_c").to_sql()
+        assert sql == 'GEN_ID("GEN_C", 1)'
+        assert params == ()
+
+    def test_gen_id_expression_explicit_step(self):
+        dialect = FirebirdDialect((4, 0, 0))
+        sql, params = GenIdExpression(dialect, "gen_c", 2).to_sql()
+        assert sql == 'GEN_ID("GEN_C", 2)'
+        assert params == ()

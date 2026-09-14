@@ -1,7 +1,7 @@
 # src/rhosocial/activerecord/backend/impl/firebird/mixins/dml.py
 """Firebird DML operations mixin — INSERT/UPDATE/DELETE with RETURNING."""
 
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, List, Tuple
 
 from rhosocial.activerecord.backend.dialect.exceptions import UnsupportedFeatureError
 
@@ -120,25 +120,12 @@ class FirebirdDMLOperationMixin:
         returning_sql = f"RETURNING {', '.join(expr_parts)}"
         return returning_sql, tuple(all_params)
 
-    def format_update_or_insert(
-        self,
-        table_name,
-        insert_columns: List[str] = None,
-        insert_values: List = None,
-        match_columns: List[str] = None,
-        returning_columns: Optional[List[str]] = None,
-    ) -> Tuple[str, tuple]:
-        from rhosocial.activerecord.backend.impl.firebird.expression.dml import (
-            UpdateOrInsertExpression,
-        )
-
-        if isinstance(table_name, UpdateOrInsertExpression):
-            expr = table_name
-            table_name = expr._table_name
-            insert_columns = expr._insert_columns
-            insert_values = expr._insert_values
-            match_columns = expr._match_columns
-            returning_columns = expr._returning_columns
+    def format_update_or_insert(self, expr) -> Tuple[str, tuple]:
+        table_name = expr._table_name
+        insert_columns = expr._insert_columns
+        insert_values = expr._insert_values
+        match_columns = expr._match_columns
+        returning_columns = expr._returning_columns
 
         all_params = list(insert_values)
 
@@ -275,19 +262,9 @@ class FirebirdDMLOperationMixin:
 
         return " ".join(merge_sql_parts), tuple(all_params)
 
-    def format_execute_block(
-        self, expr_or_block, params: Optional[Dict[str, Any]] = None
-    ) -> Tuple[str, tuple]:
-        from rhosocial.activerecord.backend.impl.firebird.expression.dml import (
-            ExecuteBlockExpression,
-        )
-
-        if isinstance(expr_or_block, ExecuteBlockExpression):
-            expr = expr_or_block
-            block = expr._block
-            params = expr._params
-        else:
-            block = expr_or_block
+    def format_execute_block(self, expr) -> Tuple[str, tuple]:
+        block = expr._block
+        params = expr._params
 
         all_params = []
         if params:

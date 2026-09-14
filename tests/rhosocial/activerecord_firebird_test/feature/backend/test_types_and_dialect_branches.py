@@ -45,6 +45,12 @@ from rhosocial.activerecord.backend.expression.types import (
 import rhosocial.activerecord.backend.expression as E
 
 from rhosocial.activerecord.backend.impl.firebird.dialect import FirebirdDialect
+from rhosocial.activerecord.backend.impl.firebird.expression.dml import (
+    UpdateOrInsertExpression,
+)
+from rhosocial.activerecord.backend.impl.firebird.expression.generator import (
+    GenIdExpression,
+)
 from rhosocial.activerecord.backend.impl.firebird.expression.types import (
     FirebirdDecFloatType,
     FirebirdInt128Type,
@@ -222,9 +228,15 @@ class TestReturningBranches:
         assert delete.to_sql() == ('DELETE FROM "USERS" WHERE "ID" = ? RETURNING *', (7,))
 
     def test_update_or_insert_with_matching_and_returning(self, dialect):
-        sql, params = dialect.format_update_or_insert(
-            "users", ["name", "age"], ["Ann", 30], ["name"], returning_columns=["id"]
+        expr = UpdateOrInsertExpression(
+            dialect,
+            "users",
+            ["name", "age"],
+            ["Ann", 30],
+            ["name"],
+            returning_columns=["id"],
         )
+        sql, params = expr.to_sql()
         assert sql == 'UPDATE OR INSERT INTO "USERS" ("NAME", "AGE") VALUES (?, ?) MATCHING ("NAME") RETURNING "ID"'
         assert params == ("Ann", 30)
 
@@ -327,7 +339,7 @@ class TestSequenceBranches:
         assert dialect.format_create_sequence("gen_c", use_generator=True) == ('CREATE GENERATOR "GEN_C"', ())
 
     def test_gen_id_step(self, dialect):
-        assert dialect.format_gen_id("gen_c", 2) == ('GEN_ID("GEN_C", 2)', ())
+        assert GenIdExpression(dialect, "gen_c", 2).to_sql() == ('GEN_ID("GEN_C", 2)', ())
 
     def test_next_value_for(self, dialect):
         assert dialect.format_next_value_for("seq_b") == ('NEXT VALUE FOR "SEQ_B"', ())

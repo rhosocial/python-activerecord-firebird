@@ -23,8 +23,11 @@ class FirebirdSequenceMixin:
                 parts.append(f"INCREMENT BY {increment}")
             return ' '.join(parts), ()
 
-    def format_gen_id(self, generator_name: str, step: int = 1) -> Tuple[str, tuple]:
-        return f"GEN_ID({self.format_identifier(generator_name)}, {step})", ()
+    def format_gen_id(self, expr) -> Tuple[str, tuple]:
+        return (
+            f"GEN_ID({self.format_identifier(expr._generator_name)}, {expr._step})",
+            (),
+        )
 
     def format_next_value_for(self, sequence_name: str) -> Tuple[str, tuple]:
         return f"NEXT VALUE FOR {self.format_identifier(sequence_name)}", ()

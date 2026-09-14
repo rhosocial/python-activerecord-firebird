@@ -18,6 +18,9 @@ from rhosocial.activerecord.backend.expression.statements import (
     MergeExpression,
 )
 from rhosocial.activerecord.backend.impl.firebird.dialect import FirebirdDialect
+from rhosocial.activerecord.backend.impl.firebird.expression.dml import (
+    UpdateOrInsertExpression,
+)
 from rhosocial.activerecord.backend.impl.firebird.mixins.dml import FirebirdDMLOperationMixin
 
 
@@ -244,13 +247,15 @@ class TestMergeVersionBoundaries:
 
     def test_update_or_insert_unaffected(self):
         dialect = FirebirdDialect((2, 5, 0))
-        sql, params = dialect.format_update_or_insert(
-            table_name="products",
-            insert_columns=["id", "name", "price"],
-            insert_values=[1, "Product A", 19.99],
-            match_columns=["id"],
+        expr = UpdateOrInsertExpression(
+            dialect,
+            "products",
+            ["id", "name", "price"],
+            [1, "Product A", 19.99],
+            ["id"],
             returning_columns=["id"],
         )
+        sql, params = expr.to_sql()
         assert sql.startswith("UPDATE OR INSERT INTO \"PRODUCTS\"")
         assert "MATCHING" in sql
         assert params == (1, "Product A", 19.99)
