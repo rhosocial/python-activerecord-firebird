@@ -122,12 +122,26 @@ class FirebirdDMLOperationMixin:
 
     def format_update_or_insert(
         self,
-        table_name: str,
-        insert_columns: List[str],
-        insert_values: List,
-        match_columns: List[str],
+        expr_or_table_name,
+        insert_columns: List[str] = None,
+        insert_values: List = None,
+        match_columns: List[str] = None,
         returning_columns: Optional[List[str]] = None,
     ) -> Tuple[str, tuple]:
+        from rhosocial.activerecord.backend.impl.firebird.expression.dml import (
+            UpdateOrInsertExpression,
+        )
+
+        if isinstance(expr_or_table_name, UpdateOrInsertExpression):
+            expr = expr_or_table_name
+            table_name = expr._table_name
+            insert_columns = expr._insert_columns
+            insert_values = expr._insert_values
+            match_columns = expr._match_columns
+            returning_columns = expr._returning_columns
+        else:
+            table_name = expr_or_table_name
+
         all_params = list(insert_values)
 
         cols_str = ', '.join(self.format_identifier(c) for c in insert_columns)
@@ -264,8 +278,19 @@ class FirebirdDMLOperationMixin:
         return " ".join(merge_sql_parts), tuple(all_params)
 
     def format_execute_block(
-        self, block: str, params: Optional[Dict[str, Any]] = None
+        self, expr_or_block, params: Optional[Dict[str, Any]] = None
     ) -> Tuple[str, tuple]:
+        from rhosocial.activerecord.backend.impl.firebird.expression.dml import (
+            ExecuteBlockExpression,
+        )
+
+        if isinstance(expr_or_block, ExecuteBlockExpression):
+            expr = expr_or_block
+            block = expr._block
+            params = expr._params
+        else:
+            block = expr_or_block
+
         all_params = []
         if params:
             param_defs = []
@@ -321,12 +346,21 @@ class FirebirdDMLOperationMixin:
 
         return " ".join(parts), tuple(all_params)
 
-    def format_autonomous_transaction_do(self, block: str) -> Tuple[str, tuple]:
+    def format_autonomous_transaction_do(self, expr_or_block) -> Tuple[str, tuple]:
         """Format IN AUTONOMOUS TRANSACTION DO <statement> (Firebird 3.0+).
 
         The block is wrapped in ``BEGIN ... END`` unless it already starts
         with ``BEGIN``, mirroring :meth:`format_execute_block`.
         """
+        from rhosocial.activerecord.backend.impl.firebird.expression.dml import (
+            AutonomousTransactionDoExpression,
+        )
+
+        if isinstance(expr_or_block, AutonomousTransactionDoExpression):
+            block = expr_or_block._block
+        else:
+            block = expr_or_block
+
         version = getattr(self, 'version', (3, 0, 0))
         if _norm_version(version) < (3, 0, 0):
             raise UnsupportedFeatureError(
