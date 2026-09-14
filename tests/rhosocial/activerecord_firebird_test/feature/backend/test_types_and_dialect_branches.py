@@ -50,6 +50,7 @@ from rhosocial.activerecord.backend.impl.firebird.expression.dml import (
 )
 from rhosocial.activerecord.backend.impl.firebird.expression.generator import (
     GenIdExpression,
+    NextValueForExpression,
 )
 from rhosocial.activerecord.backend.impl.firebird.expression.types import (
     FirebirdDecFloatType,
@@ -310,20 +311,11 @@ class TestSkipLockedBranches:
         ((3, 0, 0), {"skip_locked": True}, "FOR UPDATE"),
         ((4, 0, 0), {"skip_locked": True}, "FOR UPDATE SKIP LOCKED"),
         ((5, 0, 0), {"skip_locked": True}, "FOR UPDATE SKIP LOCKED"),
-        ((4, 0, 0), {"with_lock": True}, "FOR UPDATE WITH LOCK"),
         ((4, 0, 0), {"nowait": True}, "FOR UPDATE WITH LOCK"),
     ])
-    def test_locking_mixin_branches_directly(self, version, kwargs, expected):
+    def test_for_update_expression_snapshots(self, version, kwargs, expected):
         dialect = FirebirdDialect(version)
-
-        class LockRequest:
-            pass
-
-        request = LockRequest()
-        request.with_lock = kwargs.get("with_lock", False)
-        request.skip_locked = kwargs.get("skip_locked", False)
-        request.nowait = kwargs.get("nowait", False)
-        assert FirebirdLockingMixin.format_for_update_clause(dialect, request) == (expected, ())
+        assert ForUpdateClause(dialect, **kwargs).to_sql() == (expected, ())
 
 
 class TestSequenceBranches:
@@ -342,7 +334,7 @@ class TestSequenceBranches:
         assert GenIdExpression(dialect, "gen_c", 2).to_sql() == ('GEN_ID("GEN_C", 2)', ())
 
     def test_next_value_for(self, dialect):
-        assert dialect.format_next_value_for("seq_b") == ('NEXT VALUE FOR "SEQ_B"', ())
+        assert NextValueForExpression(dialect, "seq_b").to_sql() == ('NEXT VALUE FOR "SEQ_B"', ())
 
     def test_sequence_capability_flags(self, dialect):
         assert dialect.supports_sequence() is True

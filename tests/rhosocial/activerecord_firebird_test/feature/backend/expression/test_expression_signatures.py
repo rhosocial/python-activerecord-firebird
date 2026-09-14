@@ -18,6 +18,7 @@ from rhosocial.activerecord.backend.impl.firebird.expression import (
 )
 from rhosocial.activerecord.backend.impl.firebird.expression.generator import (
     GenIdExpression,
+    NextValueForExpression,
 )
 
 
@@ -145,4 +146,12 @@ class TestGenIdExpression:
         dialect = FirebirdDialect((4, 0, 0))
         sql, params = GenIdExpression(dialect, "gen_c", 2).to_sql()
         assert sql == 'GEN_ID("GEN_C", 2)'
+        assert params == ()
+
+
+class TestNextValueForExpression:
+    def test_next_value_for_expression_to_sql(self):
+        dialect = FirebirdDialect((4, 0, 0))
+        sql, params = NextValueForExpression(dialect, "seq_b").to_sql()
+        assert sql == 'NEXT VALUE FOR "SEQ_B"'
         assert params == ()

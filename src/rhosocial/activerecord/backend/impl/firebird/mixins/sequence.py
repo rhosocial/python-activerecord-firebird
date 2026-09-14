@@ -29,8 +29,8 @@ class FirebirdSequenceMixin:
             (),
         )
 
-    def format_next_value_for(self, sequence_name: str) -> Tuple[str, tuple]:
-        return f"NEXT VALUE FOR {self.format_identifier(sequence_name)}", ()
+    def format_next_value_for(self, expr) -> Tuple[str, tuple]:
+        return f"NEXT VALUE FOR {self.format_identifier(expr._sequence_name)}", ()
 
     def supports_sequence(self) -> bool:
         return True

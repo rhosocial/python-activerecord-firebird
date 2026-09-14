@@ -77,6 +77,8 @@ from rhosocial.activerecord.backend.dialect.mixins import (
     TruncateMixin,
     SchemaMixin,
     IndexMixin,
+    SequenceMixin,
+    TriggerMixin,
     GeneratedColumnMixin,
     ViewMixin,
     FunctionMixin,
@@ -220,7 +222,9 @@ class FirebirdDialect(
     TableMixin,
     ConstraintMixin,
     FirebirdTriggerMixin,       # Must be before TriggerMixin
+    TriggerMixin,
     FirebirdSequenceMixin,      # Must be before SequenceMixin
+    SequenceMixin,
     FirebirdBlobMixin,
     FirebirdIntrospectionMixin, # Must be before IntrospectionMixin
     FirebirdDomainMixin,
