@@ -1,12 +1,15 @@
 # src/rhosocial/activerecord/backend/impl/firebird/mixins/blob.py
 """Firebird BLOB handling mixin."""
 
-from typing import Tuple
+from typing import Tuple, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from ..expression.blob import BlobColumnExpression, BlobLiteralExpression
 
 
 class FirebirdBlobMixin:
 
-    def format_blob_column(self, expr) -> Tuple[str, tuple]:
+    def format_blob_column(self, expr: "BlobColumnExpression") -> Tuple[str, tuple]:
         column_name = expr._column_name
         sub_type = expr._sub_type
         segment_size = expr._segment_size
@@ -24,6 +27,6 @@ class FirebirdBlobMixin:
     def supports_blob_sub_type(self, sub_type: int) -> bool:
         return sub_type in (0, 1, 2, 3, 4, 5)
 
-    def format_blob_literal(self, expr) -> Tuple[str, tuple]:
+    def format_blob_literal(self, expr: "BlobLiteralExpression") -> Tuple[str, tuple]:
         escaped = expr._value.hex()
         return f"X'{escaped}'", ()

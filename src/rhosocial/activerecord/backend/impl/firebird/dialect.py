@@ -170,7 +170,12 @@ from .protocols import (
 if TYPE_CHECKING:
     from rhosocial.activerecord.backend.expression import bases
     from rhosocial.activerecord.backend.expression.collation import CollateExpression
-    from rhosocial.activerecord.backend.expression.statements import ReturningClause, CreateTableExpression
+    from rhosocial.activerecord.backend.expression.statements import (
+        ReturningClause,
+        CreateTableExpression,
+        ColumnDefinition,
+        TableConstraint,
+    )
 
 _SUGGESTION_ARRAY = "Firebird does not support array types. Use separate tables or BLOB."
 _SUGGESTION_GRAPH_MATCH = "Firebird does not support graph MATCH clause."
@@ -422,13 +427,13 @@ class FirebirdDialect(
     # FirebirdTableMixin overrides the table/column formatters, but it is
     # composed after DDLColumnMixin/TableMixin in the MRO; bridge explicitly
     # so the Firebird implementations (e.g. IDENTITY auto-increment) win.
-    def format_create_table_statement(self, expr) -> Tuple[str, tuple]:
+    def format_create_table_statement(self, expr: "CreateTableExpression") -> Tuple[str, tuple]:
         return FirebirdTableMixin.format_create_table_statement(self, expr)
 
-    def format_column_definition(self, col_def) -> Tuple[str, tuple]:
+    def format_column_definition(self, col_def: "ColumnDefinition") -> Tuple[str, tuple]:
         return FirebirdTableMixin.format_column_definition(self, col_def)
 
-    def format_table_constraint(self, expr) -> Tuple[str, tuple]:
+    def format_table_constraint(self, expr: "TableConstraint") -> Tuple[str, tuple]:
         return FirebirdTableMixin.format_table_constraint(self, expr)
 
     def supports_trigger_position(self) -> bool:

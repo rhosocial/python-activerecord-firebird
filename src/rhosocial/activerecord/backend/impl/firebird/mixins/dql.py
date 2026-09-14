@@ -1,14 +1,17 @@
 # src/rhosocial/activerecord/backend/impl/firebird/mixins/dql.py
 """Firebird DQL formatting mixin."""
 
-from typing import Any, Optional, Tuple
+from typing import Any, Optional, Tuple, TYPE_CHECKING
 
 from .version_boundaries import _norm_version
+
+if TYPE_CHECKING:
+    from rhosocial.activerecord.backend.expression.query_parts import LimitOffsetClause
 
 
 class FirebirdDQLMixin:
 
-    def format_query_statement(self, expr: Any) -> Tuple[str, Tuple]:
+    def format_query_statement(self, expr: Any) -> Tuple[str, tuple]:
         """Format a SELECT statement, qualifying a bare wildcard when mixed with columns.
 
         Firebird rejects ``SELECT *, extra_col ...`` (Token unknown, error -104) and
@@ -25,10 +28,8 @@ class FirebirdDQLMixin:
                         src = expr.from_
                         if isinstance(src, list) and len(src) == 1:
                             src = src[0]
-                        if isinstance(src, str):
-                            table_name = src
-                        elif src.__class__.__name__ == "TableExpression":
-                            table_name = src.alias or src.name
+                        if hasattr(src, 'alias') or hasattr(src, 'name'):
+                            table_name = getattr(src, 'alias', None) or getattr(src, 'name', None)
                     if table_name:
                         e.table = table_name
         return super().format_query_statement(expr)
@@ -59,7 +60,7 @@ class FirebirdDQLMixin:
                 return f"ROWS {offset + 1} TO {999999999}", ()
             return "", ()
 
-    def format_limit_offset_clause(self, clause) -> Tuple[str, tuple]:
+    def format_limit_offset_clause(self, clause: "LimitOffsetClause") -> Tuple[str, tuple]:
         """Format LIMIT/OFFSET clause for Firebird using ROWS/FETCH syntax."""
         all_params = []
         if clause.limit is None and clause.offset is None:

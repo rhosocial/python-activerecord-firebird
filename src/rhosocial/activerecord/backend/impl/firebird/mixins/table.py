@@ -4,7 +4,11 @@
 from typing import Any, List, Tuple, TYPE_CHECKING
 
 if TYPE_CHECKING:  # pragma: no cover
-    from rhosocial.activerecord.backend.expression.statements import ColumnDefinition, TableConstraint
+    from rhosocial.activerecord.backend.expression.statements import (
+        ColumnDefinition,
+        CreateTableExpression,
+        TableConstraint,
+    )
 
 from rhosocial.activerecord.backend.dialect.mixins.ddl_table import TableMixin
 
@@ -34,7 +38,7 @@ class FirebirdTableMixin:
     # concrete TableMixin implementation, so re-bind it here as well.
     format_alter_table_statement = TableMixin.format_alter_table_statement
 
-    def format_create_table_statement(self, expr) -> Tuple[str, tuple]:
+    def format_create_table_statement(self, expr: "CreateTableExpression") -> Tuple[str, tuple]:
         if getattr(expr, 'partition', None) is not None:
             from rhosocial.activerecord.backend.dialect.exceptions import UnsupportedFeatureError
             raise UnsupportedFeatureError(
@@ -139,11 +143,8 @@ class FirebirdTableMixin:
                         default_sql, default_params = constraint.default_value.to_sql()
                         default_parts.append(f"DEFAULT {default_sql}")
                         params.extend(default_params)
-                    elif isinstance(constraint.default_value, str):
-                        escaped = constraint.default_value.replace("'", "''")
-                        default_parts.append(f"DEFAULT '{escaped}'")
                     else:
-                        default_parts.append(f"DEFAULT {constraint.default_value}")
+                        default_parts.append(f"DEFAULT {self.inline_sql_literal(constraint.default_value)}")
 
         # Firebird requires the DEFAULT clause to follow the data type directly;
         # it must be emitted before column constraints such as NOT NULL/UNIQUE,

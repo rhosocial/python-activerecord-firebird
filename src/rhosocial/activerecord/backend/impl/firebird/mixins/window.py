@@ -1,12 +1,15 @@
 # src/rhosocial/activerecord/backend/impl/firebird/mixins/window.py
 """Firebird window function formatting mixin."""
 
-from typing import Any, Tuple
+from typing import Any, Tuple, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from rhosocial.activerecord.backend.expression.advanced_functions import WindowFunctionCallExpression
 
 
 class FirebirdWindowFunctionMixin:
 
-    def format_window_function_call(self, call: "Any") -> Tuple[str, tuple]:
+    def format_window_function_call(self, call: "WindowFunctionCallExpression") -> Tuple[str, tuple]:
         """Format a window function call, pinning SUM/AVG result types.
 
         Mirrors :meth:`format_function_call`: Firebird 5/6-snapshot fails to

@@ -7,12 +7,19 @@ default value, a NOT NULL flag and optional CHECK constraints for reuse
 across table columns.
 """
 
-from typing import Tuple
+from typing import Tuple, TYPE_CHECKING
 
 from .version_boundaries import _norm_version
 from rhosocial.activerecord.backend.dialect.exceptions import UnsupportedFeatureError
 
 from ..expression.ddl.domain import FirebirdDomainAlterMode
+
+if TYPE_CHECKING:
+    from ..expression.ddl.domain import (
+        FirebirdCreateDomainExpression,
+        FirebirdAlterDomainExpression,
+        FirebirdDropDomainExpression,
+    )
 
 
 class FirebirdDomainMixin:
@@ -29,7 +36,7 @@ class FirebirdDomainMixin:
     def supports_drop_domain(self) -> bool:
         return _norm_version(self.version) >= (2, 5, 0)
 
-    def format_create_domain_statement(self, expr) -> Tuple[str, tuple]:
+    def format_create_domain_statement(self, expr: "FirebirdCreateDomainExpression") -> Tuple[str, tuple]:
         """Format CREATE DOMAIN name [AS] datatype [DEFAULT ...] [NOT NULL] [CHECK (...)]."""
         self._check_domain_version("CREATE DOMAIN")
 
@@ -52,7 +59,7 @@ class FirebirdDomainMixin:
 
         return " ".join(parts), ()
 
-    def format_alter_domain_statement(self, expr) -> Tuple[str, tuple]:
+    def format_alter_domain_statement(self, expr: "FirebirdAlterDomainExpression") -> Tuple[str, tuple]:
         """Format ALTER DOMAIN name <clause> per the requested mode."""
         self._check_domain_version("ALTER DOMAIN")
 
@@ -91,7 +98,7 @@ class FirebirdDomainMixin:
             "Unsupported ALTER DOMAIN clause.",
         )
 
-    def format_drop_domain_statement(self, expr) -> Tuple[str, tuple]:
+    def format_drop_domain_statement(self, expr: "FirebirdDropDomainExpression") -> Tuple[str, tuple]:
         """Format DROP DOMAIN name."""
         self._check_domain_version("DROP DOMAIN")
         return f"DROP DOMAIN {self.format_identifier(expr.domain_name)}", ()

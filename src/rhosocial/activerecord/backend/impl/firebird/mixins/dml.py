@@ -1,16 +1,31 @@
 # src/rhosocial/activerecord/backend/impl/firebird/mixins/dml.py
 """Firebird DML operations mixin — INSERT/UPDATE/DELETE with RETURNING."""
 
-from typing import Any, List, Tuple
+from typing import Any, List, Tuple, TYPE_CHECKING
 
 from rhosocial.activerecord.backend.dialect.exceptions import UnsupportedFeatureError
 
 from .version_boundaries import _norm_version
 
+if TYPE_CHECKING:
+    from rhosocial.activerecord.backend.expression.statements import (
+        InsertExpression,
+        UpdateExpression,
+        DeleteExpression,
+        ReturningClause,
+        MergeExpression,
+    )
+    from ..expression.dml import (
+        UpdateOrInsertExpression,
+        ExecuteBlockExpression,
+        AutonomousTransactionDoExpression,
+    )
+    from ..expression.execute_statement import FirebirdExecuteStatementExpression
+
 
 class FirebirdDMLOperationMixin:
 
-    def format_insert_statement(self, expr) -> Tuple[str, tuple]:
+    def format_insert_statement(self, expr: "InsertExpression") -> Tuple[str, tuple]:
         if expr.on_conflict:
             # Firebird has no ON CONFLICT clause; raise instead of silently
             # dropping the clause via the shared capability gate.
@@ -59,7 +74,7 @@ class FirebirdDMLOperationMixin:
 
         return sql, tuple(all_params)
 
-    def format_update_statement(self, expr) -> Tuple[str, tuple]:
+    def format_update_statement(self, expr: "UpdateExpression") -> Tuple[str, tuple]:
         all_params: List[Any] = []
 
         table_sql, table_params = expr.table.to_sql()
@@ -90,7 +105,7 @@ class FirebirdDMLOperationMixin:
 
         return sql, tuple(all_params)
 
-    def format_delete_statement(self, expr) -> Tuple[str, tuple]:
+    def format_delete_statement(self, expr: "DeleteExpression") -> Tuple[str, tuple]:
         all_params: List[Any] = []
 
         table_sql, table_params = expr.tables[0].to_sql()
@@ -110,7 +125,7 @@ class FirebirdDMLOperationMixin:
 
         return sql, tuple(all_params)
 
-    def format_returning_clause(self, clause) -> Tuple[str, tuple]:
+    def format_returning_clause(self, clause: "ReturningClause") -> Tuple[str, tuple]:
         all_params = []
         expr_parts = []
         for expr in clause.expressions:
@@ -120,7 +135,7 @@ class FirebirdDMLOperationMixin:
         returning_sql = f"RETURNING {', '.join(expr_parts)}"
         return returning_sql, tuple(all_params)
 
-    def format_update_or_insert(self, expr) -> Tuple[str, tuple]:
+    def format_update_or_insert(self, expr: "UpdateOrInsertExpression") -> Tuple[str, tuple]:
         table_name = expr._table_name
         insert_columns = expr._insert_columns
         insert_values = expr._insert_values
@@ -146,7 +161,7 @@ class FirebirdDMLOperationMixin:
 
         return ' '.join(parts), tuple(all_params)
 
-    def format_merge_statement(self, expr) -> Tuple[str, tuple]:
+    def format_merge_statement(self, expr: "MergeExpression") -> Tuple[str, tuple]:
         """Format MERGE statement using Firebird's supported syntax.
 
         Firebird supports MERGE since 2.1. The ``WHEN MATCHED THEN
@@ -262,7 +277,7 @@ class FirebirdDMLOperationMixin:
 
         return " ".join(merge_sql_parts), tuple(all_params)
 
-    def format_execute_block(self, expr) -> Tuple[str, tuple]:
+    def format_execute_block(self, expr: "ExecuteBlockExpression") -> Tuple[str, tuple]:
         block = expr._block
         params = expr._params
 
@@ -277,7 +292,7 @@ class FirebirdDMLOperationMixin:
             sql = f"EXECUTE BLOCK\nAS\nBEGIN\n{block}\nEND"
         return sql, tuple(all_params)
 
-    def format_execute_statement(self, expr) -> Tuple[str, tuple]:
+    def format_execute_statement(self, expr: "FirebirdExecuteStatementExpression") -> Tuple[str, tuple]:
         """Format EXECUTE STATEMENT (dynamic SQL) for Firebird.
 
         The bare ``EXECUTE STATEMENT`` form is available since Firebird 1.5,
@@ -321,20 +336,13 @@ class FirebirdDMLOperationMixin:
 
         return " ".join(parts), tuple(all_params)
 
-    def format_autonomous_transaction_do(self, expr_or_block) -> Tuple[str, tuple]:
+    def format_autonomous_transaction_do(self, expr: "AutonomousTransactionDoExpression") -> Tuple[str, tuple]:
         """Format IN AUTONOMOUS TRANSACTION DO <statement> (Firebird 3.0+).
 
         The block is wrapped in ``BEGIN ... END`` unless it already starts
         with ``BEGIN``, mirroring :meth:`format_execute_block`.
         """
-        from rhosocial.activerecord.backend.impl.firebird.expression.dml import (
-            AutonomousTransactionDoExpression,
-        )
-
-        if isinstance(expr_or_block, AutonomousTransactionDoExpression):
-            block = expr_or_block._block
-        else:
-            block = expr_or_block
+        block = expr._block
 
         version = getattr(self, 'version', (3, 0, 0))
         if _norm_version(version) < (3, 0, 0):

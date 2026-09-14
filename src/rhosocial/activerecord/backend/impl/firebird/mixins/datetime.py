@@ -8,7 +8,7 @@ from rhosocial.activerecord.backend.dialect.exceptions import UnsupportedFeature
 
 class FirebirdDateTimeMixin:
 
-    def format_date_trunc_expression(self, expr: "Any") -> Tuple[str, Tuple]:
+    def format_date_trunc_expression(self, expr: "Any") -> Tuple[str, tuple]:
         source_sql, source_params = expr.source.to_sql()
         if expr.field.value == "year":
             sql = f"CAST(EXTRACT(YEAR FROM {source_sql}) || '-01-01 00:00:00' AS TIMESTAMP)"
@@ -32,14 +32,14 @@ class FirebirdDateTimeMixin:
             raise UnsupportedFeatureError(self.name, f"date_trunc({expr.field.value})")
         return self.apply_alias(sql, source_params, expr)
 
-    def format_interval_expression(self, expr: "Any") -> Tuple[str, Tuple]:
+    def format_interval_expression(self, expr: "Any") -> Tuple[str, tuple]:
         raise UnsupportedFeatureError(
             self.name,
             "standalone INTERVAL expression",
             "Use date_add() or date_sub() for Firebird date arithmetic.",
         )
 
-    def format_datetime_add_expression(self, expr: "Any") -> Tuple[str, Tuple]:
+    def format_datetime_add_expression(self, expr: "Any") -> Tuple[str, tuple]:
         source_sql, source_params = expr.source.to_sql()
         unit = expr.interval.unit.value.upper()
         value = expr.interval.value * 7 if unit == "WEEK" else expr.interval.value
@@ -47,7 +47,7 @@ class FirebirdDateTimeMixin:
         sql = f"DATEADD({self.p()} {unit} TO {source_sql})"
         return self.apply_alias(sql, (value,) + source_params, expr)
 
-    def format_datetime_subtract_expression(self, expr: "Any") -> Tuple[str, Tuple]:
+    def format_datetime_subtract_expression(self, expr: "Any") -> Tuple[str, tuple]:
         source_sql, source_params = expr.source.to_sql()
         unit = expr.interval.unit.value.upper()
         value = expr.interval.value * 7 if unit == "WEEK" else expr.interval.value
@@ -55,7 +55,7 @@ class FirebirdDateTimeMixin:
         sql = f"DATEADD({self.p()} {unit} TO {source_sql})"
         return self.apply_alias(sql, (-value,) + source_params, expr)
 
-    def format_datetime_diff_expression(self, expr: "Any") -> Tuple[str, Tuple]:
+    def format_datetime_diff_expression(self, expr: "Any") -> Tuple[str, tuple]:
         start_sql, start_params = expr.start.to_sql()
         end_sql, end_params = expr.end.to_sql()
         unit = "DAY" if expr.unit.value == "week" else expr.unit.value.upper()

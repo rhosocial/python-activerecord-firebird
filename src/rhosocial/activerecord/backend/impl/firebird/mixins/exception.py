@@ -6,10 +6,17 @@ the formatting here is gated at ``(2, 5, 0)`` to match the oldest
 supported server version.
 """
 
-from typing import Tuple
+from typing import Tuple, TYPE_CHECKING
 
 from .version_boundaries import _norm_version
 from rhosocial.activerecord.backend.dialect.exceptions import UnsupportedFeatureError
+
+if TYPE_CHECKING:
+    from ..expression.ddl.exception import (
+        FirebirdCreateExceptionExpression,
+        FirebirdAlterExceptionExpression,
+        FirebirdDropExceptionExpression,
+    )
 
 
 class FirebirdExceptionMixin:
@@ -22,7 +29,7 @@ class FirebirdExceptionMixin:
         """Whether CREATE EXCEPTION is supported (Firebird 2.5+)."""
         return self.supports_exception()
 
-    def format_create_exception_statement(self, expr) -> Tuple[str, tuple]:
+    def format_create_exception_statement(self, expr: "FirebirdCreateExceptionExpression") -> Tuple[str, tuple]:
         """Format CREATE EXCEPTION name 'message'."""
         self._check_exception_version("CREATE EXCEPTION")
         return (
@@ -31,7 +38,7 @@ class FirebirdExceptionMixin:
             (),
         )
 
-    def format_alter_exception_statement(self, expr) -> Tuple[str, tuple]:
+    def format_alter_exception_statement(self, expr: "FirebirdAlterExceptionExpression") -> Tuple[str, tuple]:
         """Format ALTER EXCEPTION name 'message'."""
         self._check_exception_version("ALTER EXCEPTION")
         return (
@@ -40,7 +47,7 @@ class FirebirdExceptionMixin:
             (),
         )
 
-    def format_drop_exception_statement(self, expr) -> Tuple[str, tuple]:
+    def format_drop_exception_statement(self, expr: "FirebirdDropExceptionExpression") -> Tuple[str, tuple]:
         """Format DROP EXCEPTION name."""
         self._check_exception_version("DROP EXCEPTION")
         return f"DROP EXCEPTION {self.format_identifier(expr.exception_name)}", ()

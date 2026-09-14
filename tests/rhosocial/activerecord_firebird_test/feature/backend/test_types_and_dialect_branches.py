@@ -25,6 +25,7 @@ from rhosocial.activerecord.backend.expression.statements import (
     ValuesSource,
     ReferentialAction,
 )
+from rhosocial.activerecord.backend.expression.statements.ddl_sequence import CreateSequenceExpression
 from rhosocial.activerecord.backend.expression.types import (
     BigIntType,
     BooleanType,
@@ -320,15 +321,19 @@ class TestSkipLockedBranches:
 
 class TestSequenceBranches:
     def test_create_sequence_defaults(self, dialect):
-        assert dialect.format_create_sequence("seq_a") == ('CREATE SEQUENCE "SEQ_A"', ())
+        expr = CreateSequenceExpression(dialect, "seq_a")
+        assert dialect.format_create_sequence(expr) == ('CREATE SEQUENCE "SEQ_A"', ())
 
     def test_create_sequence_start_and_increment(self, dialect):
-        assert dialect.format_create_sequence("seq_b", start_value=100, increment=5) == (
+        expr = CreateSequenceExpression(dialect, "seq_b", start=100, increment=5)
+        assert dialect.format_create_sequence(expr) == (
             'CREATE SEQUENCE "SEQ_B" START WITH 100 INCREMENT BY 5', ()
         )
 
     def test_create_generator_form(self, dialect):
-        assert dialect.format_create_sequence("gen_c", use_generator=True) == ('CREATE GENERATOR "GEN_C"', ())
+        expr = CreateSequenceExpression(dialect, "gen_c")
+        expr.use_generator = True
+        assert dialect.format_create_sequence(expr) == ('CREATE GENERATOR "GEN_C"', ())
 
     def test_gen_id_step(self, dialect):
         assert GenIdExpression(dialect, "gen_c", 2).to_sql() == ('GEN_ID("GEN_C", 2)', ())

@@ -5,6 +5,8 @@ from typing import Any, Optional, Tuple, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from rhosocial.activerecord.backend.expression import bases
+    from rhosocial.activerecord.backend.expression.advanced_functions import CaseExpression
+    from rhosocial.activerecord.backend.expression.operators import BinaryArithmeticExpression
 
 
 class FirebirdExpressionMixin:
@@ -45,7 +47,7 @@ class FirebirdExpressionMixin:
             return "DECIMAL(18, 4)"
         return None
 
-    def format_case_expression(self, expr: "bases.BaseExpression") -> Tuple[str, Tuple]:
+    def format_case_expression(self, expr: "CaseExpression") -> Tuple[str, tuple]:
         """Format a CASE expression, wrapping result values in CAST for type inference.
 
         Firebird cannot infer the type of a ``?`` parameter used as a CASE
@@ -88,7 +90,7 @@ class FirebirdExpressionMixin:
         wrapped_expr = CaseExpression(self, value=value, cases=wrapped_cases, else_result=wrapped_else, alias=alias)
         return super().format_case_expression(wrapped_expr)
 
-    def format_binary_arithmetic_expression(self, expr) -> Tuple[str, Tuple]:
+    def format_binary_arithmetic_expression(self, expr: "BinaryArithmeticExpression") -> Tuple[str, tuple]:
         """Format a binary arithmetic expression with typed phantom parameters.
 
         Firebird cannot infer the type of a ``?`` parameter used inside an
@@ -123,7 +125,7 @@ class FirebirdExpressionMixin:
         return operand
 
     def _cast_sql(self, inner_sql: str, inner_params: tuple,
-                   target_type: str, alias: Optional[str] = None) -> Tuple[str, Tuple]:
+                   target_type: str, alias: Optional[str] = None) -> Tuple[str, tuple]:
         """Wrap already-rendered SQL in a CAST expression.
 
         Used when the inner expression (e.g. a window function or aggregate)
@@ -141,7 +143,7 @@ class FirebirdExpressionMixin:
             sql = f"{sql} AS {self.format_identifier(alias)}"
         return sql, inner_params
 
-    def format_function_call(self, expr: "bases.BaseExpression") -> Tuple[str, Tuple]:
+    def format_function_call(self, expr: "bases.BaseExpression") -> Tuple[str, tuple]:
         """Format a function call, remapping names Firebird does not provide.
 
         Firebird 5 does not expose a ``LENGTH`` scalar function (the name is a

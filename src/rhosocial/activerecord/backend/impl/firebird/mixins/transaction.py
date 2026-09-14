@@ -1,7 +1,13 @@
 # src/rhosocial/activerecord/backend/impl/firebird/mixins/transaction.py
 """Firebird transaction management mixin."""
 
-from typing import Tuple
+from typing import Tuple, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from rhosocial.activerecord.backend.transaction import (
+        BeginTransactionExpression,
+        SetTransactionExpression,
+    )
 
 
 class FirebirdTransactionMixin:
@@ -50,7 +56,7 @@ class FirebirdTransactionMixin:
     def supports_savepoint(self) -> bool:
         return True
 
-    def format_begin_transaction(self, expr) -> Tuple[str, tuple]:
+    def format_begin_transaction(self, expr: "BeginTransactionExpression") -> Tuple[str, tuple]:
         from rhosocial.activerecord.backend.transaction import IsolationLevel
         level_map = {
             IsolationLevel.READ_UNCOMMITTED: "READ COMMITTED",
@@ -75,7 +81,7 @@ class FirebirdTransactionMixin:
         parts.append("WAIT")
         return " ".join(parts), ()
 
-    def format_set_transaction(self, expr) -> Tuple[str, tuple]:
+    def format_set_transaction(self, expr: "SetTransactionExpression") -> Tuple[str, tuple]:
         from rhosocial.activerecord.backend.transaction import IsolationLevel, TransactionMode
 
         parts = ["SET TRANSACTION"]

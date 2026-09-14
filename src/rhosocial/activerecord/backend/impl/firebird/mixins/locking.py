@@ -8,9 +8,12 @@ protocol exactly or SELECT ... FOR UPDATE silently degrades to the empty
 Protocol stub.
 """
 
-from typing import Tuple
+from typing import Tuple, TYPE_CHECKING
 
 from .version_boundaries import _norm_version
+
+if TYPE_CHECKING:
+    from rhosocial.activerecord.backend.expression.query_parts import ForUpdateClause
 
 
 class FirebirdLockingMixin:
@@ -19,7 +22,7 @@ class FirebirdLockingMixin:
         """Row-level FOR UPDATE locking requires Firebird 3.0+."""
         return _norm_version(getattr(self, 'version', (3, 0, 0))) >= (3, 0, 0)
 
-    def format_for_update_clause(self, clause) -> Tuple[str, tuple]:
+    def format_for_update_clause(self, clause: "ForUpdateClause") -> Tuple[str, tuple]:
         parts = ["FOR UPDATE"]
         params: Tuple = ()
 
