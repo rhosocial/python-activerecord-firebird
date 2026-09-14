@@ -270,7 +270,7 @@ class FirebirdDMLOperationMixin:
         if params:
             param_defs = []
             for name, (param_type, value) in params.items():
-                param_defs.append(f"{name} {param_type} = ?")
+                param_defs.append(f"{name} {param_type} = {self.p()}")
                 all_params.append(value)
             sql = f"EXECUTE BLOCK ({', '.join(param_defs)})\nAS\nBEGIN\n{block}\nEND"
         else:

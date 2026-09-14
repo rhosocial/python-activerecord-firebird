@@ -84,7 +84,7 @@ class FirebirdAsyncIntrospectorMixin(IntrospectorMixin):
         return sql, ()
 
     def _make_column_list_sql(self, table_name: str, schema: Optional[str] = None) -> str:
-        sql = """
+        sql = f"""
             SELECT
                 rf.RDB$FIELD_NAME AS COLUMN_NAME,
                 f.RDB$FIELD_TYPE AS FIELD_TYPE,
@@ -98,13 +98,13 @@ class FirebirdAsyncIntrospectorMixin(IntrospectorMixin):
                 rf.RDB$COMPUTED_SOURCE AS COMPUTED_SOURCE
             FROM RDB$RELATION_FIELDS rf
             JOIN RDB$FIELDS f ON rf.RDB$FIELD_SOURCE = f.RDB$FIELD_NAME
-            WHERE rf.RDB$RELATION_NAME = ?
+            WHERE rf.RDB$RELATION_NAME = {self.dialect.p()}
             ORDER BY rf.RDB$POSITION
         """
         return sql, (table_name,)
 
     def _make_index_list_sql(self, table_name: str, schema: Optional[str] = None) -> str:
-        sql = """
+        sql = f"""
             SELECT
                 i.RDB$INDEX_NAME AS INDEX_NAME,
                 i.RDB$UNIQUE_FLAG AS UNIQUE_FLAG,
@@ -115,18 +115,18 @@ class FirebirdAsyncIntrospectorMixin(IntrospectorMixin):
             FROM RDB$INDICES i
             JOIN RDB$INDEX_SEGMENTS isg
                 ON i.RDB$INDEX_NAME = isg.RDB$INDEX_NAME
-            WHERE i.RDB$RELATION_NAME = ?
+            WHERE i.RDB$RELATION_NAME = {self.dialect.p()}
             ORDER BY i.RDB$INDEX_NAME, isg.RDB$FIELD_POSITION
         """
         return sql, (table_name,)
 
     def _make_primary_key_sql(self, table_name: str) -> str:
-        sql = """
+        sql = f"""
             SELECT isg.RDB$FIELD_NAME
             FROM RDB$INDICES i
             JOIN RDB$INDEX_SEGMENTS isg
                 ON i.RDB$INDEX_NAME = isg.RDB$INDEX_NAME
-            WHERE i.RDB$RELATION_NAME = ?
+            WHERE i.RDB$RELATION_NAME = {self.dialect.p()}
               AND i.RDB$UNIQUE_FLAG = 1
               AND i.RDB$INDEX_NAME LIKE 'RDB$PRIMARY%'
             ORDER BY isg.RDB$FIELD_POSITION
@@ -134,7 +134,7 @@ class FirebirdAsyncIntrospectorMixin(IntrospectorMixin):
         return sql, (table_name,)
 
     def _make_foreign_key_sql(self, table_name: str, schema: Optional[str] = None) -> str:
-        sql = """
+        sql = f"""
             SELECT
                 rc.RDB$CONSTRAINT_NAME AS CONSTRAINT_NAME,
                 rc.RDB$INDEX_NAME AS INDEX_NAME,
@@ -153,7 +153,7 @@ class FirebirdAsyncIntrospectorMixin(IntrospectorMixin):
                 ON rc.RDB$CONSTRAINT_NAME_UQ = ref_i.RDB$INDEX_NAME
             JOIN RDB$RELATIONS ref
                 ON ref_i.RDB$RELATION_NAME = ref.RDB$RELATION_NAME
-            WHERE i.RDB$RELATION_NAME = ?
+            WHERE i.RDB$RELATION_NAME = {self.dialect.p()}
             ORDER BY seg.RDB$FIELD_POSITION
         """
         return sql, (table_name,)

@@ -44,7 +44,7 @@ class FirebirdDateTimeMixin:
         unit = expr.interval.unit.value.upper()
         value = expr.interval.value * 7 if unit == "WEEK" else expr.interval.value
         unit = "DAY" if unit == "WEEK" else unit
-        sql = f"DATEADD(? {unit} TO {source_sql})"
+        sql = f"DATEADD({self.p()} {unit} TO {source_sql})"
         return self.apply_alias(sql, (value,) + source_params, expr)
 
     def format_datetime_subtract_expression(self, expr: "Any") -> Tuple[str, Tuple]:
@@ -52,7 +52,7 @@ class FirebirdDateTimeMixin:
         unit = expr.interval.unit.value.upper()
         value = expr.interval.value * 7 if unit == "WEEK" else expr.interval.value
         unit = "DAY" if unit == "WEEK" else unit
-        sql = f"DATEADD(? {unit} TO {source_sql})"
+        sql = f"DATEADD({self.p()} {unit} TO {source_sql})"
         return self.apply_alias(sql, (-value,) + source_params, expr)
 
     def format_datetime_diff_expression(self, expr: "Any") -> Tuple[str, Tuple]:
