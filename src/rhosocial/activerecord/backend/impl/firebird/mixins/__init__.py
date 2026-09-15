@@ -11,14 +11,14 @@ from .backend_mixin import (
 from .concurrency import FirebirdConcurrencyMixin
 from .dml import FirebirdDMLOperationMixin
 from .locking import FirebirdLockingMixin
-from .table import FirebirdTableMixin
+from .ddl_table import FirebirdTableMixin
 from .trigger import FirebirdTriggerMixin
 from .sequence import FirebirdSequenceMixin
 from .blob import FirebirdBlobMixin
 from .introspection import FirebirdIntrospectionMixin
 from .types import FirebirdTypeSupportMixin
 from .partition import FirebirdPartitionMixin
-from .alter_table_modifier import FirebirdAlterTableModifierMixin
+from .ddl_alter_table_modifier import FirebirdAlterTableModifierMixin
 from .domain import FirebirdDomainMixin
 from .exception import FirebirdExceptionMixin
 from .routine import FirebirdRoutineMixin
