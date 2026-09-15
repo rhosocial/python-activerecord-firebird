@@ -413,8 +413,7 @@ class TestCreateTableRebuildSnapshots:
 
     def test_identity_with_start_and_increment(self, dialect):
         col = _column(dialect, "id", IntegerType(dialect))
-        col.identity = True
-        col.identity_generated = "ALWAYS"
+        col.identity = "ALWAYS"
         col.identity_start = 1000
         col.identity_increment = 10
         assert CreateTableExpression(dialect, "ident_t", [col]).to_sql() == (
