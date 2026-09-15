@@ -11,6 +11,14 @@ if TYPE_CHECKING:
 
 class FirebirdDQLMixin:
 
+    def supports_fetch_with_ties(self) -> bool:
+        """Firebird does not support FETCH ... WITH TIES."""
+        return False
+
+    def supports_nulls_first_last(self) -> bool:
+        """Firebird supports explicit NULLS FIRST / NULLS LAST ordering."""
+        return True
+
     def format_query_statement(self, expr: Any) -> Tuple[str, tuple]:
         """Format a SELECT statement, qualifying a bare wildcard when mixed with columns.
 
@@ -65,6 +73,15 @@ class FirebirdDQLMixin:
         all_params = []
         if clause.limit is None and clause.offset is None:
             return "", ()
+
+        if getattr(clause, "with_ties", False):
+            from rhosocial.activerecord.backend.dialect.exceptions import UnsupportedFeatureError
+
+            raise UnsupportedFeatureError(
+                self.name,
+                "FETCH ... WITH TIES",
+                "Firebird does not support FETCH ... WITH TIES.",
+            )
 
         if _norm_version(self.version) >= (3, 0, 0):
             parts = []
