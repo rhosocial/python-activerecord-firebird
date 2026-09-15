@@ -12,7 +12,6 @@ if TYPE_CHECKING:
         InsertExpression,
         UpdateExpression,
         DeleteExpression,
-        ReturningClause,
         MergeExpression,
     )
     from ..expression.dml import (
@@ -124,16 +123,6 @@ class FirebirdDMLOperationMixin:
             all_params.extend(returning_params)
 
         return sql, tuple(all_params)
-
-    def format_returning_clause(self, clause: "ReturningClause") -> Tuple[str, tuple]:
-        all_params = []
-        expr_parts = []
-        for expr in clause.expressions:
-            expr_sql, expr_params = expr.to_sql()
-            expr_parts.append(expr_sql)
-            all_params.extend(expr_params)
-        returning_sql = f"RETURNING {', '.join(expr_parts)}"
-        return returning_sql, tuple(all_params)
 
     def format_update_or_insert(self, expr: "UpdateOrInsertExpression") -> Tuple[str, tuple]:
         table_name = expr._table_name

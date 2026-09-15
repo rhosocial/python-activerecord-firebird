@@ -12,3 +12,11 @@ class FirebirdReturningMixin:
 
     def supports_returning_delete(self) -> bool:
         return True
+
+    def supports_returning_alias(self) -> bool:
+        """Firebird RETURNING does not support a clause-level alias."""
+        return False
+
+    def supports_returning_single_row(self) -> bool:
+        """Firebird RETURNING is inherently single-row."""
+        return True

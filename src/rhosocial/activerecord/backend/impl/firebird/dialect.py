@@ -201,7 +201,7 @@ class FirebirdDialect(
     FirebirdCollationMixin,      # Before CollationMixin
     FirebirdIdentifierMixin,     # Before IdentifierMixin
     FirebirdCTEMixin,            # Before CTEMixin
-    FirebirdReturningMixin,      # Before ReturningMixin
+    FirebirdReturningMixin,
     FirebirdFilterClauseMixin,   # Before FilterClauseMixin
     FirebirdUpsertMixin,         # Before UpsertMixin
     FirebirdGroupingMixin,       # Before AdvancedGroupingMixin
