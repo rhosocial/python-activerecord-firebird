@@ -106,6 +106,8 @@ FIREBIRD_PROTOCOLS = [
 # Generic protocols FirebirdDialect intentionally does NOT implement.
 FIREBIRD_NOT_IMPLEMENTED = [
     # --- Intentional non-support ---
+    # The generic DatabaseSupport protocol is not composed by FirebirdDialect.
+    dialect_protocols.DatabaseSupport,
     # Firebird has no SQL/XML functions.
     dialect_protocols.SQLXMLSupport,
     dialect_protocols.SQLXMLParsingSupport,
