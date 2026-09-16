@@ -596,8 +596,7 @@ class FirebirdDialect(
 
 
 
-    def supports_generated_columns(self) -> bool:
-        return True
+    # supports_generated_columns is provided by FirebirdGeneratedColumnMixin
 
 
 
