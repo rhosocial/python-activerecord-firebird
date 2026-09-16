@@ -63,14 +63,12 @@ from rhosocial.activerecord.backend.dialect.mixins import (
     ExplainMixin,
     JoinMixin,
     ILIKEMixin,
-    FilterClauseMixin,
-    AdvancedGroupingMixin,
+
     ArrayMixin,
     LateralJoinMixin,
     MergeMixin,
     TemporalTableMixin,
-    QualifyClauseMixin,
-    OrderedSetAggregationMixin,
+
     GraphMixin,
     PartitionMixin,
     TruncateMixin,
@@ -251,14 +249,12 @@ class FirebirdDialect(
     ExplainMixin,
     JoinMixin,
     ILIKEMixin,
-    FilterClauseMixin,
-    AdvancedGroupingMixin,
+
     ArrayMixin,
     LateralJoinMixin,
     MergeMixin,
     TemporalTableMixin,
-    QualifyClauseMixin,
-    OrderedSetAggregationMixin,
+
     GraphMixin,
     PartitionMixin,
     TruncateMixin,
