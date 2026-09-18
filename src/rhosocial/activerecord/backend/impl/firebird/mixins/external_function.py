@@ -7,15 +7,22 @@ UDRs (``CREATE FUNCTION ... EXTERNAL``); the DECLARE ALTER/DROP statements
 below remain accepted for backwards compatibility.
 """
 
-from typing import Tuple
+from typing import Tuple, TYPE_CHECKING
 
 from .version_boundaries import _norm_version
 from rhosocial.activerecord.backend.dialect.exceptions import UnsupportedFeatureError
 
+if TYPE_CHECKING:
+    from ..expression.ddl.external_function import (
+        FirebirdCreateExternalFunctionExpression,
+        FirebirdAlterExternalFunctionExpression,
+        FirebirdDropExternalFunctionExpression,
+    )
+
 
 class FirebirdExternalFunctionMixin:
 
-    def format_create_external_function_statement(self, expr) -> Tuple[str, tuple]:
+    def format_create_external_function_statement(self, expr: "FirebirdCreateExternalFunctionExpression") -> Tuple[str, tuple]:
         """Format DECLARE EXTERNAL FUNCTION name [(params)] RETURNS type
         [BY VALUE] [FREE_IT] ENTRY_POINT 'entry' MODULE_NAME 'module'."""
         self._check_external_function_version("DECLARE EXTERNAL FUNCTION")
@@ -36,7 +43,7 @@ class FirebirdExternalFunctionMixin:
         parts.append(f"MODULE_NAME {self._quote_literal(expr.module_name)}")
         return " ".join(parts), ()
 
-    def format_alter_external_function_statement(self, expr) -> Tuple[str, tuple]:
+    def format_alter_external_function_statement(self, expr: "FirebirdAlterExternalFunctionExpression") -> Tuple[str, tuple]:
         """Format ALTER EXTERNAL FUNCTION name [ENTRY_POINT ...] [MODULE_NAME ...]."""
         self._check_external_function_version("ALTER EXTERNAL FUNCTION")
 
@@ -47,7 +54,7 @@ class FirebirdExternalFunctionMixin:
             parts.append(f"MODULE_NAME {self._quote_literal(expr.module_name)}")
         return " ".join(parts), ()
 
-    def format_drop_external_function_statement(self, expr) -> Tuple[str, tuple]:
+    def format_drop_external_function_statement(self, expr: "FirebirdDropExternalFunctionExpression") -> Tuple[str, tuple]:
         """Format DROP EXTERNAL FUNCTION name."""
         self._check_external_function_version("DROP EXTERNAL FUNCTION")
         return f"DROP EXTERNAL FUNCTION {self.format_identifier(expr.function_name)}", ()

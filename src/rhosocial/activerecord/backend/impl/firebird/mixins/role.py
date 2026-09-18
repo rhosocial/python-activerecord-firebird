@@ -6,12 +6,19 @@ gated here at ``(2, 5, 0)`` while ``ALTER ROLE`` (SET/DROP SYSTEM PRIVILEGES,
 SET/DROP AUTO ADMIN MAPPING) requires Firebird 3.0.
 """
 
-from typing import Tuple
+from typing import Tuple, TYPE_CHECKING
 
 from .version_boundaries import _norm_version
 from rhosocial.activerecord.backend.dialect.exceptions import UnsupportedFeatureError
 
 from ..expression.ddl.role import FirebirdRoleAlterClause
+
+if TYPE_CHECKING:
+    from ..expression.ddl.role import (
+        FirebirdCreateRoleExpression,
+        FirebirdAlterRoleExpression,
+        FirebirdDropRoleExpression,
+    )
 
 
 class FirebirdRoleMixin:
@@ -28,12 +35,12 @@ class FirebirdRoleMixin:
     def supports_drop_role(self) -> bool:
         return _norm_version(self.version) >= (2, 5, 0)
 
-    def format_create_role_statement(self, expr) -> Tuple[str, tuple]:
+    def format_create_role_statement(self, expr: "FirebirdCreateRoleExpression") -> Tuple[str, tuple]:
         """Format CREATE ROLE name."""
         self._check_role_version("CREATE ROLE", (2, 5, 0))
         return f"CREATE ROLE {self.format_identifier(expr.role_name)}", ()
 
-    def format_alter_role_statement(self, expr) -> Tuple[str, tuple]:
+    def format_alter_role_statement(self, expr: "FirebirdAlterRoleExpression") -> Tuple[str, tuple]:
         """Format ALTER ROLE name <clause> (Firebird 3.0+).
 
         Firebird 5.0 ALTER ROLE supports: ``SET SYSTEM PRIVILEGES TO <list>``,
@@ -56,7 +63,7 @@ class FirebirdRoleMixin:
             )
         return f"ALTER ROLE {name} {expr.clause.value}", ()
 
-    def format_drop_role_statement(self, expr) -> Tuple[str, tuple]:
+    def format_drop_role_statement(self, expr: "FirebirdDropRoleExpression") -> Tuple[str, tuple]:
         """Format DROP ROLE name."""
         self._check_role_version("DROP ROLE", (2, 5, 0))
         return f"DROP ROLE {self.format_identifier(expr.role_name)}", ()

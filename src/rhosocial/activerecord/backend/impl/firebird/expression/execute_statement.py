@@ -12,7 +12,7 @@ a PSQL variable such as ``:sql_param``) or a to_sql-capable expression.
 Bound values for the dynamic statement are supplied via ``params``.
 """
 
-from typing import TYPE_CHECKING, Any, List, Optional, Sequence, Tuple, Union
+from typing import TYPE_CHECKING, Any, List, Optional, Sequence, Union
 
 from rhosocial.activerecord.backend.expression.bases import BaseExpression
 
@@ -38,8 +38,9 @@ class FirebirdExecuteStatementExpression(BaseExpression):
         self._caller_privileges: bool = caller_privileges
         self._params: List[Any] = list(params) if params else []
 
-    def to_sql(self) -> Tuple[str, tuple]:
-        return self.dialect.format_execute_statement(self)
+    @property
+    def format_method(self) -> str:
+        return "format_execute_statement"
 
 
 __all__ = ["FirebirdExecuteStatementExpression"]

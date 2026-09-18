@@ -8,16 +8,23 @@ wrapped in a ``BEGIN ... END`` block (mirroring
 ``FirebirdDMLOperationMixin.format_execute_block``).
 """
 
-from typing import Any, List, Tuple
+from typing import Any, List, Tuple, TYPE_CHECKING
 
 from rhosocial.activerecord.backend.dialect.exceptions import UnsupportedFeatureError
 
 from ..expression.ddl.routine import FirebirdRoutineMode
 
+if TYPE_CHECKING:
+    from ..expression.ddl.routine import (
+        FirebirdCreateProcedureExpression,
+        FirebirdCreateFunctionExpression,
+        FirebirdDropRoutineExpression,
+    )
+
 
 class FirebirdRoutineMixin:
 
-    def format_create_procedure_statement(self, expr) -> Tuple[str, tuple]:
+    def format_create_procedure_statement(self, expr: "FirebirdCreateProcedureExpression") -> Tuple[str, tuple]:
         """Format CREATE [OR ALTER | RECREATE] PROCEDURE ... AS <body>."""
         self._check_routine_version("CREATE PROCEDURE", (2, 5, 0))
 
@@ -30,7 +37,7 @@ class FirebirdRoutineMixin:
         parts.append(self._format_psql_body(expr.body))
         return " ".join(parts), ()
 
-    def format_create_function_statement(self, expr) -> Tuple[str, tuple]:
+    def format_create_function_statement(self, expr: "FirebirdCreateFunctionExpression") -> Tuple[str, tuple]:
         """Format CREATE [OR ALTER | RECREATE] FUNCTION ... RETURNS type AS <body>.
 
         Overrides the core ``FunctionMixin`` renderer so the Firebird PSQL
@@ -48,7 +55,7 @@ class FirebirdRoutineMixin:
         parts.append(self._format_psql_body(expr.body))
         return " ".join(parts), ()
 
-    def format_drop_routine_statement(self, expr) -> Tuple[str, tuple]:
+    def format_drop_routine_statement(self, expr: "FirebirdDropRoutineExpression") -> Tuple[str, tuple]:
         """Format DROP / CREATE OR ALTER / RECREATE for a PROCEDURE or FUNCTION."""
         minimum = (3, 0, 0) if expr.routine_type == "FUNCTION" else (2, 5, 0)
         self._check_routine_version(f"{expr.routine_type} routine DDL", minimum)

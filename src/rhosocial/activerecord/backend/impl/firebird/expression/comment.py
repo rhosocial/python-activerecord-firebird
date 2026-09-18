@@ -10,7 +10,7 @@ separation pattern.
 """
 
 from enum import Enum
-from typing import TYPE_CHECKING, Optional, Tuple
+from typing import TYPE_CHECKING, Optional
 
 from rhosocial.activerecord.backend.expression.bases import BaseExpression
 
@@ -59,8 +59,9 @@ class FirebirdCommentExpression(BaseExpression):
         self.object_name: str = object_name
         self.comment: Optional[str] = comment
 
-    def to_sql(self) -> Tuple[str, tuple]:
-        return self.dialect.format_comment_statement(self)
+    @property
+    def format_method(self) -> str:
+        return "format_comment_statement"
 
 
 __all__ = ["FirebirdCommentObjectType", "FirebirdCommentExpression"]

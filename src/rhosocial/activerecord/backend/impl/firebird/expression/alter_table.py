@@ -14,7 +14,7 @@ Each action delegates SQL generation to the dialect's ``format_*_action``
 method, following the Expression-Dialect separation pattern.
 """
 
-from typing import TYPE_CHECKING, Any, Tuple
+from typing import TYPE_CHECKING, Any
 
 from rhosocial.activerecord.backend.expression.statements.ddl_alter import AlterTableAction
 
@@ -32,8 +32,9 @@ class SetGenerated(AlterTableAction):
         self.column_name: str = column_name
         self.generated: str = generated
 
-    def to_sql(self) -> Tuple[str, tuple]:
-        return self.dialect.format_set_generated_action(self)
+    @property
+    def format_method(self) -> str:
+        return "format_set_generated_action"
 
 
 class RestartIdentity(AlterTableAction):
@@ -48,8 +49,9 @@ class RestartIdentity(AlterTableAction):
         self.column_name: str = column_name
         self.restart_with: Any = restart_with
 
-    def to_sql(self) -> Tuple[str, tuple]:
-        return self.dialect.format_restart_identity_action(self)
+    @property
+    def format_method(self) -> str:
+        return "format_restart_identity_action"
 
 
 class SetIncrement(AlterTableAction):
@@ -62,8 +64,9 @@ class SetIncrement(AlterTableAction):
         self.column_name: str = column_name
         self.increment: Any = increment
 
-    def to_sql(self) -> Tuple[str, tuple]:
-        return self.dialect.format_set_increment_action(self)
+    @property
+    def format_method(self) -> str:
+        return "format_set_increment_action"
 
 
 class DropIdentity(AlterTableAction):
@@ -75,8 +78,9 @@ class DropIdentity(AlterTableAction):
         super().__init__(dialect)
         self.column_name: str = column_name
 
-    def to_sql(self) -> Tuple[str, tuple]:
-        return self.dialect.format_drop_identity_action(self)
+    @property
+    def format_method(self) -> str:
+        return "format_drop_identity_action"
 
 
 class SetPosition(AlterTableAction):
@@ -89,8 +93,9 @@ class SetPosition(AlterTableAction):
         self.column_name: str = column_name
         self.position: Any = position
 
-    def to_sql(self) -> Tuple[str, tuple]:
-        return self.dialect.format_set_position_action(self)
+    @property
+    def format_method(self) -> str:
+        return "format_set_position_action"
 
 
 __all__ = [

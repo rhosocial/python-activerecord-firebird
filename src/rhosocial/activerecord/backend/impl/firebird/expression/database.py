@@ -9,7 +9,7 @@ methods, following the Expression-Dialect separation pattern.
 """
 
 from enum import Enum
-from typing import TYPE_CHECKING, Optional, Tuple, Union
+from typing import TYPE_CHECKING, Optional, Union
 
 from rhosocial.activerecord.backend.expression.bases import BaseExpression
 
@@ -56,8 +56,9 @@ class FirebirdCreateDatabaseExpression(BaseExpression):
         self.force_write: bool = force_write
         self.sql_security: Optional[Union[FirebirdDatabaseSecurityMode, str]] = sql_security
 
-    def to_sql(self) -> Tuple[str, tuple]:
-        return self.dialect.format_create_database_statement(self)
+    @property
+    def format_method(self) -> str:
+        return "format_create_database_statement"
 
 
 class FirebirdDropDatabaseExpression(BaseExpression):
@@ -66,8 +67,9 @@ class FirebirdDropDatabaseExpression(BaseExpression):
     def __init__(self, dialect: "SQLDialectBase"):
         super().__init__(dialect)
 
-    def to_sql(self) -> Tuple[str, tuple]:
-        return self.dialect.format_drop_database_statement(self)
+    @property
+    def format_method(self) -> str:
+        return "format_drop_database_statement"
 
 
 __all__ = [

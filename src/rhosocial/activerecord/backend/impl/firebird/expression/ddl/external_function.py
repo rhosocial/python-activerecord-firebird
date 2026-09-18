@@ -9,7 +9,7 @@ to the dialect's ``format_*_external_function_statement`` methods, following
 the Expression-Dialect separation pattern.
 """
 
-from typing import TYPE_CHECKING, List, Optional, Tuple
+from typing import TYPE_CHECKING, List, Optional
 
 from rhosocial.activerecord.backend.expression.bases import BaseExpression
 
@@ -41,8 +41,9 @@ class FirebirdCreateExternalFunctionExpression(BaseExpression):
         self.module_name: str = module_name
         self.free_it: bool = free_it
 
-    def to_sql(self) -> Tuple[str, tuple]:
-        return self.dialect.format_create_external_function_statement(self)
+    @property
+    def format_method(self) -> str:
+        return "format_create_external_function_statement"
 
 
 class FirebirdAlterExternalFunctionExpression(BaseExpression):
@@ -60,8 +61,9 @@ class FirebirdAlterExternalFunctionExpression(BaseExpression):
         self.entry_point: Optional[str] = entry_point
         self.module_name: Optional[str] = module_name
 
-    def to_sql(self) -> Tuple[str, tuple]:
-        return self.dialect.format_alter_external_function_statement(self)
+    @property
+    def format_method(self) -> str:
+        return "format_alter_external_function_statement"
 
 
 class FirebirdDropExternalFunctionExpression(BaseExpression):
@@ -71,8 +73,9 @@ class FirebirdDropExternalFunctionExpression(BaseExpression):
         super().__init__(dialect)
         self.function_name: str = function_name
 
-    def to_sql(self) -> Tuple[str, tuple]:
-        return self.dialect.format_drop_external_function_statement(self)
+    @property
+    def format_method(self) -> str:
+        return "format_drop_external_function_statement"
 
 
 __all__ = [

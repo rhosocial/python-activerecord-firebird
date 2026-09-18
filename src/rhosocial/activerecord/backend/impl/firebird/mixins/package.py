@@ -6,15 +6,22 @@ Packages were introduced in Firebird 3.0; both the header
 are gated at ``(3, 0, 0)``.
 """
 
-from typing import Tuple
+from typing import Tuple, TYPE_CHECKING
 
 from .version_boundaries import _norm_version
 from rhosocial.activerecord.backend.dialect.exceptions import UnsupportedFeatureError
 
+if TYPE_CHECKING:
+    from ..expression.ddl.package import (
+        FirebirdCreatePackageExpression,
+        FirebirdCreatePackageBodyExpression,
+        FirebirdDropPackageExpression,
+    )
+
 
 class FirebirdPackageMixin:
 
-    def format_create_package_statement(self, expr) -> Tuple[str, tuple]:
+    def format_create_package_statement(self, expr: "FirebirdCreatePackageExpression") -> Tuple[str, tuple]:
         """Format CREATE PACKAGE name AS <declarations>."""
         self._check_package_version("CREATE PACKAGE")
         parts = ["CREATE PACKAGE", self.format_identifier(expr.package_name)]
@@ -22,7 +29,7 @@ class FirebirdPackageMixin:
             parts.append(f"AS {expr.body}")
         return " ".join(parts), ()
 
-    def format_create_package_body_statement(self, expr) -> Tuple[str, tuple]:
+    def format_create_package_body_statement(self, expr: "FirebirdCreatePackageBodyExpression") -> Tuple[str, tuple]:
         """Format CREATE PACKAGE BODY name AS <implementations>."""
         self._check_package_version("CREATE PACKAGE BODY")
         parts = ["CREATE PACKAGE BODY", self.format_identifier(expr.package_name)]
@@ -30,7 +37,7 @@ class FirebirdPackageMixin:
             parts.append(f"AS {expr.body}")
         return " ".join(parts), ()
 
-    def format_drop_package_statement(self, expr) -> Tuple[str, tuple]:
+    def format_drop_package_statement(self, expr: "FirebirdDropPackageExpression") -> Tuple[str, tuple]:
         """Format DROP PACKAGE [BODY] name."""
         self._check_package_version("DROP PACKAGE")
         if getattr(expr, "body", False):
