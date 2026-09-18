@@ -14,7 +14,7 @@ clauses that the core ``DDLColumnMixin`` does not know about:
 IDENTITY`` (Firebird 3.0+) and ``POSITION`` (Firebird 4.0+).
 """
 
-from typing import Tuple
+from typing import Any, Tuple
 
 from .version_boundaries import _norm_version
 from rhosocial.activerecord.backend.dialect.exceptions import UnsupportedFeatureError
@@ -32,7 +32,7 @@ class FirebirdAlterTableModifierMixin:
     def supports_drop_constraint_if_exists(self) -> bool:
         return False
 
-    def format_add_column_action(self, action) -> Tuple[str, tuple]:
+    def format_add_column_action(self, action: Any) -> Tuple[str, tuple]:
         """Format ALTER TABLE ADD COLUMN for Firebird.
 
         Firebird <= 5.0.4 does not support ``ADD COLUMN IF NOT EXISTS``.
@@ -50,7 +50,7 @@ class FirebirdAlterTableModifierMixin:
             )
         return super().format_add_column_action(action)
 
-    def format_drop_column_action(self, action) -> Tuple[str, tuple]:
+    def format_drop_column_action(self, action: Any) -> Tuple[str, tuple]:
         """Format ALTER TABLE DROP COLUMN for Firebird.
 
         Firebird <= 5.0.4 does not support ``DROP COLUMN IF EXISTS``.
@@ -66,7 +66,7 @@ class FirebirdAlterTableModifierMixin:
             )
         return super().format_drop_column_action(action)
 
-    def format_drop_table_constraint_action(self, action) -> Tuple[str, tuple]:
+    def format_drop_table_constraint_action(self, action: Any) -> Tuple[str, tuple]:
         """Format ALTER TABLE DROP CONSTRAINT for Firebird.
 
         Firebird <= 5.0.4 does not support ``DROP CONSTRAINT IF EXISTS``.
@@ -82,7 +82,7 @@ class FirebirdAlterTableModifierMixin:
             )
         return super().format_drop_table_constraint_action(action)
 
-    def format_set_generated_action(self, action) -> Tuple[str, tuple]:
+    def format_set_generated_action(self, action: Any) -> Tuple[str, tuple]:
         """Format ALTER COLUMN ... SET GENERATED {ALWAYS | BY DEFAULT}.
 
         Identity column clause, available since Firebird 3.0.
@@ -94,7 +94,7 @@ class FirebirdAlterTableModifierMixin:
             (),
         )
 
-    def format_restart_identity_action(self, action) -> Tuple[str, tuple]:
+    def format_restart_identity_action(self, action: Any) -> Tuple[str, tuple]:
         """Format ALTER COLUMN ... RESTART [WITH value].
 
         Resets the current value of an identity column; Firebird 3.0+.
@@ -105,7 +105,7 @@ class FirebirdAlterTableModifierMixin:
             return f"ALTER COLUMN {col} RESTART WITH {action.restart_with}", ()
         return f"ALTER COLUMN {col} RESTART", ()
 
-    def format_set_increment_action(self, action) -> Tuple[str, tuple]:
+    def format_set_increment_action(self, action: Any) -> Tuple[str, tuple]:
         """Format ALTER COLUMN ... SET INCREMENT [BY] n.
 
         Changes the identity increment; Firebird 3.0+.
@@ -117,7 +117,7 @@ class FirebirdAlterTableModifierMixin:
             (),
         )
 
-    def format_drop_identity_action(self, action) -> Tuple[str, tuple]:
+    def format_drop_identity_action(self, action: Any) -> Tuple[str, tuple]:
         """Format ALTER COLUMN ... DROP IDENTITY.
 
         Converts an identity column to a plain column; Firebird 3.0+.
@@ -125,7 +125,7 @@ class FirebirdAlterTableModifierMixin:
         self._check_identity_version("DROP IDENTITY")
         return f"ALTER COLUMN {self.format_identifier(action.column_name)} DROP IDENTITY", ()
 
-    def format_set_position_action(self, action) -> Tuple[str, tuple]:
+    def format_set_position_action(self, action: Any) -> Tuple[str, tuple]:
         """Format ALTER COLUMN ... POSITION n.
 
         Reorders a column within the table; Firebird 4.0+.

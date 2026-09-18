@@ -49,15 +49,15 @@ class TestFirebirdTzTypes:
 class TestFirebirdDecFloat:
     def test_decfloat_16(self):
         dialect = FirebirdDialect((4, 0, 0))
-        assert dialect.format_data_type(FirebirdDecFloatType()) == ("DECFLOAT(16)", ())
+        assert dialect.format_data_type(FirebirdDecFloatType(dialect)) == ("DECFLOAT(16)", ())
 
     def test_decfloat_34(self):
         dialect = FirebirdDialect((4, 0, 0))
-        assert dialect.format_data_type(FirebirdDecFloatType(34)) == ("DECFLOAT(34)", ())
+        assert dialect.format_data_type(FirebirdDecFloatType(precision=34)) == ("DECFLOAT(34)", ())
 
     def test_decfloat_invalid_precision(self):
         with pytest.raises(ValueError):
-            FirebirdDecFloatType(20)
+            FirebirdDecFloatType(precision=20)
 
     def test_decfloat_bound_to_sql(self):
         dialect = FirebirdDialect((4, 0, 0))
@@ -80,8 +80,8 @@ class TestFirebirdTypeVersionGating:
         for data_type in (
             FirebirdTimeStampTzType(),
             FirebirdTimeTzType(),
-            FirebirdDecFloatType(),
-            FirebirdDecFloatType(34),
+            FirebirdDecFloatType(dialect),
+            FirebirdDecFloatType(precision=34),
             FirebirdInt128Type(),
         ):
             with pytest.raises(UnsupportedFeatureError):
@@ -92,7 +92,7 @@ class TestFirebirdTypeVersionGating:
         for data_type in (
             FirebirdTimeStampTzType(),
             FirebirdTimeTzType(),
-            FirebirdDecFloatType(),
+            FirebirdDecFloatType(dialect),
             FirebirdInt128Type(),
         ):
             with pytest.raises(UnsupportedFeatureError):
@@ -103,7 +103,7 @@ class TestFirebirdTypeVersionGating:
         assert FirebirdDialect((3, 0, 0)).supports_decfloat() is False
 
 
-class TestFirebirdNumeric38:
-    def test_numeric_38_2(self):
+class TestFirebirdNumeric18:
+    def test_numeric_18_2(self):
         dialect = FirebirdDialect((4, 0, 0))
-        assert dialect.format_data_type(DecimalType(38, 2)) == ("DECIMAL(38, 2)", ())
+        assert dialect.format_data_type(DecimalType(precision=18, scale=2)) == ("DECIMAL(18, 2)", ())

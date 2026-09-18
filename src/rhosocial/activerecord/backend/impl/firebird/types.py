@@ -1,7 +1,29 @@
 # src/rhosocial/activerecord/backend/impl/firebird/types.py
-"""Firebird-specific type definitions and helpers."""
+"""
+Firebird-specific type definitions and helpers.
+
+This module re-exports Firebird-specific DataType subclasses from
+``expression.types`` for convenient access, and provides helper classes
+for Firebird BLOB, ARRAY, and DOMAIN types.
+
+Usage::
+
+    from rhosocial.activerecord.backend.impl.firebird.types import FirebirdDecFloatType
+    from rhosocial.activerecord.backend.impl.firebird.types import FirebirdBlobType
+"""
 
 from typing import Optional
+
+from .expression.types import (
+    FirebirdBlobSubType,
+    FirebirdDecimalType,
+    FirebirdDecFloatType,
+    FirebirdDoubleType,
+    FirebirdFloatType,
+    FirebirdInt128Type,
+    FirebirdTimeTzType,
+    FirebirdTimeStampTzType,
+)
 
 
 class FirebirdBlobType:
@@ -97,10 +119,3 @@ class FirebirdDomainType:
         if self.check:
             parts.append(f"CHECK ({self.check})")
         return ' '.join(parts)
-
-
-__all__ = [
-    "FirebirdBlobType",
-    "FirebirdArrayType",
-    "FirebirdDomainType",
-]

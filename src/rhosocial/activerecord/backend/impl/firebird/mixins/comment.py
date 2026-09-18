@@ -6,12 +6,15 @@ domains, exceptions, triggers, generators, ...) and is available since
 Firebird 2.5, gated here at ``(2, 5, 0)``.
 """
 
-from typing import Tuple
+from typing import Tuple, TYPE_CHECKING
 
 from .version_boundaries import _norm_version
 from rhosocial.activerecord.backend.dialect.exceptions import UnsupportedFeatureError
 
 from ..expression.comment import FirebirdCommentObjectType
+
+if TYPE_CHECKING:
+    from ..expression.comment import FirebirdCommentExpression
 
 
 class FirebirdCommentMixin:
@@ -19,7 +22,7 @@ class FirebirdCommentMixin:
     def supports_comment_on(self) -> bool:
         return _norm_version(self.version) >= (2, 5, 0)
 
-    def format_comment_statement(self, expr) -> Tuple[str, tuple]:
+    def format_comment_statement(self, expr: "FirebirdCommentExpression") -> Tuple[str, tuple]:
         """Format COMMENT ON <object> IS 'text' (or IS NULL to remove)."""
         self._check_comment_version("COMMENT ON")
 

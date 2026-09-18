@@ -6,10 +6,13 @@ set (PAGE_SIZE, DEFAULT CHARACTER SET, COLLATION, DIALECT, FORCE WRITE,
 SQL SECURITY).  Both statements are gated at ``(2, 5, 0)``.
 """
 
-from typing import Tuple
+from typing import Tuple, TYPE_CHECKING
 
 from .version_boundaries import _norm_version
 from rhosocial.activerecord.backend.dialect.exceptions import UnsupportedFeatureError
+
+if TYPE_CHECKING:
+    from ..expression.database import FirebirdCreateDatabaseExpression, FirebirdDropDatabaseExpression
 
 
 class FirebirdDatabaseMixin:
@@ -20,7 +23,7 @@ class FirebirdDatabaseMixin:
     def supports_drop_database(self) -> bool:
         return _norm_version(self.version) >= (2, 5, 0)
 
-    def format_create_database_statement(self, expr) -> Tuple[str, tuple]:
+    def format_create_database_statement(self, expr: "FirebirdCreateDatabaseExpression") -> Tuple[str, tuple]:
         """Format CREATE DATABASE 'file' with the configured options."""
         self._check_database_version("CREATE DATABASE")
 
@@ -44,7 +47,7 @@ class FirebirdDatabaseMixin:
             parts.append(f"SQL SECURITY {mode}")
         return " ".join(parts), ()
 
-    def format_drop_database_statement(self, expr) -> Tuple[str, tuple]:
+    def format_drop_database_statement(self, expr: "FirebirdDropDatabaseExpression") -> Tuple[str, tuple]:
         """Format DROP DATABASE."""
         self._check_database_version("DROP DATABASE")
         return "DROP DATABASE", ()

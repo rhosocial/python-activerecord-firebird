@@ -1,7 +1,7 @@
 # src/rhosocial/activerecord/backend/impl/firebird/expression/generator.py
 """Firebird GENERATOR/SEQUENCE expressions."""
 
-from typing import TYPE_CHECKING, Tuple
+from typing import TYPE_CHECKING
 
 from rhosocial.activerecord.backend.expression.bases import BaseExpression
 
@@ -17,8 +17,9 @@ class GenIdExpression(BaseExpression):
         self._generator_name = generator_name
         self._step = step
 
-    def to_sql(self) -> Tuple[str, tuple]:
-        return self._dialect.format_gen_id(self._generator_name, self._step)
+    @property
+    def format_method(self) -> str:
+        return "format_gen_id"
 
     def __repr__(self) -> str:
         return f"GenIdExpression({self._generator_name}, step={self._step})"
@@ -31,8 +32,9 @@ class NextValueForExpression(BaseExpression):
         super().__init__(dialect)
         self._sequence_name = sequence_name
 
-    def to_sql(self) -> Tuple[str, tuple]:
-        return self._dialect.format_next_value_for(self._sequence_name)
+    @property
+    def format_method(self) -> str:
+        return "format_next_value_for"
 
     def __repr__(self) -> str:
         return f"NextValueForExpression({self._sequence_name})"

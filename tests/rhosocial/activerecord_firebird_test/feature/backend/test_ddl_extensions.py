@@ -43,7 +43,7 @@ class TestDomainDDL:
 
     def test_create_domain_minimal(self, dialect):
         sql, _ = FirebirdCreateDomainExpression(
-            dialect, "flag", data_type=IntegerType()
+            dialect, "flag", data_type=IntegerType(dialect)
         ).to_sql()
         assert sql == "CREATE DOMAIN \"FLAG\" AS INTEGER"
 

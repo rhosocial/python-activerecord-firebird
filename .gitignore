@@ -147,10 +147,15 @@ cython_debug/
 
 # Claude Code temporary files
 .claude/tmp/
-.claude/plan/
+.claude/plan*/
 
 # Scripts (local only)
 scripts/
 
 # Test configuration (local environment)
 tests/config/
+# Keep the repository-maintained preflight scripts trackable
+!scripts/
+scripts/*
+!scripts/preflight.sh
+!scripts/install-git-hooks.sh

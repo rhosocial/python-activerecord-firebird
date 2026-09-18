@@ -40,6 +40,12 @@ from .ddl import (
     FirebirdRoleAlterClause,
     FirebirdRoutineMode,
 )
+from .blob import BlobColumnExpression, BlobLiteralExpression
+from .dml import (
+    AutonomousTransactionDoExpression,
+    ExecuteBlockExpression,
+    UpdateOrInsertExpression,
+)
 from .execute_statement import FirebirdExecuteStatementExpression
 from .generator import GenIdExpression, NextValueForExpression
 from .types import (
@@ -69,6 +75,11 @@ __all__ = [
     "FirebirdTimeTzType",
     "FirebirdDecFloatType",
     "FirebirdInt128Type",
+    "BlobColumnExpression",
+    "BlobLiteralExpression",
+    "UpdateOrInsertExpression",
+    "AutonomousTransactionDoExpression",
+    "ExecuteBlockExpression",
     "FirebirdCreateDomainExpression",
     "FirebirdAlterDomainExpression",
     "FirebirdDomainAlterMode",

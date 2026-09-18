@@ -25,6 +25,7 @@ from rhosocial.activerecord.backend.expression.statements import (
     ValuesSource,
     ReferentialAction,
 )
+from rhosocial.activerecord.backend.expression.statements.ddl_sequence import CreateSequenceExpression
 from rhosocial.activerecord.backend.expression.types import (
     BigIntType,
     BooleanType,
@@ -45,6 +46,13 @@ from rhosocial.activerecord.backend.expression.types import (
 import rhosocial.activerecord.backend.expression as E
 
 from rhosocial.activerecord.backend.impl.firebird.dialect import FirebirdDialect
+from rhosocial.activerecord.backend.impl.firebird.expression.dml import (
+    UpdateOrInsertExpression,
+)
+from rhosocial.activerecord.backend.impl.firebird.expression.generator import (
+    GenIdExpression,
+    NextValueForExpression,
+)
 from rhosocial.activerecord.backend.impl.firebird.expression.types import (
     FirebirdDecFloatType,
     FirebirdInt128Type,
@@ -59,8 +67,8 @@ def dialect() -> FirebirdDialect:
     return FirebirdDialect((4, 0))
 
 
-def _column(name, data_type, *constraints):
-    return ColumnDefinition(name, data_type, list(constraints))
+def _column(dialect, name, data_type, *constraints):
+    return ColumnDefinition(dialect, name, data_type, list(constraints))
 
 
 class TestFB4TypeGateSupportedSide:
@@ -71,17 +79,16 @@ class TestFB4TypeGateSupportedSide:
     """
 
     @pytest.mark.parametrize("version", [(4, 0, 0), (4, 0)])
-    @pytest.mark.parametrize("data_type,expected", [
-        (FirebirdTimeStampTzType(), "TIMESTAMP WITH TIME ZONE"),
-        (FirebirdTimeTzType(), "TIME WITH TIME ZONE"),
-        (FirebirdDecFloatType(16), "DECFLOAT(16)"),
-        (FirebirdDecFloatType(34), "DECFLOAT(34)"),
-        (FirebirdInt128Type(), "INT128"),
+    @pytest.mark.parametrize("data_type_cls,kwargs,expected", [
+        (FirebirdTimeStampTzType, {}, "TIMESTAMP WITH TIME ZONE"),
+        (FirebirdTimeTzType, {}, "TIME WITH TIME ZONE"),
+        (FirebirdDecFloatType, {"precision": 16}, "DECFLOAT(16)"),
+        (FirebirdDecFloatType, {"precision": 34}, "DECFLOAT(34)"),
+        (FirebirdInt128Type, {}, "INT128"),
     ])
-    def test_fb4_types_render_on_4_0(self, version, data_type, expected):
-        sql = FirebirdDialect(version).format_data_type(data_type)
+    def test_fb4_types_render_on_4_0(self, version, data_type_cls, kwargs, expected):
+        sql = FirebirdDialect(version).format_data_type(data_type_cls(**kwargs))
         assert sql == (expected, ())
-        assert data_type.to_sql(FirebirdDialect(version)) == (expected, ())
 
     def test_support_flags_agree_with_rendering(self):
         for version in ((4, 0, 0), (4, 0)):
@@ -91,14 +98,15 @@ class TestFB4TypeGateSupportedSide:
 class TestFB4TypeGateUnsupportedSide:
     """The same types must raise on a (3, 0, 0) dialect."""
 
-    @pytest.mark.parametrize("data_type,feature", [
-        (FirebirdTimeStampTzType(), "TIMESTAMP WITH TIME ZONE"),
-        (FirebirdTimeTzType(), "TIME WITH TIME ZONE"),
-        (FirebirdDecFloatType(), "DECFLOAT"),
-        (FirebirdInt128Type(), "INT128"),
+    @pytest.mark.parametrize("data_type_cls,kwargs,feature", [
+        (FirebirdTimeStampTzType, {}, "TIMESTAMP WITH TIME ZONE"),
+        (FirebirdTimeTzType, {}, "TIME WITH TIME ZONE"),
+        (FirebirdDecFloatType, {"precision": 16}, "DECFLOAT"),
+        (FirebirdInt128Type, {}, "INT128"),
     ])
-    def test_fb4_types_raise_on_3_0(self, data_type, feature):
+    def test_fb4_types_raise_on_3_0(self, data_type_cls, kwargs, feature):
         dialect = FirebirdDialect((3, 0))
+        data_type = data_type_cls(dialect=dialect, **kwargs)
         with pytest.raises(UnsupportedFeatureError) as excinfo:
             dialect.format_data_type(data_type)
         assert feature in str(excinfo.value)
@@ -108,32 +116,34 @@ class TestFB4TypeGateUnsupportedSide:
 
 
 class TestBaseDataTypeRendering:
-    @pytest.mark.parametrize("data_type,expected", [
-        (IntegerType(), "INTEGER"),
-        (BigIntType(), "BIGINT"),
-        (SmallIntType(), "SMALLINT"),
-        (FloatType(), "FLOAT"),
-        (DoubleType(), "DOUBLE PRECISION"),
-        (BooleanType(), "BOOLEAN"),
-        (VarCharType(50), "VARCHAR(50)"),
-        (VarCharType(None), "VARCHAR(255)"),
-        (CharType(10), "CHAR(10)"),
-        (CharType(None), "CHAR(1)"),
-        (TextType(), "BLOB SUB_TYPE TEXT"),
-        (DateTimeType(), "TIMESTAMP"),
-        (TimestampType(), "TIMESTAMP"),
-        (DateType(), "DATE"),
-        (TimeType(), "TIME"),
+    @pytest.mark.parametrize("data_type_cls,kwargs,expected", [
+        (IntegerType, {}, "INTEGER"),
+        (BigIntType, {}, "BIGINT"),
+        (SmallIntType, {}, "SMALLINT"),
+        (FloatType, {}, "FLOAT"),
+        (DoubleType, {}, "DOUBLE PRECISION"),
+        (BooleanType, {}, "BOOLEAN"),
+        (VarCharType, {"length": 50}, "VARCHAR(50)"),
+        (VarCharType, {}, "VARCHAR(255)"),
+        (CharType, {"length": 10}, "CHAR(10)"),
+        (CharType, {}, "CHAR(1)"),
+        (TextType, {}, "BLOB SUB_TYPE TEXT"),
+        (DateTimeType, {}, "TIMESTAMP"),
+        (TimestampType, {}, "TIMESTAMP"),
+        (DateType, {}, "DATE"),
+        (TimeType, {}, "TIME"),
     ])
-    def test_format_data_type(self, dialect, data_type, expected):
+    def test_format_data_type(self, dialect, data_type_cls, kwargs, expected):
+        data_type = data_type_cls(dialect=dialect, **kwargs)
         assert dialect.format_data_type(data_type) == (expected, ())
 
-    @pytest.mark.parametrize("data_type,expected", [
-        (DecimalType(precision=10, scale=2), "DECIMAL(10, 2)"),
-        (DecimalType(precision=18), "DECIMAL(18)"),
-        (DecimalType(), "DECIMAL"),
+    @pytest.mark.parametrize("kwargs,expected", [
+        ({"precision": 10, "scale": 2}, "DECIMAL(10, 2)"),
+        ({"precision": 18}, "DECIMAL(18)"),
+        ({}, "DECIMAL"),
     ])
-    def test_decimal_variants(self, dialect, data_type, expected):
+    def test_decimal_variants(self, dialect, kwargs, expected):
+        data_type = DecimalType(dialect=dialect, **kwargs)
         assert dialect.format_data_type(data_type) == (expected, ())
 
     def test_parse_type_integer_family(self, dialect):
@@ -159,18 +169,18 @@ class TestBaseDataTypeRendering:
         assert parsed.scale == scale
 
     def test_parse_type_string_family(self, dialect):
-        assert dialect.parse_type("VARCHAR(50)") == VarCharType(50)
-        assert dialect.parse_type("VARCHAR") == VarCharType(255)
-        assert dialect.parse_type("CHAR(10)") == CharType(10)
-        assert dialect.parse_type("CHARACTER(5)") == CharType(5)
-        assert dialect.parse_type("CHAR") == CharType(1)
+        assert dialect.parse_type("VARCHAR(50)") == VarCharType(length=50)
+        assert dialect.parse_type("VARCHAR") == VarCharType(length=255)
+        assert dialect.parse_type("CHAR(10)") == CharType(length=10)
+        assert dialect.parse_type("CHARACTER(5)") == CharType(length=5)
+        assert dialect.parse_type("CHAR") == CharType(length=1)
 
     def test_parse_type_misc(self, dialect):
         assert isinstance(dialect.parse_type("BLOB SUB_TYPE TEXT"), TextType)
         assert isinstance(dialect.parse_type("DATE"), DateType)
         assert isinstance(dialect.parse_type("TIME"), TimeType)
         assert isinstance(dialect.parse_type("BOOLEAN"), BooleanType)
-        assert dialect.parse_type("SOMETHING WEIRD") == CustomType("SOMETHING WEIRD")
+        assert dialect.parse_type("SOMETHING WEIRD") == CustomType(raw="SOMETHING WEIRD")
 
     def test_parse_type_timestamp_takes_precedence_over_time(self, dialect):
         """F7 anchor: startswith("TIME") used to swallow TIMESTAMP strings."""
@@ -220,9 +230,15 @@ class TestReturningBranches:
         assert delete.to_sql() == ('DELETE FROM "USERS" WHERE "ID" = ? RETURNING *', (7,))
 
     def test_update_or_insert_with_matching_and_returning(self, dialect):
-        sql, params = dialect.format_update_or_insert(
-            "users", ["name", "age"], ["Ann", 30], ["name"], returning_columns=["id"]
+        expr = UpdateOrInsertExpression(
+            dialect,
+            "users",
+            ["name", "age"],
+            ["Ann", 30],
+            ["name"],
+            returning_columns=["id"],
         )
+        sql, params = expr.to_sql()
         assert sql == 'UPDATE OR INSERT INTO "USERS" ("NAME", "AGE") VALUES (?, ?) MATCHING ("NAME") RETURNING "ID"'
         assert params == ("Ann", 30)
 
@@ -296,39 +312,34 @@ class TestSkipLockedBranches:
         ((3, 0, 0), {"skip_locked": True}, "FOR UPDATE"),
         ((4, 0, 0), {"skip_locked": True}, "FOR UPDATE SKIP LOCKED"),
         ((5, 0, 0), {"skip_locked": True}, "FOR UPDATE SKIP LOCKED"),
-        ((4, 0, 0), {"with_lock": True}, "FOR UPDATE WITH LOCK"),
         ((4, 0, 0), {"nowait": True}, "FOR UPDATE WITH LOCK"),
     ])
-    def test_locking_mixin_branches_directly(self, version, kwargs, expected):
+    def test_for_update_expression_snapshots(self, version, kwargs, expected):
         dialect = FirebirdDialect(version)
-
-        class LockRequest:
-            pass
-
-        request = LockRequest()
-        request.with_lock = kwargs.get("with_lock", False)
-        request.skip_locked = kwargs.get("skip_locked", False)
-        request.nowait = kwargs.get("nowait", False)
-        assert FirebirdLockingMixin.format_for_update_clause(dialect, request) == (expected, ())
+        assert ForUpdateClause(dialect, **kwargs).to_sql() == (expected, ())
 
 
 class TestSequenceBranches:
     def test_create_sequence_defaults(self, dialect):
-        assert dialect.format_create_sequence("seq_a") == ('CREATE SEQUENCE "SEQ_A"', ())
+        expr = CreateSequenceExpression(dialect, "seq_a")
+        assert dialect.format_create_sequence(expr) == ('CREATE SEQUENCE "SEQ_A"', ())
 
     def test_create_sequence_start_and_increment(self, dialect):
-        assert dialect.format_create_sequence("seq_b", start_value=100, increment=5) == (
+        expr = CreateSequenceExpression(dialect, "seq_b", start=100, increment=5)
+        assert dialect.format_create_sequence(expr) == (
             'CREATE SEQUENCE "SEQ_B" START WITH 100 INCREMENT BY 5', ()
         )
 
     def test_create_generator_form(self, dialect):
-        assert dialect.format_create_sequence("gen_c", use_generator=True) == ('CREATE GENERATOR "GEN_C"', ())
+        expr = CreateSequenceExpression(dialect, "gen_c")
+        expr.use_generator = True
+        assert dialect.format_create_sequence(expr) == ('CREATE GENERATOR "GEN_C"', ())
 
     def test_gen_id_step(self, dialect):
-        assert dialect.format_gen_id("gen_c", 2) == ('GEN_ID("GEN_C", 2)', ())
+        assert GenIdExpression(dialect, "gen_c", 2).to_sql() == ('GEN_ID("GEN_C", 2)', ())
 
     def test_next_value_for(self, dialect):
-        assert dialect.format_next_value_for("seq_b") == ('NEXT VALUE FOR "SEQ_B"', ())
+        assert NextValueForExpression(dialect, "seq_b").to_sql() == ('NEXT VALUE FOR "SEQ_B"', ())
 
     def test_sequence_capability_flags(self, dialect):
         assert dialect.supports_sequence() is True
@@ -340,8 +351,8 @@ class TestSequenceBranches:
 class TestCreateTableRebuildSnapshots:
     def test_basic_table(self, dialect):
         expr = CreateTableExpression(dialect, "users", [
-            _column("id", IntegerType(), ColumnConstraint(ColumnConstraintType.PRIMARY_KEY)),
-            _column("name", VarCharType(100)),
+            _column(dialect, "id", IntegerType(dialect), ColumnConstraint(dialect, ColumnConstraintType.PRIMARY_KEY)),
+            _column(dialect, "name", VarCharType(length=100, dialect=dialect)),
         ])
         assert expr.to_sql() == (
             'CREATE TABLE "USERS" ("ID" INTEGER PRIMARY KEY, "NAME" VARCHAR(100))', ()
@@ -352,7 +363,7 @@ class TestCreateTableRebuildSnapshots:
         (False, 'ON COMMIT PRESERVE ROWS'),
     ])
     def test_global_temporary_table(self, dialect, on_commit_delete, expected_tail):
-        expr = CreateTableExpression(dialect, "tmp_t", [_column("id", IntegerType())], temporary=True)
+        expr = CreateTableExpression(dialect, "tmp_t", [_column(dialect, "id", IntegerType(dialect))], temporary=True)
         expr.on_commit_delete = on_commit_delete
         sql, _ = expr.to_sql()
         assert sql.startswith('CREATE GLOBAL TEMPORARY TABLE "TMP_T"')
@@ -364,7 +375,7 @@ class TestCreateTableRebuildSnapshots:
     ])
     def test_global_temporary_word_order_snapshot(self, dialect, on_commit_delete, expected):
         """F5 anchor: exact to_sql() snapshot of the corrected word order."""
-        expr = CreateTableExpression(dialect, "gt_a", [_column("id", IntegerType())], temporary=True)
+        expr = CreateTableExpression(dialect, "gt_a", [_column(dialect, "id", IntegerType(dialect))], temporary=True)
         expr.on_commit_delete = on_commit_delete
         assert expr.to_sql() == (expected, ())
 
@@ -374,25 +385,25 @@ class TestCreateTableRebuildSnapshots:
         Previously the clause was rendered unconditionally; it must now be
         rejected through supports_if_not_exists_table().
         """
-        expr = CreateTableExpression(dialect, "tbl_c", [_column("id", IntegerType())], if_not_exists=True)
+        expr = CreateTableExpression(dialect, "tbl_c", [_column(dialect, "id", IntegerType(dialect))], if_not_exists=True)
         with pytest.raises(UnsupportedFeatureError) as excinfo:
             expr.to_sql()
         assert "IF NOT EXISTS" in str(excinfo.value)
 
     def test_if_not_exists_renders_when_capability_present(self, dialect):
-        expr = CreateTableExpression(dialect, "tbl_c", [_column("id", IntegerType())], if_not_exists=True)
+        expr = CreateTableExpression(dialect, "tbl_c", [_column(dialect, "id", IntegerType(dialect))], if_not_exists=True)
         from unittest import mock
         with mock.patch.object(FirebirdDialect, "supports_if_not_exists_table", return_value=True):
             sql, _ = expr.to_sql()
         assert sql.startswith('CREATE TABLE IF NOT EXISTS "TBL_C"')
 
     def test_external_file_clause(self, dialect):
-        expr = CreateTableExpression(dialect, "ext_t", [_column("id", IntegerType())])
+        expr = CreateTableExpression(dialect, "ext_t", [_column(dialect, "id", IntegerType(dialect))])
         expr.external_file = "/data/ext.fdb"
         assert expr.to_sql() == ('CREATE TABLE "EXT_T" ("ID" INTEGER) EXTERNAL FILE \'/data/ext.fdb\'', ())
 
     def test_computed_by_column(self, dialect):
-        col = _column("full_name", VarCharType(200))
+        col = _column(dialect, "full_name", VarCharType(length=200, dialect=dialect))
         col.computed_by = '"FIRST_NAME" || \' \' || "LAST_NAME"'
         assert CreateTableExpression(dialect, "emp", [col]).to_sql() == (
             'CREATE TABLE "EMP" '
@@ -401,9 +412,8 @@ class TestCreateTableRebuildSnapshots:
         )
 
     def test_identity_with_start_and_increment(self, dialect):
-        col = _column("id", IntegerType())
-        col.identity = True
-        col.identity_generated = "ALWAYS"
+        col = _column(dialect, "id", IntegerType(dialect))
+        col.identity = "ALWAYS"
         col.identity_start = 1000
         col.identity_increment = 10
         assert CreateTableExpression(dialect, "ident_t", [col]).to_sql() == (
@@ -414,8 +424,8 @@ class TestCreateTableRebuildSnapshots:
 
     def test_auto_increment_constraint_flag(self, dialect):
         col = _column(
-            "id", IntegerType(),
-            ColumnConstraint(ColumnConstraintType.PRIMARY_KEY, is_auto_increment=True),
+            dialect, "id", IntegerType(dialect),
+            ColumnConstraint(dialect, ColumnConstraintType.PRIMARY_KEY, is_auto_increment=True),
         )
         assert CreateTableExpression(dialect, "autoinc", [col]).to_sql() == (
             'CREATE TABLE "AUTOINC" ("ID" INTEGER GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY)', ()
@@ -423,9 +433,9 @@ class TestCreateTableRebuildSnapshots:
 
     def test_string_default_escaped_and_ordered_before_not_null(self, dialect):
         col = _column(
-            "status", VarCharType(20),
-            ColumnConstraint(ColumnConstraintType.DEFAULT, default_value="O'Brien"),
-            ColumnConstraint(ColumnConstraintType.NOT_NULL),
+            dialect, "status", VarCharType(length=20, dialect=dialect),
+            ColumnConstraint(dialect, ColumnConstraintType.DEFAULT, default_value="O'Brien"),
+            ColumnConstraint(dialect, ColumnConstraintType.NOT_NULL),
         )
         assert CreateTableExpression(dialect, "t5", [col]).to_sql() == (
             "CREATE TABLE \"T5\" (\"STATUS\" VARCHAR(20) DEFAULT 'O''Brien' NOT NULL)", ()
@@ -433,8 +443,8 @@ class TestCreateTableRebuildSnapshots:
 
     def test_expression_default_contributes_params(self, dialect):
         col = _column(
-            "created_at", DateTimeType(),
-            ColumnConstraint(ColumnConstraintType.DEFAULT, default_value=E.Literal(dialect, "CURRENT_TIMESTAMP")),
+            dialect, "created_at", DateTimeType(dialect=dialect),
+            ColumnConstraint(dialect, ColumnConstraintType.DEFAULT, default_value=E.Literal(dialect, "CURRENT_TIMESTAMP")),
         )
         assert CreateTableExpression(dialect, "t5b", [col]).to_sql() == (
             'CREATE TABLE "T5B" ("CREATED_AT" TIMESTAMP DEFAULT ?)', ("CURRENT_TIMESTAMP",)
@@ -442,9 +452,9 @@ class TestCreateTableRebuildSnapshots:
 
     def test_numeric_default_with_explicit_null(self, dialect):
         col = _column(
-            "amount", DecimalType(18, 2),
-            ColumnConstraint(ColumnConstraintType.DEFAULT, default_value=0),
-            ColumnConstraint(ColumnConstraintType.NULL),
+            dialect, "amount", DecimalType(precision=18, scale=2, dialect=dialect),
+            ColumnConstraint(dialect, ColumnConstraintType.DEFAULT, default_value=0),
+            ColumnConstraint(dialect, ColumnConstraintType.NULL),
         )
         assert CreateTableExpression(dialect, "t5c", [col]).to_sql() == (
             'CREATE TABLE "T5C" ("AMOUNT" DECIMAL(18, 2) DEFAULT 0 NULL)', ()
@@ -452,23 +462,23 @@ class TestCreateTableRebuildSnapshots:
 
     def test_table_constraints_snapshot(self, dialect):
         fk = ForeignKeyConstraint(
-            name="fk_order_customer", columns=["customer_id"],
+            dialect, name="fk_order_customer", columns=["customer_id"],
             foreign_key_table="customers", foreign_key_columns=["id"],
             on_delete=ReferentialAction.CASCADE, on_update=ReferentialAction.SET_NULL,
         )
-        unique = TableConstraint(TableConstraintType.UNIQUE, name="uq_email", columns=["email"])
-        pk = TableConstraint(TableConstraintType.PRIMARY_KEY, columns=["id"])
+        unique = TableConstraint(dialect, TableConstraintType.UNIQUE, name="uq_email", columns=["email"])
+        pk = TableConstraint(dialect, TableConstraintType.PRIMARY_KEY, columns=["id"])
         check = TableConstraint(
-            TableConstraintType.CHECK,
+            dialect, TableConstraintType.CHECK,
             check_condition=E.Column(dialect, "amount") >= E.Literal(dialect, 0),
         )
         expr = CreateTableExpression(
             dialect, "orders",
             [
-                _column("id", IntegerType()),
-                _column("customer_id", IntegerType()),
-                _column("email", VarCharType(255)),
-                _column("amount", DecimalType(18, 2)),
+                _column(dialect, "id", IntegerType(dialect)),
+                _column(dialect, "customer_id", IntegerType(dialect)),
+                _column(dialect, "email", VarCharType(length=255, dialect=dialect)),
+                 _column(dialect, "amount", DecimalType(precision=18, scale=2, dialect=dialect)),
             ],
             table_constraints=[pk, unique, fk, check],
         )
@@ -483,7 +493,7 @@ class TestCreateTableRebuildSnapshots:
 
     def test_partition_rejected(self, dialect):
         partition = E.PartitionClause(dialect, method=E.PartitionStrategy.HASH, keys=[E.Column(dialect, "id")])
-        expr = CreateTableExpression(dialect, "pt", [_column("id", IntegerType())], partition=partition)
+        expr = CreateTableExpression(dialect, "pt", [_column(dialect, "id", IntegerType(dialect))], partition=partition)
         with pytest.raises(UnsupportedFeatureError) as excinfo:
             expr.to_sql()
         assert "PARTITION BY clause" in str(excinfo.value)

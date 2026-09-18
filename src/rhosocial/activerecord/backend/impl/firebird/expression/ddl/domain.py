@@ -8,7 +8,7 @@ the Expression-Dialect separation pattern.
 """
 
 from enum import Enum
-from typing import TYPE_CHECKING, Any, Optional, Tuple
+from typing import TYPE_CHECKING, Any, Optional
 
 from rhosocial.activerecord.backend.expression.bases import BaseExpression
 
@@ -48,8 +48,9 @@ class FirebirdCreateDomainExpression(BaseExpression):
         self.not_null: bool = not_null
         self.check: Optional[str] = check
 
-    def to_sql(self) -> Tuple[str, tuple]:
-        return self.dialect.format_create_domain_statement(self)
+    @property
+    def format_method(self) -> str:
+        return "format_create_domain_statement"
 
 
 class FirebirdAlterDomainExpression(BaseExpression):
@@ -74,8 +75,9 @@ class FirebirdAlterDomainExpression(BaseExpression):
         self.constraint_name: Optional[str] = constraint_name
         self.constraint_sql: Optional[str] = constraint_sql
 
-    def to_sql(self) -> Tuple[str, tuple]:
-        return self.dialect.format_alter_domain_statement(self)
+    @property
+    def format_method(self) -> str:
+        return "format_alter_domain_statement"
 
 
 class FirebirdDropDomainExpression(BaseExpression):
@@ -85,8 +87,9 @@ class FirebirdDropDomainExpression(BaseExpression):
         super().__init__(dialect)
         self.domain_name: str = domain_name
 
-    def to_sql(self) -> Tuple[str, tuple]:
-        return self.dialect.format_drop_domain_statement(self)
+    @property
+    def format_method(self) -> str:
+        return "format_drop_domain_statement"
 
 
 __all__ = [
