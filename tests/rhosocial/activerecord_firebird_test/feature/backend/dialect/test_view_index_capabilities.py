@@ -28,3 +28,15 @@ def test_cascade_view_unsupported(dialect):
 
 def test_functional_index_unsupported(dialect):
     assert dialect.supports_functional_index() is False
+
+
+def test_view_check_option_supported(dialect):
+    assert dialect.supports_view_check_option() is True
+
+
+def test_collation_supported(dialect):
+    assert dialect.supports_collation() is True
+
+
+def test_unique_index_supported(dialect):
+    assert dialect.supports_unique_index() is True
