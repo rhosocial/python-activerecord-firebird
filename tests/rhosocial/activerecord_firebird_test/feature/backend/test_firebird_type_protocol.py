@@ -239,30 +239,13 @@ class TestFB4TypeGating:
 
 
 class TestDialectOptions:
-    """dialect_options forwards through construction and affects equality."""
+    """The data-type value objects no longer carry a dialect_options bag."""
 
-    def test_construction_forwards_dialect_options(self, dialect):
-        data_type = FirebirdDecFloatType(
-            dialect=dialect, precision=16,
-            dialect_options={"key": "value"},
-        )
-        assert data_type.dialect_options == {"key": "value"}
 
-    def test_dialect_options_participate_in_equality(self, dialect):
-        a = FirebirdDecFloatType(
-            dialect=dialect, precision=16,
-            dialect_options={"key": "value"},
-        )
-        b = FirebirdDecFloatType(
-            dialect=dialect, precision=16,
-            dialect_options={"key": "value"},
-        )
-        c = FirebirdDecFloatType(
-            dialect=dialect, precision=16,
-            dialect_options={"key": "other"},
-        )
-        assert a == b
-        assert a != c
+
+    def test_constructor_rejects_dialect_options(self, dialect):
+        with pytest.raises(TypeError):
+            FirebirdDecFloatType(precision=16, dialect_options={"x": 1})
 
     def test_equality_ignores_dialect(self, dialect):
         other = FirebirdDialect()
