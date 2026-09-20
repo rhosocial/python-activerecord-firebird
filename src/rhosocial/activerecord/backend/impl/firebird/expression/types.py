@@ -52,9 +52,8 @@ class FirebirdDecFloatType(DataType):
 
     name = "firebird_decfloat"
 
-    def __init__(self, dialect=None, precision: int = 16,
-                 dialect_options=None):
-        super().__init__(dialect, dialect_options=dialect_options)
+    def __init__(self, dialect=None, precision: int = 16):
+        super().__init__(dialect)
         if precision not in (16, 34):
             raise ValueError(f"DECFLOAT precision must be 16 or 34, got {precision}")
         self.precision: int = precision
