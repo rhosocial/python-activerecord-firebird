@@ -13,7 +13,7 @@ Firebird SQL dialect features and version support:
   - DECFLOAT (FB 4.0+)
 """
 
-from typing import Any, Dict, Optional, Tuple, TYPE_CHECKING
+from typing import Optional, Tuple, TYPE_CHECKING
 
 from rhosocial.activerecord.backend.dialect.base import SQLDialectBase
 from rhosocial.activerecord.backend.dialect.protocols import (
@@ -89,9 +89,7 @@ from rhosocial.activerecord.backend.dialect.mixins import (
     DDLColumnMixin,
     TransactionControlMixin,
 )
-from rhosocial.activerecord.backend.dialect.exceptions import UnsupportedFeatureError
 
-from .collation import validate_firebird_collation_name
 from .mixins.version_boundaries import _norm_version
 from .reserved_words import FIREBIRD_RESERVED_WORDS
 from .mixins import (
@@ -165,10 +163,7 @@ from .protocols import (
 )
 
 if TYPE_CHECKING:
-    from rhosocial.activerecord.backend.expression import bases
-    from rhosocial.activerecord.backend.expression.collation import CollateExpression
     from rhosocial.activerecord.backend.expression.statements import (
-        ReturningClause,
         CreateTableExpression,
         ColumnDefinition,
         TableConstraint,
@@ -590,7 +585,10 @@ class FirebirdDialect(
 
 
     def supports_functional_index(self) -> bool:
-        return True
+        # Expression (computed) indexes need Firebird's ``COMPUTED BY`` syntax,
+        # which is not implemented yet; declaring support would let the generic
+        # renderer emit invalid SQL.
+        return False
 
 
 
@@ -619,7 +617,8 @@ class FirebirdDialect(
         return True
 
     def supports_cascade_view(self) -> bool:
-        return True
+        # Firebird's DROP VIEW has no CASCADE clause.
+        return False
 
     def supports_trigger(self) -> bool:
         return True
