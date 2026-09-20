@@ -1,6 +1,7 @@
 # src/rhosocial/activerecord/backend/impl/firebird/expression/__init__.py
 """Firebird-specific expression types."""
 
+from .column import FirebirdColumnDefinition, FirebirdColumnOptions
 from .alter_table import (
     SetGenerated,
     RestartIdentity,
@@ -60,6 +61,7 @@ from .types import (
 )
 
 __all__ = [
+    'FirebirdColumnDefinition', 'FirebirdColumnOptions',
     "SetGenerated",
     "RestartIdentity",
     "SetIncrement",
