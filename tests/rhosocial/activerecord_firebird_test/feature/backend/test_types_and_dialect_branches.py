@@ -412,10 +412,10 @@ class TestCreateTableRebuildSnapshots:
         )
 
     def test_identity_with_start_and_increment(self, dialect):
+        from rhosocial.activerecord.base.ddl.attributes import IdentityAttribute
+
         col = _column(dialect, "id", IntegerType(dialect))
-        col.identity = "ALWAYS"
-        col.identity_start = 1000
-        col.identity_increment = 10
+        col.attributes = [IdentityAttribute(generation="ALWAYS", start=1000, increment=10)]
         assert CreateTableExpression(dialect, "ident_t", [col]).to_sql() == (
             'CREATE TABLE "IDENT_T" '
             '("ID" INTEGER GENERATED ALWAYS AS IDENTITY (START WITH 1000 INCREMENT BY 10))',
