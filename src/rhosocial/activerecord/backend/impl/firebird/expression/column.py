@@ -44,10 +44,7 @@ class FirebirdColumnDefinition(ColumnDefinition):
         constraints=None,
         comment: Optional[str] = None,
         generated_expression=None,
-        identity: Optional[str] = None,
-        identity_start: Optional[int] = None,
-        identity_increment: Optional[int] = None,
-        identity_clause=None,
+        attributes=None,
         *,
         computed_by: Optional[str] = None,
         character_set: Optional[str] = None,
@@ -60,10 +57,7 @@ class FirebirdColumnDefinition(ColumnDefinition):
             constraints=constraints,
             comment=comment,
             generated_expression=generated_expression,
-            identity=identity,
-            identity_start=identity_start,
-            identity_increment=identity_increment,
-            identity_clause=identity_clause,
+            attributes=attributes,
         )
         self.computed_by = computed_by
         self.character_set = character_set
@@ -76,16 +70,11 @@ class FirebirdColumnOptions(ColumnOptions):
     def __init__(
         self,
         *,
-        identity_start: Optional[int] = None,
-        identity_increment: Optional[int] = None,
         computed_by: Optional[str] = None,
         character_set: Optional[str] = None,
         collation: Optional[str] = None,
     ):
-        super().__init__(
-            identity_start=identity_start,
-            identity_increment=identity_increment,
-        )
+        super().__init__()
         self.computed_by = computed_by
         self.character_set = character_set
         self.collation = collation
