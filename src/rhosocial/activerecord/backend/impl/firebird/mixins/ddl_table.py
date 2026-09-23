@@ -46,6 +46,17 @@ class FirebirdTableMixin:
                 "PARTITION BY clause",
                 "Firebird does not support table partitioning.",
             )
+        if getattr(getattr(expr, 'table_options', None), 'comment', None):
+            # Firebird annotates comments through the standalone
+            # COMMENT ON statement (no inline table option); a comment on the
+            # table options is never silently dropped.
+            from rhosocial.activerecord.backend.dialect.exceptions import UnsupportedFeatureError
+            raise UnsupportedFeatureError(
+                self.name,
+                "TABLE COMMENT",
+                "Firebird has no inline table comment; use a standalone "
+                "COMMENT ON TABLE statement.",
+            )
 
         all_params: List[Any] = []
 
@@ -106,6 +117,17 @@ class FirebirdTableMixin:
         from rhosocial.activerecord.backend.impl.firebird.expression.column import (
             FirebirdColumnDefinition,
         )
+
+        if getattr(col_def, "comment", None):
+            # Firebird annotates column comments through the standalone
+            # COMMENT ON COLUMN statement (no inline column clause); a comment
+            # on a column definition is never silently dropped.
+            from rhosocial.activerecord.backend.dialect.exceptions import UnsupportedFeatureError
+            raise UnsupportedFeatureError(
+                self.name, "COLUMN COMMENT",
+                "Firebird has no inline column comment; use a standalone "
+                "COMMENT ON COLUMN statement.",
+            )
 
         type_sql, _ = col_def.data_type.to_sql()
         parts = [self.format_identifier(col_def.name), type_sql]

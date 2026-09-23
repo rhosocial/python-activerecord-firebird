@@ -216,6 +216,7 @@ class FirebirdDialect(
     # Firebird-specific overrides (before generic mixins to take precedence)
     FirebirdDMLOperationMixin,  # Must be before DMLMixin
     FirebirdTableMixin,         # Must be before TableMixin
+    FirebirdCommentMixin,       # Must be before TableMixin (supports_comment_on/format_comment_statement)
     TableMixin,
     ConstraintMixin,
     FirebirdTriggerMixin,       # Must be before TriggerMixin
@@ -231,7 +232,6 @@ class FirebirdDialect(
     FirebirdExternalFunctionMixin,
     FirebirdRoleMixin,
     FirebirdUserMixin,
-    FirebirdCommentMixin,
     FirebirdDatabaseMixin,
     # Core feature mixins (no duplicates)
     DMLMixin,
