@@ -149,6 +149,15 @@ class FirebirdTableMixin:
         computed_by = getattr(col_def, 'computed_by', None)
         if computed_by:
             parts.append(f"COMPUTED BY ({computed_by})")
+        else:
+            # A generic GeneratedColumnExpression maps onto Firebird's
+            # ``COMPUTED BY (<expr>)`` form (Firebird has no GENERATED ALWAYS
+            # syntax); a declared generated column is never silently dropped.
+            generated = getattr(col_def, 'generated_expression', None)
+            if generated is not None:
+                gen_sql, gen_params = generated.expression.to_sql()
+                parts.append(f"COMPUTED BY ({gen_sql})")
+                params.extend(gen_params)
 
         constraint_parts = []
         default_parts: List[str] = []
@@ -192,6 +201,18 @@ class FirebirdTableMixin:
             ReferentialAction,
             TableConstraintType,
         )
+        from rhosocial.activerecord.backend.dialect.exceptions import UnsupportedFeatureError
+
+        if getattr(expr, "deferrable", None) is not None:
+            raise UnsupportedFeatureError(
+                self.name, "DEFERRABLE constraint",
+                "Firebird does not support deferrable constraints.",
+            )
+        if isinstance(expr, ForeignKeyConstraint) and getattr(expr, "match_type", None) is not None:
+            raise UnsupportedFeatureError(
+                self.name, "FOREIGN KEY MATCH",
+                "Firebird does not support FOREIGN KEY MATCH.",
+            )
 
         parts = []
         params: List[Any] = []
