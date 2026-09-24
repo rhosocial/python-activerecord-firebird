@@ -95,7 +95,7 @@ class TestDomainDDL:
         sql, _ = FirebirdAlterDomainExpression(
             dialect, "d", mode=FirebirdDomainAlterMode.ADD_CONSTRAINT,
             constraint_sql="VALUE > 0",
-        )
+        ).to_sql()
         assert sql == 'ALTER DOMAIN "D" ADD CHECK (VALUE > 0)'
 
 
