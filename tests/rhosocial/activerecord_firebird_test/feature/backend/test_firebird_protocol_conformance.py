@@ -55,8 +55,13 @@ def get_all_generic_protocols() -> dict:
 
     discovered = {}
     for name, obj in inspect.getmembers(dialect_protocols, inspect.isclass):
-        if Protocol in getattr(obj, "__mro__", []) and name.endswith("Support"):
-            discovered[name] = obj
+        if Protocol not in getattr(obj, "__mro__", []) or not name.endswith("Support"):
+            continue
+        if name == "DDLTypeSupport":
+            assert obj is dialect_protocols.DataTypeSupport
+            continue
+        assert name == obj.__name__, f"unexpected protocol alias: {name}"
+        discovered[name] = obj
     return discovered
 
 
