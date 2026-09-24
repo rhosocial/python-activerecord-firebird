@@ -7,6 +7,8 @@ report showed concentrated misses in these mixins (see
 """
 import pytest
 
+from rhosocial.activerecord.base.ddl import TableDDLDeriver
+from rhosocial.activerecord.backend.dialect.exceptions import UnsupportedFeatureError
 from rhosocial.activerecord.backend.expression.types.integer import IntegerType
 from rhosocial.activerecord.backend.expression.types.numeric import DecimalType
 from rhosocial.activerecord.backend.impl.firebird.dialect import FirebirdDialect
@@ -21,6 +23,27 @@ from rhosocial.activerecord.backend.impl.firebird.expression.ddl.package import 
     FirebirdCreatePackageExpression,
     FirebirdDropPackageExpression,
 )
+from rhosocial.activerecord.model import ActiveRecord
+
+
+class Inheriting(ActiveRecord):
+    __table_name__ = "child"
+
+    id: int
+
+    @classmethod
+    def table_inherits(cls):
+        return ["parent_a", "parent_b"]
+
+
+class Tablespaced(ActiveRecord):
+    __table_name__ = "spaced"
+
+    id: int
+
+    @classmethod
+    def table_tablespace(cls):
+        return "ts_data"
 
 
 @pytest.fixture(scope="module")
@@ -101,3 +124,29 @@ class TestPackageDDL:
         assert header_sql == 'DROP PACKAGE "PKG_OLD"'
         body_sql, _ = FirebirdDropPackageExpression(dialect, "pkg_old", body=True).to_sql()
         assert body_sql == 'DROP PACKAGE BODY "PKG_OLD"'
+
+
+class TestFirebirdTableDDLDeclarations:
+    def test_table_declaration_defaults_are_absent(self, dialect):
+        class Plain(ActiveRecord):
+            __table_name__ = "plain_table_defaults"
+
+            id: int
+
+        expression = TableDDLDeriver(Plain, dialect).create_table()
+        assert expression.inherits == []
+        assert expression.tablespace is None
+
+    def test_table_inherits_is_carried_and_rejected(self, dialect):
+        expression = TableDDLDeriver(Inheriting, dialect).create_table()
+        assert expression.inherits == ["parent_a", "parent_b"]
+        assert dialect.supports_table_inheritance() is False
+        with pytest.raises(UnsupportedFeatureError, match="INHERITS"):
+            expression.to_sql()
+
+    def test_table_tablespace_is_carried_and_rejected(self, dialect):
+        expression = TableDDLDeriver(Tablespaced, dialect).create_table()
+        assert expression.tablespace == "ts_data"
+        assert dialect.supports_table_tablespace() is False
+        with pytest.raises(UnsupportedFeatureError, match="TABLESPACE"):
+            expression.to_sql()
