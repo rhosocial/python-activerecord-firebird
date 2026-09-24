@@ -26,7 +26,7 @@ from rhosocial.activerecord.backend.impl.firebird.dialect import FirebirdDialect
 
 @pytest.fixture
 def dialect():
-    return FirebirdDialect()
+    return FirebirdDialect((3, 0, 0))
 
 
 def _pk(dialect):
