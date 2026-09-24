@@ -39,8 +39,21 @@ class FirebirdTableMixin:
     format_alter_table_statement = TableMixin.format_alter_table_statement
 
     def format_create_table_statement(self, expr: "CreateTableExpression") -> Tuple[str, tuple]:
+        from rhosocial.activerecord.backend.dialect.exceptions import UnsupportedFeatureError
+
+        if getattr(expr, "tablespace", None):
+            raise UnsupportedFeatureError(
+                self.name,
+                "TABLESPACE",
+                "Firebird does not support table tablespaces.",
+            )
+        if getattr(expr, "inherits", None):
+            raise UnsupportedFeatureError(
+                self.name,
+                "table INHERITS",
+                "Firebird does not support table inheritance.",
+            )
         if getattr(expr, 'partition', None) is not None:
-            from rhosocial.activerecord.backend.dialect.exceptions import UnsupportedFeatureError
             raise UnsupportedFeatureError(
                 self.name,
                 "PARTITION BY clause",
