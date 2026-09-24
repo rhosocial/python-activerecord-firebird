@@ -86,7 +86,8 @@ class TestCreateDomain:
         assert isinstance(expression, CreateDomainExpression)
         assert expression.to_sql() == (
             'CREATE DOMAIN "SALARY_RANGE" AS DECIMAL(10, 2) DEFAULT 0 NOT NULL '
-            'CHECK (VALUE >= 0) COLLATE "UNICODE_FS"'
+            'CHECK (VALUE >= 0) COLLATE "UNICODE_FS"',
+            (),
         )
 
     def test_core_expression_uses_firebird_clause_order(self):
@@ -104,7 +105,8 @@ class TestCreateDomain:
 
         assert expression.to_sql() == (
             'CREATE DOMAIN "POSITIVE_CODE" AS VARCHAR(8) DEFAULT \'A\' NOT NULL '
-            'CHECK (VALUE > 0) COLLATE "UNICODE_FS"'
+            'CHECK (VALUE > 0) COLLATE "UNICODE_FS"',
+            (),
         )
 
     def test_minimal_create(self):
@@ -115,9 +117,7 @@ class TestCreateDomain:
             DecimalType(precision=10, scale=2),
         )
 
-        assert expression.to_sql() == (
-            'CREATE DOMAIN "AMOUNT" AS DECIMAL(10, 2)'
-        )
+        assert expression.to_sql() == ('CREATE DOMAIN "AMOUNT" AS DECIMAL(10, 2)', ())
 
     def test_create_rebinds_cross_dialect_data_type(self):
         dialect = FirebirdDialect((4, 0, 0))
@@ -212,7 +212,7 @@ class TestAlterDomain:
         for mode, fields, expected in cases:
             expression = FirebirdAlterDomainExpression(dialect, "d", mode, **fields)
             assert isinstance(expression, AlterDomainExpression)
-            assert expression.to_sql() == expected
+            assert expression.to_sql() == (expected, ())
 
     def test_unbound_data_type_is_bound_to_firebird(self):
         dialect = FirebirdDialect((4, 0, 0))
@@ -364,7 +364,8 @@ class TestAlterDomain:
 
         assert expression.to_sql() == (
             'ALTER DOMAIN "D" TO "D_V2" TYPE VARCHAR(12) '
-            'SET DEFAULT 7 SET NOT NULL'
+            'SET DEFAULT 7 SET NOT NULL',
+            (),
         )
 
     def test_core_alter_expression_uses_same_formatter(self):
@@ -378,7 +379,7 @@ class TestAlterDomain:
             ],
         )
 
-        assert expression.to_sql() == 'ALTER DOMAIN "D" TO "D_V2" DROP DEFAULT'
+        assert expression.to_sql() == ('ALTER DOMAIN "D" TO "D_V2" DROP DEFAULT', ())
 
     def test_named_check_actions_fail_fast(self):
         dialect = FirebirdDialect((4, 0, 0))
@@ -489,9 +490,9 @@ class TestVersionBoundaries:
         )
         drop = FirebirdDropDomainExpression(dialect, "positive")
 
-        assert create.to_sql() == 'CREATE DOMAIN "POSITIVE" AS INTEGER NOT NULL'
-        assert alter.to_sql() == 'ALTER DOMAIN "POSITIVE" TYPE INTEGER'
-        assert drop.to_sql() == 'DROP DOMAIN "POSITIVE"'
+        assert create.to_sql() == ('CREATE DOMAIN "POSITIVE" AS INTEGER NOT NULL', ())
+        assert alter.to_sql() == ('ALTER DOMAIN "POSITIVE" TYPE INTEGER', ())
+        assert drop.to_sql() == ('DROP DOMAIN "POSITIVE"', ())
 
     @pytest.mark.parametrize("action_type", [SetDomainNotNullAction, DropDomainNotNullAction])
     def test_not_null_actions_require_firebird_30(self, action_type):

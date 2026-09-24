@@ -215,8 +215,7 @@ class FirebirdDomainMixin(DomainMixin):
             action_parts.append(action_sql)
             action_params.extend(params)
         return (
-            f"ALTER DOMAIN {self.format_identifier(expr.domain_name)} "
-            " ".join(action_parts),
+            f'ALTER DOMAIN {self.format_identifier(expr.domain_name)} {" ".join(action_parts)}',
             tuple(action_params),
         )
 
