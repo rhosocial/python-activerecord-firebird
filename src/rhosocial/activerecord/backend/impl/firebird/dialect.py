@@ -50,6 +50,7 @@ from rhosocial.activerecord.backend.dialect.protocols import (
     GeneratedColumnSupport,
     ViewSupport,
     FunctionSupport,
+    UserDefinedTypeSupport,
 )
 from rhosocial.activerecord.backend.dialect.mixins import (
     CollationMixin,
@@ -87,6 +88,7 @@ from rhosocial.activerecord.backend.dialect.mixins import (
     DQLMixin,
     DMLMixin,
     DDLColumnMixin,
+    UserDefinedTypeMixin,
     TransactionControlMixin,
 )
 
@@ -138,6 +140,7 @@ from .protocols import (
     FirebirdLockingSupport,
     FirebirdTransactionSupport,
     FirebirdTableSupport,
+    FirebirdDomainSupport,
     FirebirdTriggerSupport,
     FirebirdReturningSupport,
     FirebirdIntrospectionSupport,
@@ -212,6 +215,7 @@ class FirebirdDialect(
     DQLMixin,
     FirebirdAlterTableModifierMixin,  # Before DDLColumnMixin to override format_*_action
     DDLColumnMixin,
+    UserDefinedTypeMixin,
     TransactionControlMixin,
     # Firebird-specific overrides (before generic mixins to take precedence)
     FirebirdDMLOperationMixin,  # Must be before DMLMixin
@@ -298,6 +302,7 @@ class FirebirdDialect(
     FirebirdLockingSupport,
     FirebirdTransactionSupport,
     FirebirdTableSupport,
+    FirebirdDomainSupport,
     FirebirdTriggerSupport,
     FirebirdReturningSupport,
     FirebirdIntrospectionSupport,
@@ -320,6 +325,7 @@ class FirebirdDialect(
     FirebirdCollationSupport,
     FirebirdExceptionSupport,
     FirebirdContextVariableSupport,
+    UserDefinedTypeSupport,
     FirebirdPartitionMixin,
     FirebirdTypeSupportMixin,
 ):

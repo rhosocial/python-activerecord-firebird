@@ -71,9 +71,10 @@ class TestDomainDDL:
     def test_alter_domain_add_constraint(self, dialect):
         sql, _ = FirebirdAlterDomainExpression(
             dialect, "d", mode=FirebirdDomainAlterMode.ADD_CONSTRAINT,
-            constraint_name="ck", constraint_sql="VALUE > 0",
-        ).to_sql()
-        assert sql == 'ALTER DOMAIN "D" ADD CONSTRAINT "CK" CHECK (VALUE > 0)'
+            constraint_sql="VALUE > 0",
+        )
+        assert sql == 'ALTER DOMAIN "D" ADD CHECK (VALUE > 0)'
+
 
     def test_drop_domain(self, dialect):
         sql, _ = FirebirdDropDomainExpression(dialect, "obsolete").to_sql()
