@@ -28,6 +28,8 @@ FIREBIRD_VERSION_BOUNDARIES = {
     'POSITION_FUNCTION': (2, 5, 0),
     'IIF_DECODE': (2, 5, 0),
     'COMPUTED_BY': (2, 5, 0),
+    'DOMAIN': (2, 5, 0),
+    'DOMAIN_NOT_NULL_ACTION': (3, 0, 0),
 }
 
 

@@ -1,125 +1,267 @@
 # src/rhosocial/activerecord/backend/impl/firebird/mixins/domain.py
-"""Firebird DOMAIN statement formatting mixin.
+"""Firebird DOMAIN statement formatting mixin."""
 
-DOMAIN is an ancient Firebird feature (available in every supported
-version, gated here at ``(2, 5, 0)``) that packages a data type with a
-default value, a NOT NULL flag and optional CHECK constraints for reuse
-across table columns.
-"""
+from typing import Optional, Tuple, Type, TYPE_CHECKING
 
-from typing import Tuple, TYPE_CHECKING
-
-from .version_boundaries import _norm_version
 from rhosocial.activerecord.backend.dialect.exceptions import UnsupportedFeatureError
+from rhosocial.activerecord.backend.dialect.mixins import DomainMixin
+from rhosocial.activerecord.backend.expression.statements.ddl_domain import (
+    AddDomainCheckAction,
+    AlterDomainExpression,
+    CreateDomainExpression,
+    DomainAlterAction,
+    DomainNullability,
+    DropDomainCheckAction,
+    DropDomainDefaultAction,
+    DropDomainExpression,
+    DropDomainNotNullAction,
+    RenameDomainAction,
+    SetDomainDefaultAction,
+    SetDomainNotNullAction,
+)
 
-from ..expression.ddl.domain import FirebirdDomainAlterMode
-
-if TYPE_CHECKING:
-    from ..expression.ddl.domain import (
-        FirebirdCreateDomainExpression,
-        FirebirdAlterDomainExpression,
-        FirebirdDropDomainExpression,
-    )
+from ..expression.ddl.domain import FirebirdSetDomainDataTypeAction, _bind_data_type
+from .version_boundaries import FIREBIRD_VERSION_BOUNDARIES, _norm_version
 
 
-class FirebirdDomainMixin:
+class FirebirdDomainMixin(DomainMixin):
+    """Render Firebird DOMAIN DDL and enforce its version boundaries."""
+
+    if TYPE_CHECKING:
+        version: Optional[Tuple[int, ...]]
+
+    def supports_domains(self) -> bool:
+        version = _norm_version(self.version)
+        return version is not None and version >= FIREBIRD_VERSION_BOUNDARIES["DOMAIN"]
 
     def supports_domain(self) -> bool:
-        return _norm_version(self.version) >= (2, 5, 0)
+        return self.supports_domains()
 
     def supports_create_domain(self) -> bool:
-        return _norm_version(self.version) >= (2, 5, 0)
+        return self.supports_domains()
 
     def supports_alter_domain(self) -> bool:
-        return _norm_version(self.version) >= (2, 5, 0)
+        return self.supports_domains()
 
     def supports_drop_domain(self) -> bool:
-        return _norm_version(self.version) >= (2, 5, 0)
+        return self.supports_domains()
 
-    def format_create_domain_statement(self, expr: "FirebirdCreateDomainExpression") -> Tuple[str, tuple]:
-        """Format CREATE DOMAIN name [AS] datatype [DEFAULT ...] [NOT NULL] [CHECK (...)]."""
-        self._check_domain_version("CREATE DOMAIN")
+    def supports_domain_default(self) -> bool:
+        return self.supports_domains()
 
-        type_sql, _ = self.format_data_type(expr.data_type)
+    def supports_domain_nullability(self, nullability: DomainNullability) -> bool:
+        return self.supports_domains() and nullability is DomainNullability.NOT_NULL
+
+    def supports_domain_checks(self) -> bool:
+        return self.supports_domains()
+
+    def supports_named_domain_checks(self) -> bool:
+        return False
+
+    def supports_multiple_domain_checks(self) -> bool:
+        return False
+
+    def supports_domain_collation(self) -> bool:
+        return self.supports_domains()
+
+    def supports_alter_domain_action(
+        self,
+        action_type: Type[DomainAlterAction],
+    ) -> bool:
+        if not self.supports_domains():
+            return False
+        try:
+            if issubclass(
+                action_type,
+                (SetDomainNotNullAction, DropDomainNotNullAction),
+            ):
+                version = _norm_version(self.version)
+                return (
+                    version is not None
+                    and version >= FIREBIRD_VERSION_BOUNDARIES["DOMAIN_NOT_NULL_ACTION"]
+                )
+            return issubclass(
+                action_type,
+                (
+                    SetDomainDefaultAction,
+                    DropDomainDefaultAction,
+                    AddDomainCheckAction,
+                    DropDomainCheckAction,
+                    RenameDomainAction,
+                    FirebirdSetDomainDataTypeAction,
+                ),
+            )
+        except TypeError:
+            return False
+
+    def supports_multiple_domain_alter_actions(self) -> bool:
+        return self.supports_alter_domain()
+
+    def supports_drop_domain_if_exists(self) -> bool:
+        return False
+
+    def supports_drop_domain_cascade(self) -> bool:
+        return False
+
+    def supports_drop_domain_restrict(self) -> bool:
+        return False
+
+    def supports_unnamed_domain_check_drop(self) -> bool:
+        return self.supports_domains()
+
+    def format_create_domain_statement(
+        self,
+        expr: CreateDomainExpression,
+    ) -> Tuple[str, tuple]:
+        if not self.supports_domains() or not self.supports_create_domain():
+            raise UnsupportedFeatureError(self.name, "CREATE DOMAIN")
+        data_type = _bind_data_type(self, expr.data_type)
+        type_sql, type_params = data_type.to_sql()
         parts = [
             "CREATE DOMAIN",
             self.format_identifier(expr.domain_name),
             "AS",
             type_sql,
         ]
-
-        if getattr(expr, "default", None) is not None:
-            parts.append(f"DEFAULT {self._format_ddl_literal(expr.default)}")
-
-        if getattr(expr, "not_null", False):
-            parts.append("NOT NULL")
-
-        if getattr(expr, "check", None):
-            parts.append(f"CHECK ({expr.check})")
-
-        return " ".join(parts), ()
-
-    def format_alter_domain_statement(self, expr: "FirebirdAlterDomainExpression") -> Tuple[str, tuple]:
-        """Format ALTER DOMAIN name <clause> per the requested mode."""
-        self._check_domain_version("ALTER DOMAIN")
-
-        domain = self.format_identifier(expr.domain_name)
-        mode = expr.mode
-
-        if mode == FirebirdDomainAlterMode.SET_DEFAULT:
-            if expr.value is None:
-                raise ValueError("SET DEFAULT requires a value")
-            return f"ALTER DOMAIN {domain} SET DEFAULT {self._format_ddl_literal(expr.value)}", ()
-        if mode == FirebirdDomainAlterMode.DROP_DEFAULT:
-            return f"ALTER DOMAIN {domain} DROP DEFAULT", ()
-        if mode == FirebirdDomainAlterMode.SET_NOT_NULL:
-            return f"ALTER DOMAIN {domain} SET NOT NULL", ()
-        if mode == FirebirdDomainAlterMode.DROP_NOT_NULL:
-            return f"ALTER DOMAIN {domain} DROP NOT NULL", ()
-        if mode == FirebirdDomainAlterMode.ADD_CONSTRAINT:
-            constraint = f"CONSTRAINT {self.format_identifier(expr.constraint_name)} " if expr.constraint_name else ""
-            return (
-                f"ALTER DOMAIN {domain} ADD {constraint}CHECK ({expr.constraint_sql})",
-                (),
-            )
-        if mode == FirebirdDomainAlterMode.DROP_CONSTRAINT:
-            return (
-                f"ALTER DOMAIN {domain} DROP CONSTRAINT "
-                f"{self.format_identifier(expr.constraint_name)}",
-                (),
-            )
-        if mode == FirebirdDomainAlterMode.SET_TYPE:
-            type_sql, _ = self.format_data_type(expr.data_type)
-            return f"ALTER DOMAIN {domain} TYPE {type_sql}", ()
-
-        raise UnsupportedFeatureError(
-            self.name,
-            f"ALTER DOMAIN mode {mode}",
-            "Unsupported ALTER DOMAIN clause.",
-        )
-
-    def format_drop_domain_statement(self, expr: "FirebirdDropDomainExpression") -> Tuple[str, tuple]:
-        """Format DROP DOMAIN name."""
-        self._check_domain_version("DROP DOMAIN")
-        return f"DROP DOMAIN {self.format_identifier(expr.domain_name)}", ()
-
-    def _format_ddl_literal(self, value) -> str:
-        """Render a DDL default value as an inline literal."""
-        if isinstance(value, str):
-            return self._quote_literal(value)
-        if isinstance(value, bool):
-            return "TRUE" if value else "FALSE"
-        return str(value)
-
-    def _quote_literal(self, value: str) -> str:
-        """Inline a string literal with Firebird single-quote escaping."""
-        return f"'{value.replace(chr(39), chr(39) * 2)}'"
-
-    def _check_domain_version(self, feature: str) -> None:
-        version = getattr(self, 'version', (2, 5, 0))
-        if _norm_version(version) < (2, 5, 0):
+        params = list(type_params)
+        if expr.default is not None:
+            if not self.supports_domain_default():
+                raise UnsupportedFeatureError(self.name, "DOMAIN DEFAULT")
+            default_sql, default_params = expr.default.to_sql()
+            if default_params:
+                raise ValueError("DOMAIN DEFAULT must render without bind parameters")
+            parts.append(f"DEFAULT {default_sql}")
+        if expr.nullability is not DomainNullability.UNSPECIFIED:
+            if not self.supports_domain_nullability(expr.nullability):
+                raise UnsupportedFeatureError(
+                    self.name,
+                    f"DOMAIN {expr.nullability.value}",
+                )
+            parts.append(expr.nullability.value)
+        checks = list(expr.checks)
+        if checks and not self.supports_domain_checks():
+            raise UnsupportedFeatureError(self.name, "DOMAIN CHECK")
+        if any(check.name is not None for check in checks):
+            raise UnsupportedFeatureError(self.name, "named DOMAIN CHECK")
+        if len(checks) > 1:
             raise UnsupportedFeatureError(
                 self.name,
-                feature,
-                "Firebird 2.5 or later is required for DOMAIN statements.",
+                "multiple domain CHECK constraints",
             )
+        for check in checks:
+            check_sql, check_params = check.to_sql()
+            parts.append(check_sql)
+            params.extend(check_params)
+        if expr.collation is not None:
+            if not self.supports_domain_collation():
+                raise UnsupportedFeatureError(self.name, "DOMAIN COLLATE")
+            collation_parts = expr.collation.split(".")
+            if any(not part.strip() for part in collation_parts):
+                raise ValueError("collation must contain non-empty identifier segments")
+            collation_sql = ".".join(
+                self.format_identifier(part) for part in collation_parts
+            )
+            parts.append(f"COLLATE {collation_sql}")
+        return " ".join(parts), tuple(params)
+
+    def format_alter_domain_statement(
+        self,
+        expr: AlterDomainExpression,
+    ) -> Tuple[str, tuple]:
+        if not self.supports_domains() or not self.supports_alter_domain():
+            raise UnsupportedFeatureError(self.name, "ALTER DOMAIN")
+        if len(expr.actions) > 1 and not self.supports_multiple_domain_alter_actions():
+            raise UnsupportedFeatureError(self.name, "multiple ALTER DOMAIN actions")
+        action_groups = {
+            "rename": "rename",
+            "type": "TYPE",
+            "default": "DEFAULT",
+            "nullability": "NOT NULL",
+            "check": "CHECK",
+        }
+        action_order = {
+            "rename": 0,
+            "type": 1,
+            "default": 2,
+            "nullability": 3,
+            "check": 4,
+        }
+        action_groups_seen = set()
+        ordered_actions = []
+        for action in expr.actions:
+            if not self.supports_alter_domain_action(type(action)):
+                raise UnsupportedFeatureError(
+                    self.name,
+                    f"ALTER DOMAIN action {action.action_kind}",
+                )
+            group = self._domain_action_group(action)
+            if group is None:
+                raise UnsupportedFeatureError(
+                    self.name,
+                    f"ALTER DOMAIN action {action.action_kind}",
+                )
+            if group in action_groups_seen:
+                raise UnsupportedFeatureError(
+                    self.name,
+                    f"multiple ALTER DOMAIN {action_groups[group]} actions",
+                )
+            action_groups_seen.add(group)
+            ordered_actions.append((action_order[group], action))
+        ordered_actions.sort(key=lambda item: item[0])
+        action_parts = []
+        action_params = []
+        for _, action in ordered_actions:
+            action_sql, params = action.to_sql()
+            action_parts.append(action_sql)
+            action_params.extend(params)
+        return (
+            f"ALTER DOMAIN {self.format_identifier(expr.domain_name)} "
+            " ".join(action_parts),
+            tuple(action_params),
+        )
+
+    def format_drop_domain_statement(
+        self,
+        expr: DropDomainExpression,
+    ) -> Tuple[str, tuple]:
+        return super().format_drop_domain_statement(expr)
+
+    def format_domain_alter_action(
+        self,
+        expr: DomainAlterAction,
+    ) -> Tuple[str, tuple]:
+        if not self.supports_domains() or not self.supports_alter_domain():
+            raise UnsupportedFeatureError(self.name, "ALTER DOMAIN action")
+        if not self.supports_alter_domain_action(type(expr)):
+            raise UnsupportedFeatureError(
+                self.name,
+                f"ALTER DOMAIN action {expr.action_kind}",
+            )
+        if isinstance(expr, FirebirdSetDomainDataTypeAction):
+            data_type = expr.resolve_data_type()
+            type_sql, type_params = data_type.to_sql()
+            return f"TYPE {type_sql}", tuple(type_params)
+        if isinstance(expr, RenameDomainAction):
+            return f"TO {self.format_identifier(expr.new_name)}", ()
+        if isinstance(expr, SetDomainNotNullAction):
+            return "SET NOT NULL", ()
+        if isinstance(expr, DropDomainNotNullAction):
+            return "DROP NOT NULL", ()
+        return super().format_domain_alter_action(expr)
+
+    @staticmethod
+    def _domain_action_group(action: DomainAlterAction) -> Optional[str]:
+        if isinstance(action, RenameDomainAction):
+            return "rename"
+        if isinstance(action, FirebirdSetDomainDataTypeAction):
+            return "type"
+        if isinstance(action, (SetDomainDefaultAction, DropDomainDefaultAction)):
+            return "default"
+        if isinstance(action, (SetDomainNotNullAction, DropDomainNotNullAction)):
+            return "nullability"
+        if isinstance(action, (AddDomainCheckAction, DropDomainCheckAction)):
+            return "check"
+        return None
+
+
+__all__ = ["FirebirdDomainMixin"]
