@@ -385,13 +385,23 @@ class TestCreateTableRebuildSnapshots:
         Previously the clause was rendered unconditionally; it must now be
         rejected through supports_if_not_exists_table().
         """
-        expr = CreateTableExpression(dialect, "tbl_c", [_column(dialect, "id", IntegerType(dialect))], if_not_exists=True)
+        expr = CreateTableExpression(
+            dialect,
+            "tbl_c",
+            [_column(dialect, "id", IntegerType(dialect))],
+            if_not_exists=True,
+        )
         with pytest.raises(UnsupportedFeatureError) as excinfo:
             expr.to_sql()
         assert "IF NOT EXISTS" in str(excinfo.value)
 
     def test_if_not_exists_renders_when_capability_present(self, dialect):
-        expr = CreateTableExpression(dialect, "tbl_c", [_column(dialect, "id", IntegerType(dialect))], if_not_exists=True)
+        expr = CreateTableExpression(
+            dialect,
+            "tbl_c",
+            [_column(dialect, "id", IntegerType(dialect))],
+            if_not_exists=True,
+        )
         from unittest import mock
         with mock.patch.object(FirebirdDialect, "supports_if_not_exists_table", return_value=True):
             sql, _ = expr.to_sql()
@@ -412,7 +422,7 @@ class TestCreateTableRebuildSnapshots:
         )
 
     def test_identity_with_start_and_increment(self, dialect):
-        from rhosocial.activerecord.base.ddl.attributes import IdentityAttribute
+        from rhosocial.activerecord.base import IdentityAttribute
 
         col = _column(dialect, "id", IntegerType(dialect))
         col.attributes = [IdentityAttribute(generation="ALWAYS", start=1000, increment=10)]
@@ -443,8 +453,14 @@ class TestCreateTableRebuildSnapshots:
 
     def test_expression_default_contributes_params(self, dialect):
         col = _column(
-            dialect, "created_at", DateTimeType(dialect=dialect),
-            ColumnConstraint(dialect, ColumnConstraintType.DEFAULT, default_value=E.Literal(dialect, "CURRENT_TIMESTAMP")),
+            dialect,
+            "created_at",
+            DateTimeType(dialect=dialect),
+            ColumnConstraint(
+                dialect,
+                ColumnConstraintType.DEFAULT,
+                default_value=E.Literal(dialect, "CURRENT_TIMESTAMP"),
+            ),
         )
         assert CreateTableExpression(dialect, "t5b", [col]).to_sql() == (
             'CREATE TABLE "T5B" ("CREATED_AT" TIMESTAMP DEFAULT ?)', ("CURRENT_TIMESTAMP",)
