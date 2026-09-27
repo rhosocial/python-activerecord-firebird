@@ -4,7 +4,7 @@
 from typing import Tuple, TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from rhosocial.activerecord.backend.transaction import (
+    from rhosocial.activerecord.backend.expression.transaction import (
         BeginTransactionExpression,
         SetTransactionExpression,
     )
