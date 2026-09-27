@@ -3,6 +3,8 @@
 
 from typing import Any, Protocol, Tuple, runtime_checkable
 
+from rhosocial.activerecord.backend.dialect.protocols import DomainSupport
+
 
 @runtime_checkable
 class FirebirdDMLOperationSupport(Protocol):
@@ -51,6 +53,11 @@ class FirebirdTableSupport(Protocol):
     def supports_generated_always(self) -> bool: ...
     def supports_identity_columns(self) -> bool: ...
     def supports_external_file(self) -> bool: ...
+
+
+@runtime_checkable
+class FirebirdDomainSupport(DomainSupport, Protocol):
+    """Firebird implementation of the core DOMAIN DDL protocol."""
 
 
 @runtime_checkable
@@ -190,6 +197,7 @@ __all__ = [
     "FirebirdLockingSupport",
     "FirebirdTransactionSupport",
     "FirebirdTableSupport",
+    "FirebirdDomainSupport",
     "FirebirdTriggerSupport",
     "FirebirdReturningSupport",
     "FirebirdIntrospectionSupport",

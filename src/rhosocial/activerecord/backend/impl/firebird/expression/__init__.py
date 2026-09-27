@@ -1,6 +1,8 @@
 # src/rhosocial/activerecord/backend/impl/firebird/expression/__init__.py
 """Firebird-specific expression types."""
 
+from .column import FirebirdColumnDefinition, FirebirdColumnOptions
+from .create_table import FirebirdCreateTableExpression
 from .alter_table import (
     SetGenerated,
     RestartIdentity,
@@ -31,6 +33,7 @@ from .ddl import (
     FirebirdCreateUserExpression,
     FirebirdDomainAlterMode,
     FirebirdDropDomainExpression,
+    FirebirdSetDomainDataTypeAction,
     FirebirdDropExceptionExpression,
     FirebirdDropExternalFunctionExpression,
     FirebirdDropPackageExpression,
@@ -53,13 +56,18 @@ from .types import (
     FirebirdFloatType,
     FirebirdDoubleType,
     FirebirdBlobSubType,
+    FirebirdCharType,
+    FirebirdVarCharType,
     FirebirdTimeStampTzType,
     FirebirdTimeTzType,
+    FirebirdTimeWithoutTimeZoneType,
     FirebirdDecFloatType,
     FirebirdInt128Type,
 )
 
 __all__ = [
+    'FirebirdColumnDefinition', 'FirebirdColumnOptions',
+    "FirebirdCreateTableExpression",
     "SetGenerated",
     "RestartIdentity",
     "SetIncrement",
@@ -71,8 +79,11 @@ __all__ = [
     "FirebirdFloatType",
     "FirebirdDoubleType",
     "FirebirdBlobSubType",
+    "FirebirdCharType",
+    "FirebirdVarCharType",
     "FirebirdTimeStampTzType",
     "FirebirdTimeTzType",
+    "FirebirdTimeWithoutTimeZoneType",
     "FirebirdDecFloatType",
     "FirebirdInt128Type",
     "BlobColumnExpression",
@@ -84,6 +95,7 @@ __all__ = [
     "FirebirdAlterDomainExpression",
     "FirebirdDomainAlterMode",
     "FirebirdDropDomainExpression",
+    "FirebirdSetDomainDataTypeAction",
     "FirebirdCreateExceptionExpression",
     "FirebirdAlterExceptionExpression",
     "FirebirdDropExceptionExpression",

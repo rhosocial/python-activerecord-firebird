@@ -6,6 +6,7 @@ from .domain import (
     FirebirdCreateDomainExpression,
     FirebirdDomainAlterMode,
     FirebirdDropDomainExpression,
+    FirebirdSetDomainDataTypeAction,
 )
 from .exception import (
     FirebirdAlterExceptionExpression,
@@ -45,6 +46,7 @@ __all__ = [
     "FirebirdAlterDomainExpression",
     "FirebirdDomainAlterMode",
     "FirebirdDropDomainExpression",
+    "FirebirdSetDomainDataTypeAction",
     "FirebirdCreateExceptionExpression",
     "FirebirdAlterExceptionExpression",
     "FirebirdDropExceptionExpression",

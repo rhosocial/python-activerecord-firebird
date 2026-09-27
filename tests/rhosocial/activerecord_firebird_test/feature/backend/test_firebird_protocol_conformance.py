@@ -55,8 +55,13 @@ def get_all_generic_protocols() -> dict:
 
     discovered = {}
     for name, obj in inspect.getmembers(dialect_protocols, inspect.isclass):
-        if Protocol in getattr(obj, "__mro__", []) and name.endswith("Support"):
-            discovered[name] = obj
+        if Protocol not in getattr(obj, "__mro__", []) or not name.endswith("Support"):
+            continue
+        if name == "DDLTypeSupport":
+            assert obj is dialect_protocols.DataTypeSupport
+            continue
+        assert name == obj.__name__, f"unexpected protocol alias: {name}"
+        discovered[name] = obj
     return discovered
 
 
@@ -67,9 +72,12 @@ FIREBIRD_PROTOCOLS = [
     dialect_protocols.ArraySupport,
     dialect_protocols.AutoIncrementSupport,
     dialect_protocols.CTESupport,
+    dialect_protocols.ColumnAttributeSupport,
+    dialect_protocols.CommentSupport,
     dialect_protocols.CollationSupport,
     dialect_protocols.ConstraintSupport,
     dialect_protocols.DDLTypeSupport,
+    dialect_protocols.DomainSupport,
     dialect_protocols.ExplainSupport,
     dialect_protocols.FilterClauseSupport,
     dialect_protocols.FunctionSupport,
@@ -97,6 +105,7 @@ FIREBIRD_PROTOCOLS = [
     dialect_protocols.TriggerSupport,
     dialect_protocols.TruncateSupport,
     dialect_protocols.UpsertSupport,
+    dialect_protocols.UserDefinedTypeSupport,
     dialect_protocols.ViewSupport,
     dialect_protocols.WildcardSupport,
     dialect_protocols.WindowFunctionSupport,

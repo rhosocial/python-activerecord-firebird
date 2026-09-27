@@ -44,6 +44,7 @@ from rhosocial.activerecord.backend.expression.types import (
 
 from .version_boundaries import _norm_version
 from ..expression.types import (
+    FirebirdCharType,
     FirebirdDecimalType,
     FirebirdDecFloatType,
     FirebirdDoubleType,
@@ -51,7 +52,9 @@ from ..expression.types import (
     FirebirdInt128Type,
     FirebirdBlobSubType,
     FirebirdTimeStampTzType,
+    FirebirdTimeWithoutTimeZoneType,
     FirebirdTimeTzType,
+    FirebirdVarCharType,
 )
 
 
@@ -128,6 +131,7 @@ class FirebirdTypeSupportMixin(DDLTypeMixin, DDLTypeSupport):
         return "DECIMAL", ()
 
     def format_data_type_boolean(self, data_type: BooleanType) -> Tuple[str, tuple]:
+        self._check_fb3_type("BOOLEAN")
         return "BOOLEAN", ()
 
     def format_data_type_varchar(self, data_type: VarCharType) -> Tuple[str, tuple]:
@@ -191,15 +195,37 @@ class FirebirdTypeSupportMixin(DDLTypeMixin, DDLTypeSupport):
     def format_data_type_firebird_blob_subtype(self, data_type: FirebirdBlobSubType) -> Tuple[str, tuple]:
         return "BLOB SUB_TYPE TEXT", ()
 
+    def format_data_type_firebird_char(self, data_type: FirebirdCharType) -> Tuple[str, tuple]:
+        length = data_type.length if data_type.length is not None else 1
+        return f"CHAR({length}) CHARACTER SET UTF8", ()
+
+    def format_data_type_firebird_varchar(self, data_type: FirebirdVarCharType) -> Tuple[str, tuple]:
+        length = data_type.length if data_type.length is not None else 255
+        return f"VARCHAR({length}) CHARACTER SET UTF8", ()
+
     def format_data_type_firebird_timestamptz(self, data_type: FirebirdTimeStampTzType) -> Tuple[str, tuple]:
         """Format TIMESTAMP WITH TIME ZONE (Firebird 4.0+)."""
         self._check_fb4_type("TIMESTAMP WITH TIME ZONE")
-        return "TIMESTAMP WITH TIME ZONE", ()
+        base_type = (
+            f"TIMESTAMP({data_type.precision})"
+            if data_type.precision is not None
+            else "TIMESTAMP"
+        )
+        return f"{base_type} WITH TIME ZONE", ()
 
     def format_data_type_firebird_timetz(self, data_type: FirebirdTimeTzType) -> Tuple[str, tuple]:
         """Format TIME WITH TIME ZONE (Firebird 4.0+)."""
         self._check_fb4_type("TIME WITH TIME ZONE")
-        return "TIME WITH TIME ZONE", ()
+        base_type = f"TIME({data_type.precision})" if data_type.precision is not None else "TIME"
+        return f"{base_type} WITH TIME ZONE", ()
+
+    def format_data_type_firebird_time_without_time_zone(
+        self,
+        data_type: FirebirdTimeWithoutTimeZoneType,
+    ) -> Tuple[str, tuple]:
+        self._check_fb4_type("TIME WITHOUT TIME ZONE")
+        base_type = f"TIME({data_type.precision})" if data_type.precision is not None else "TIME"
+        return f"{base_type} WITHOUT TIME ZONE", ()
 
     def format_data_type_firebird_decfloat(self, data_type: FirebirdDecFloatType) -> Tuple[str, tuple]:
         """Format DECFLOAT(16|34) (Firebird 4.0+)."""
@@ -210,6 +236,15 @@ class FirebirdTypeSupportMixin(DDLTypeMixin, DDLTypeSupport):
         """Format INT128 (Firebird 4.0+)."""
         self._check_fb4_type("INT128")
         return "INT128", ()
+
+    def _check_fb3_type(self, feature: str) -> None:
+        version = getattr(self, 'version', (3, 0, 0))
+        if _norm_version(version) < (3, 0, 0):
+            raise UnsupportedFeatureError(
+                self.name,
+                feature,
+                f"Firebird 3.0 or later is required for the {feature} data type.",
+            )
 
     def _check_fb4_type(self, feature: str) -> None:
         """Raise unless the dialect targets Firebird 4.0 or later.
@@ -259,7 +294,7 @@ class FirebirdTypeSupportMixin(DDLTypeMixin, DDLTypeSupport):
         return True
 
     def supports_data_type_boolean(self) -> bool:
-        return True
+        return _norm_version(getattr(self, 'version', (3, 0, 0))) >= (3, 0, 0)
 
     def supports_data_type_varchar(self) -> bool:
         return True
@@ -315,10 +350,19 @@ class FirebirdTypeSupportMixin(DDLTypeMixin, DDLTypeSupport):
     def supports_data_type_firebird_blob_subtype(self) -> bool:
         return True
 
+    def supports_data_type_firebird_char(self) -> bool:
+        return True
+
+    def supports_data_type_firebird_varchar(self) -> bool:
+        return True
+
     def supports_data_type_firebird_timestamptz(self) -> bool:
         return _norm_version(getattr(self, 'version', (4, 0, 0))) >= (4, 0, 0)
 
     def supports_data_type_firebird_timetz(self) -> bool:
+        return _norm_version(getattr(self, 'version', (4, 0, 0))) >= (4, 0, 0)
+
+    def supports_data_type_firebird_time_without_time_zone(self) -> bool:
         return _norm_version(getattr(self, 'version', (4, 0, 0))) >= (4, 0, 0)
 
     def supports_data_type_firebird_decfloat(self) -> bool:

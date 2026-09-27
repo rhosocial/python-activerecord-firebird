@@ -6,15 +6,12 @@ domains, exceptions, triggers, generators, ...) and is available since
 Firebird 2.5, gated here at ``(2, 5, 0)``.
 """
 
-from typing import Tuple, TYPE_CHECKING
+from typing import Tuple
 
 from .version_boundaries import _norm_version
 from rhosocial.activerecord.backend.dialect.exceptions import UnsupportedFeatureError
 
 from ..expression.comment import FirebirdCommentObjectType
-
-if TYPE_CHECKING:
-    from ..expression.comment import FirebirdCommentExpression
 
 
 class FirebirdCommentMixin:
@@ -22,11 +19,15 @@ class FirebirdCommentMixin:
     def supports_comment_on(self) -> bool:
         return _norm_version(self.version) >= (2, 5, 0)
 
-    def format_comment_statement(self, expr: "FirebirdCommentExpression") -> Tuple[str, tuple]:
-        """Format COMMENT ON <object> IS 'text' (or IS NULL to remove)."""
+    def format_comment_statement(self, expr) -> Tuple[str, tuple]:
+        """Format COMMENT ON <object> IS 'text' (or IS NULL to remove).
+
+        Accepts any comment expression carrying ``object_type``,
+        ``object_name`` and ``comment``.
+        """
         self._check_comment_version("COMMENT ON")
 
-        object_type = expr.object_type.value
+        object_type = getattr(expr.object_type, "value", expr.object_type)
         name = self._format_comment_object_name(expr)
         if expr.comment is None:
             return f"COMMENT ON {object_type} {name} IS NULL", ()
@@ -38,9 +39,10 @@ class FirebirdCommentMixin:
     def _format_comment_object_name(self, expr) -> str:
         """Quote a comment target; dotted names (COLUMN relation.field,
         PARAMETER routine.param) are quoted per part."""
-        if expr.object_type in (
-            FirebirdCommentObjectType.COLUMN,
-            FirebirdCommentObjectType.PARAMETER,
+        object_type = getattr(expr.object_type, "value", expr.object_type)
+        if object_type in (
+            FirebirdCommentObjectType.COLUMN.value,
+            FirebirdCommentObjectType.PARAMETER.value,
         ):
             parts = expr.object_name.split(".")
             return ".".join(self.format_identifier(part) for part in parts)

@@ -4,12 +4,12 @@
 from typing import Any, Tuple, TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from rhosocial.activerecord.backend.expression.advanced_functions import WindowFunctionCallExpression
+    from rhosocial.activerecord.backend.expression.advanced_functions import WindowFunctionCall
 
 
 class FirebirdWindowFunctionMixin:
 
-    def format_window_function_call(self, call: "WindowFunctionCallExpression") -> Tuple[str, tuple]:
+    def format_window_function_call(self, call: "WindowFunctionCall") -> Tuple[str, tuple]:
         """Format a window function call, pinning SUM/AVG result types.
 
         Mirrors :meth:`format_function_call`: Firebird 5/6-snapshot fails to

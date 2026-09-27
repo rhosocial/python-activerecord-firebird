@@ -7,6 +7,11 @@ report showed concentrated misses in these mixins (see
 """
 import pytest
 
+from rhosocial.activerecord.backend.dialect.exceptions import UnsupportedFeatureError
+from rhosocial.activerecord.backend.expression.statements import (
+    ColumnDefinition,
+    CreateTableExpression,
+)
 from rhosocial.activerecord.backend.expression.types.integer import IntegerType
 from rhosocial.activerecord.backend.expression.types.numeric import DecimalType
 from rhosocial.activerecord.backend.impl.firebird.dialect import FirebirdDialect
@@ -71,9 +76,10 @@ class TestDomainDDL:
     def test_alter_domain_add_constraint(self, dialect):
         sql, _ = FirebirdAlterDomainExpression(
             dialect, "d", mode=FirebirdDomainAlterMode.ADD_CONSTRAINT,
-            constraint_name="ck", constraint_sql="VALUE > 0",
+            constraint_sql="VALUE > 0",
         ).to_sql()
-        assert sql == 'ALTER DOMAIN "D" ADD CONSTRAINT "CK" CHECK (VALUE > 0)'
+        assert sql == 'ALTER DOMAIN "D" ADD CHECK (VALUE > 0)'
+
 
     def test_drop_domain(self, dialect):
         sql, _ = FirebirdDropDomainExpression(dialect, "obsolete").to_sql()
@@ -100,3 +106,42 @@ class TestPackageDDL:
         assert header_sql == 'DROP PACKAGE "PKG_OLD"'
         body_sql, _ = FirebirdDropPackageExpression(dialect, "pkg_old", body=True).to_sql()
         assert body_sql == 'DROP PACKAGE BODY "PKG_OLD"'
+
+
+class TestFirebirdTableDDLDeclarations:
+    def test_table_declaration_defaults_are_absent(self, dialect):
+        expression = CreateTableExpression(
+            dialect,
+            "plain_table_defaults",
+            [ColumnDefinition(dialect, "id", IntegerType(dialect))],
+        )
+        sql, params = expression.to_sql()
+        assert expression.inherits == []
+        assert expression.tablespace is None
+        assert "plain_table_defaults" in sql.lower()
+        assert "id" in sql.lower()
+        assert params == ()
+
+    def test_table_inherits_is_carried_and_rejected(self, dialect):
+        expression = CreateTableExpression(
+            dialect,
+            "child",
+            [ColumnDefinition(dialect, "id", IntegerType(dialect))],
+            inherits=["parent_a", "parent_b"],
+        )
+        assert expression.inherits == ["parent_a", "parent_b"]
+        assert dialect.supports_table_inheritance() is False
+        with pytest.raises(UnsupportedFeatureError, match="INHERITS"):
+            expression.to_sql()
+
+    def test_table_tablespace_is_carried_and_rejected(self, dialect):
+        expression = CreateTableExpression(
+            dialect,
+            "spaced",
+            [ColumnDefinition(dialect, "id", IntegerType(dialect))],
+            tablespace="ts_data",
+        )
+        assert expression.tablespace == "ts_data"
+        assert dialect.supports_table_tablespace() is False
+        with pytest.raises(UnsupportedFeatureError, match="TABLESPACE"):
+            expression.to_sql()
