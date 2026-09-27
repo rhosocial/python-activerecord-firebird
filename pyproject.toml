@@ -93,6 +93,9 @@ markers = [
     "query: marks tests for query functionality",
     "transaction: marks tests for transaction handling",
     "requires_capability: marks tests requiring specific backend capabilities",
+    "feature: category label for feature-area tests; changes collection grouping only, not ordering",
+    "benchmark_relation: marks relation benchmarks; changes collection grouping only, not ordering",
+
 ]
 
 [tool.coverage.run]
