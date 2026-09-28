@@ -267,7 +267,7 @@ class FirebirdBackend(
         if hasattr(self.config, 'version') and self.config.version is None:
             self.config.version = version
         if version < (3, 0, 0):
-            from .adapters import FirebirdBooleanAdapter
+            from ..adapters import FirebirdBooleanAdapter
             bool_adapter = FirebirdBooleanAdapter(use_char=True)
             self.adapter_registry.register(bool_adapter, bool, bool, allow_override=True)
             self.adapter_registry.register(bool_adapter, bool, str, allow_override=True)
