@@ -1,10 +1,8 @@
 # src/rhosocial/activerecord/backend/impl/firebird/examples/connection/quickstart.py
 """Quickstart example for Firebird backend."""
 
-from rhosocial.activerecord.backend.impl.firebird import (
-    FirebirdBackend,
-    FirebirdConnectionConfig,
-)
+from rhosocial.activerecord.backend.impl.firebird.backend import FirebirdBackend
+from rhosocial.activerecord.backend.impl.firebird.config import FirebirdConnectionConfig
 
 
 def main():

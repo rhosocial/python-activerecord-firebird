@@ -2,10 +2,8 @@ import os
 from dataclasses import replace
 
 import pytest
-from rhosocial.activerecord.backend.impl.firebird import (
-    FirebirdBackend,
-    FirebirdConnectionConfig,
-)
+from rhosocial.activerecord.backend.impl.firebird.backend import FirebirdBackend
+from rhosocial.activerecord.backend.impl.firebird.config import FirebirdConnectionConfig
 
 
 def _apply_pooled_database(config: FirebirdConnectionConfig) -> FirebirdConnectionConfig:

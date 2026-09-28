@@ -58,7 +58,7 @@ pip install rhosocial-activerecord-firebird
 
 ```python
 from rhosocial.activerecord.model import ActiveRecord
-from rhosocial.activerecord.backend.impl.firebird import FirebirdBackend
+from rhosocial.activerecord.backend.impl.firebird.backend import FirebirdBackend
 from rhosocial.activerecord.backend.impl.firebird.config import FirebirdConnectionConfig
 from typing import Optional
 

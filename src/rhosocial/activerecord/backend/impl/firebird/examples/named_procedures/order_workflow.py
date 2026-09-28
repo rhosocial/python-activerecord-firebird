@@ -135,7 +135,8 @@ from rhosocial.activerecord.backend.named_expression import ProcedureRunner, Tra
 if __name__ == "__main__":
     import os
 
-    from rhosocial.activerecord.backend.impl.firebird import FirebirdBackend, FirebirdConnectionConfig
+    from rhosocial.activerecord.backend.impl.firebird.backend import FirebirdBackend
+    from rhosocial.activerecord.backend.impl.firebird.config import FirebirdConnectionConfig
     from rhosocial.activerecord.backend.impl.firebird.examples.named_expressions.order_expressions import (
         prepare_orders_demo,
     )

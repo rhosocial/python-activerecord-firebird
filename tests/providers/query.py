@@ -28,7 +28,7 @@ from rhosocial.activerecord.testsuite.feature.query.interfaces import (
     IQuerySyncProvider,
     IQueryAsyncProvider,
 )
-from rhosocial.activerecord.backend.impl.firebird import AsyncFirebirdBackend
+from rhosocial.activerecord.backend.impl.firebird.async_backend import AsyncFirebirdBackend
 from rhosocial.activerecord.testsuite.core.protocols import WorkerTestProtocol
 from .scenarios import get_enabled_scenarios, get_scenario
 
@@ -226,7 +226,7 @@ class QuerySyncProvider(QueryProviderBaseImpl, IQuerySyncProvider, WorkerTestPro
         if pooled_db:
             config_dict = {**config_dict, "database": pooled_db}
         return {
-            "backend_module": "rhosocial.activerecord.backend.impl.firebird",
+            "backend_module": "rhosocial.activerecord.backend.impl.firebird.backend",
             "backend_class_name": "FirebirdBackend",
             "config_class_module": "rhosocial.activerecord.backend.impl.firebird.config",
             "config_class_name": "FirebirdConnectionConfig",

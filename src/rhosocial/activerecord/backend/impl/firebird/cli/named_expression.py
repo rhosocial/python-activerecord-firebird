@@ -4,7 +4,8 @@
 named-expression requires connection arguments, output arguments, and --rich-ascii.
 """
 
-from rhosocial.activerecord.backend.impl.firebird import FirebirdBackend, AsyncFirebirdBackend
+from rhosocial.activerecord.backend.impl.firebird.backend import FirebirdBackend
+from rhosocial.activerecord.backend.impl.firebird.async_backend import AsyncFirebirdBackend
 from rhosocial.activerecord.backend.options import ExecutionOptions
 
 from .connection import create_connection_parent_parser, resolve_connection_config_from_args, warn_if_async_requested

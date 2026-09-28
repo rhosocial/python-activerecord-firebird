@@ -2,7 +2,7 @@
 """Tests for FirebirdDialect SQL generation."""
 
 
-from rhosocial.activerecord.backend.impl.firebird import FirebirdDialect
+from rhosocial.activerecord.backend.impl.firebird.dialect import FirebirdDialect
 
 
 class TestFirebirdDialectBasic:

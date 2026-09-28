@@ -2,7 +2,8 @@
 from typing import Type, Tuple, Optional, List
 
 from rhosocial.activerecord.model import ActiveRecord, AsyncActiveRecord
-from rhosocial.activerecord.backend.impl.firebird import FirebirdBackend, AsyncFirebirdBackend
+from rhosocial.activerecord.backend.impl.firebird.backend import FirebirdBackend
+from rhosocial.activerecord.backend.impl.firebird.async_backend import AsyncFirebirdBackend
 from rhosocial.activerecord.connection.pool import BackendPool, AsyncBackendPool, PoolConfig
 from rhosocial.activerecord.backend.options import ExecutionOptions
 from rhosocial.activerecord.backend.schema import StatementType

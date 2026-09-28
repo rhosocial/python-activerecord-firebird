@@ -5,7 +5,7 @@ import pytest
 
 from rhosocial.activerecord.backend.expression import ColumnDefinition
 from rhosocial.activerecord.backend.expression.types import VarCharType
-from rhosocial.activerecord.backend.impl.firebird import FirebirdDialect
+from rhosocial.activerecord.backend.impl.firebird.dialect import FirebirdDialect
 from rhosocial.activerecord.backend.impl.firebird.expression import (
     FirebirdColumnDefinition,
     FirebirdColumnOptions,

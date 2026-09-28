@@ -23,7 +23,7 @@ from rhosocial.activerecord.backend.expression.statements.ddl_partition import (
     PartitionClause,
     PartitionStrategy,
 )
-from rhosocial.activerecord.backend.impl.firebird import FirebirdDialect
+from rhosocial.activerecord.backend.impl.firebird.dialect import FirebirdDialect
 from rhosocial.activerecord.backend.impl.firebird.expression.column import (
     FirebirdColumnOptions,
 )

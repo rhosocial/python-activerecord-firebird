@@ -4,7 +4,7 @@
 import os
 from dataclasses import replace
 from typing import Dict, Any, Tuple, Type
-from rhosocial.activerecord.backend.impl.firebird import FirebirdBackend
+from rhosocial.activerecord.backend.impl.firebird.backend import FirebirdBackend
 from rhosocial.activerecord.backend.impl.firebird.config import FirebirdConnectionConfig
 from rhosocial.activerecord.testsuite.core.pool import pooled_database_name
 

@@ -162,7 +162,8 @@ def prepare_orders_demo(backend) -> None:
 if __name__ == "__main__":
     import os
 
-    from rhosocial.activerecord.backend.impl.firebird import FirebirdBackend, FirebirdConnectionConfig
+    from rhosocial.activerecord.backend.impl.firebird.backend import FirebirdBackend
+    from rhosocial.activerecord.backend.impl.firebird.config import FirebirdConnectionConfig
 
     config = FirebirdConnectionConfig(
         host=os.getenv("FIREBIRD_HOST", "localhost"),

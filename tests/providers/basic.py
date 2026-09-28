@@ -35,7 +35,7 @@ from rhosocial.activerecord.testsuite.feature.basic.interfaces import (
     IBasicAsyncProvider,
 )
 from rhosocial.activerecord.testsuite.core.protocols import WorkerTestProtocol
-from rhosocial.activerecord.backend.impl.firebird import AsyncFirebirdBackend
+from rhosocial.activerecord.backend.impl.firebird.async_backend import AsyncFirebirdBackend
 from .scenarios import get_enabled_scenarios, get_scenario
 
 logger = logging.getLogger(__name__)
@@ -218,7 +218,7 @@ class BasicSyncProvider(BasicProviderBaseImpl, IBasicSyncProvider, WorkerTestPro
         if pooled_db:
             config_dict = {**config_dict, "database": pooled_db}
         return {
-            "backend_module": "rhosocial.activerecord.backend.impl.firebird",
+            "backend_module": "rhosocial.activerecord.backend.impl.firebird.backend",
             "backend_class_name": "FirebirdBackend",
             "config_class_module": "rhosocial.activerecord.backend.impl.firebird.config",
             "config_class_name": "FirebirdConnectionConfig",

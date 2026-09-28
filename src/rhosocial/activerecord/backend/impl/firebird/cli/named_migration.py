@@ -3,7 +3,8 @@
 
 from __future__ import annotations
 
-from rhosocial.activerecord.backend.impl.firebird import FirebirdBackend, AsyncFirebirdBackend
+from rhosocial.activerecord.backend.impl.firebird.backend import FirebirdBackend
+from rhosocial.activerecord.backend.impl.firebird.async_backend import AsyncFirebirdBackend
 
 from .connection import add_connection_args, resolve_connection_config_from_args, warn_if_async_requested
 from .output import create_provider

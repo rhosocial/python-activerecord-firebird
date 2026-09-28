@@ -16,7 +16,7 @@ from rhosocial.activerecord.testsuite.feature.mixins.interfaces import (
     IMixinsSyncProvider,
     IMixinsAsyncProvider,
 )
-from rhosocial.activerecord.backend.impl.firebird import AsyncFirebirdBackend
+from rhosocial.activerecord.backend.impl.firebird.async_backend import AsyncFirebirdBackend
 from .scenarios import get_enabled_scenarios, get_scenario
 
 logger = logging.getLogger(__name__)

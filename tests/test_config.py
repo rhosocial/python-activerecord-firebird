@@ -3,7 +3,7 @@
 
 
 
-from rhosocial.activerecord.backend.impl.firebird import FirebirdConnectionConfig
+from rhosocial.activerecord.backend.impl.firebird.config import FirebirdConnectionConfig
 
 
 class TestFirebirdConnectionConfig:

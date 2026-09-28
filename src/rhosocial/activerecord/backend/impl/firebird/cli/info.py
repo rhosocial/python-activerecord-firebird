@@ -210,7 +210,7 @@ def handle(args):
 
     if getattr(args, "database", None):
         try:
-            from rhosocial.activerecord.backend.impl.firebird import FirebirdBackend
+            from rhosocial.activerecord.backend.impl.firebird.backend import FirebirdBackend
 
             config = resolve_connection_config_from_args(args)
             backend = FirebirdBackend(connection_config=config)

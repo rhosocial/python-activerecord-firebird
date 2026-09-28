@@ -19,11 +19,9 @@ for _i, _arg in enumerate(sys.argv):
 if _argv_scenarios:
     os.environ["FIREBIRD_ACTIVE_SCENARIOS"] = _argv_scenarios
 
-from rhosocial.activerecord.backend.impl.firebird import (
-    FirebirdBackend,
-    FirebirdConnectionConfig,
-    FirebirdDialect,
-)
+from rhosocial.activerecord.backend.impl.firebird.backend import FirebirdBackend
+from rhosocial.activerecord.backend.impl.firebird.config import FirebirdConnectionConfig
+from rhosocial.activerecord.backend.impl.firebird.dialect import FirebirdDialect
 
 os.environ.setdefault(
     "TESTSUITE_PROVIDER_REGISTRY",

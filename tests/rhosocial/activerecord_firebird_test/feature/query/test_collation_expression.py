@@ -6,7 +6,8 @@ Tests for expression-level COLLATE support on Firebird.
 import pytest
 
 from rhosocial.activerecord.backend.expression import Column, Literal
-from rhosocial.activerecord.backend.impl.firebird import FirebirdCollation, FirebirdDialect
+from rhosocial.activerecord.backend.impl.firebird.collation import FirebirdCollation
+from rhosocial.activerecord.backend.impl.firebird.dialect import FirebirdDialect
 
 
 @pytest.fixture
