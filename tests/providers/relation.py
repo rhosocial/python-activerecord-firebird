@@ -8,7 +8,7 @@ from rhosocial.activerecord.testsuite.feature.relation.interfaces import (
     IRelationSyncProvider,
     IRelationAsyncProvider,
 )
-from rhosocial.activerecord.backend.impl.firebird.async_backend import AsyncFirebirdBackend
+from rhosocial.activerecord.backend.impl.firebird.backend.async_backend import AsyncFirebirdBackend
 from rhosocial.activerecord.testsuite.feature.relation.fixtures.models import (
     Employee,
     Department,

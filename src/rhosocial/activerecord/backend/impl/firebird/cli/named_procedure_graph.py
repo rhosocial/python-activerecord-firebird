@@ -17,7 +17,7 @@ Usage:
 """
 
 from rhosocial.activerecord.backend.impl.firebird.backend import FirebirdBackend
-from rhosocial.activerecord.backend.impl.firebird.async_backend import AsyncFirebirdBackend
+from rhosocial.activerecord.backend.impl.firebird.backend.async_backend import AsyncFirebirdBackend
 
 from .connection import create_connection_parent_parser, resolve_connection_config_from_args
 from .output import create_provider

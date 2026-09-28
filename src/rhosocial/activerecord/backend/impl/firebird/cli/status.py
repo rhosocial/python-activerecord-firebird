@@ -10,7 +10,7 @@ from enum import Enum
 from typing import Any
 
 from rhosocial.activerecord.backend.impl.firebird.backend import FirebirdBackend
-from rhosocial.activerecord.backend.impl.firebird.async_backend import AsyncFirebirdBackend
+from rhosocial.activerecord.backend.impl.firebird.backend.async_backend import AsyncFirebirdBackend
 from rhosocial.activerecord.backend.errors import ConnectionError, QueryError
 
 from .connection import add_connection_args, resolve_connection_config_from_args, warn_if_async_requested

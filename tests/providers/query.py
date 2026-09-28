@@ -28,7 +28,7 @@ from rhosocial.activerecord.testsuite.feature.query.interfaces import (
     IQuerySyncProvider,
     IQueryAsyncProvider,
 )
-from rhosocial.activerecord.backend.impl.firebird.async_backend import AsyncFirebirdBackend
+from rhosocial.activerecord.backend.impl.firebird.backend.async_backend import AsyncFirebirdBackend
 from rhosocial.activerecord.testsuite.core.protocols import WorkerTestProtocol
 from .scenarios import get_enabled_scenarios, get_scenario
 

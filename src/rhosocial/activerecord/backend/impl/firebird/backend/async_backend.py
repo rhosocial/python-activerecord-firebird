@@ -39,15 +39,15 @@ from rhosocial.activerecord.backend.options import (
 from rhosocial.activerecord.backend.result import QueryResult
 from rhosocial.activerecord.backend.schema import StatementType
 
-from .config import FirebirdConnectionConfig
-from .mixins import (
+from ..config import FirebirdConnectionConfig
+from ..mixins import (
     FirebirdBackendMixin,
     track_firebird_backend,
     track_firebird_connection,
     untrack_firebird_backend,
     untrack_firebird_connection,
 )
-from .async_transaction import AsyncFirebirdTransactionManager
+from ..async_transaction import AsyncFirebirdTransactionManager
 
 
 _shared_executor_instance = None

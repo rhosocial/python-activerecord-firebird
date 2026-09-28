@@ -35,7 +35,7 @@ from rhosocial.activerecord.testsuite.feature.basic.interfaces import (
     IBasicAsyncProvider,
 )
 from rhosocial.activerecord.testsuite.core.protocols import WorkerTestProtocol
-from rhosocial.activerecord.backend.impl.firebird.async_backend import AsyncFirebirdBackend
+from rhosocial.activerecord.backend.impl.firebird.backend.async_backend import AsyncFirebirdBackend
 from .scenarios import get_enabled_scenarios, get_scenario
 
 logger = logging.getLogger(__name__)
