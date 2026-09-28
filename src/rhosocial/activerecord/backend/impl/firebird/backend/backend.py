@@ -273,7 +273,7 @@ class FirebirdBackend(
             self.adapter_registry.register(bool_adapter, bool, str, allow_override=True)
 
     def _create_introspector(self):
-        from .introspection.introspector import SyncFirebirdIntrospector
+        from ..introspection.introspector import SyncFirebirdIntrospector
         return SyncFirebirdIntrospector(self)
 
     def _process_result_set(self, cursor, is_select, column_adapters=None, column_mapping=None):
@@ -344,7 +344,7 @@ class FirebirdBackend(
         )
 
     def _parse_explain_result(self, result: QueryResult) -> Any:
-        from .explain.types import FirebirdExplainResult
+        from ..explain.types import FirebirdExplainResult
         rows = result.data or []
         plan_text = " ".join(str(row[0]) for row in rows) if rows else ""
         return FirebirdExplainResult(plan_text=plan_text)

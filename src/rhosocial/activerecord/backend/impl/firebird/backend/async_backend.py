@@ -569,7 +569,7 @@ class AsyncFirebirdBackend(
 
     def _create_introspector(self):
         from ..introspection import AsyncFirebirdIntrospector
-        from .introspection.executor import AsyncFirebirdIntrospectorExecutor
+        from ..introspection.executor import AsyncFirebirdIntrospectorExecutor
         return AsyncFirebirdIntrospector(self, AsyncFirebirdIntrospectorExecutor(self))
 
     # ------------------------------------------------------------------
