@@ -1,4 +1,4 @@
-# src/rhosocial/activerecord/backend/impl/firebird/mixins/alter_table_modifier.py
+# src/rhosocial/activerecord/backend/impl/firebird/mixins/ddl_alter_table_modifier.py
 """Firebird-specific ALTER TABLE handling.
 
 Guards the vendor ``IF [NOT] EXISTS`` modifiers: Firebird <= 5.0.4 does

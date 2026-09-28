@@ -1,4 +1,4 @@
-# src/rhosocial/activerecord/backend/impl/firebird/mixins/table.py
+# src/rhosocial/activerecord/backend/impl/firebird/mixins/ddl_table.py
 """Firebird table DDL mixin."""
 
 from typing import Any, List, Tuple, TYPE_CHECKING
