@@ -16,7 +16,7 @@ import sys
 import pytest
 
 from rhosocial.activerecord.backend.errors import ConnectionError, QueryError
-from rhosocial.activerecord.backend.impl import firebird as firebird_impl_pkg
+from rhosocial.activerecord.backend.impl.firebird import backend as firebird_backend_mod
 from rhosocial.activerecord.backend.impl.firebird.cli import info as info_mod
 from rhosocial.activerecord.backend.impl.firebird.cli import query as query_mod
 from rhosocial.activerecord.backend.impl.firebird.dialect import FirebirdDialect
@@ -158,7 +158,7 @@ class TestInfoHandle:
             assert set(stats) == {"supported", "total", "percentage", "methods"}
 
     def test_connected_run_uses_backend_dialect(self, monkeypatch, capsys):
-        monkeypatch.setattr(firebird_impl_pkg, "FirebirdBackend", FakeInfoBackend)
+        monkeypatch.setattr(firebird_backend_mod, "FirebirdBackend", FakeInfoBackend)
         args = parse_args(info_mod, ["info", "--database", "/tmp/live.fdb"])
         info_mod.handle(args)
         payload = json.loads(capsys.readouterr().out)
@@ -171,7 +171,7 @@ class TestInfoHandle:
             def connect(self):
                 raise ConnectionError("no listener")
 
-        monkeypatch.setattr(firebird_impl_pkg, "FirebirdBackend", RefusedBackend)
+        monkeypatch.setattr(firebird_backend_mod, "FirebirdBackend", RefusedBackend)
         args = parse_args(info_mod, ["info", "--database", "/tmp/live.fdb", "-o", "json"])
         info_mod.handle(args)
         payload = json.loads(capsys.readouterr().out)
