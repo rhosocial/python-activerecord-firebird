@@ -257,6 +257,10 @@ class FirebirdDialect(
     TemporalTableMixin,
 
     GraphMixin,
+    # Before PartitionMixin: the backend block below comes later, so
+    # format_partition_clause was never called and raised TypeError, and the
+    # nine partition probes answered for the core.
+    FirebirdPartitionMixin,
     PartitionMixin,
     TruncateMixin,
     SchemaMixin,
@@ -328,7 +332,6 @@ class FirebirdDialect(
     FirebirdExceptionSupport,
     FirebirdContextVariableSupport,
     UserDefinedTypeSupport,
-    FirebirdPartitionMixin,
     FirebirdTypeSupportMixin,
 ):
     """Firebird dialect implementation that adapts to Firebird version.
