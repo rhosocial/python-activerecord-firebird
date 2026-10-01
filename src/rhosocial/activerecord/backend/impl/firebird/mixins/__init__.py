@@ -33,6 +33,7 @@ from .window import FirebirdWindowFunctionMixin
 from .datetime import FirebirdDateTimeMixin
 from .dql import FirebirdDQLMixin
 from .collation import FirebirdCollationMixin
+from .json import FirebirdJSONMixin
 from .identifier import FirebirdIdentifierMixin
 from .cte import FirebirdCTEMixin
 from .returning import FirebirdReturningMixin
@@ -79,6 +80,7 @@ __all__ = [
     "FirebirdDateTimeMixin",
     "FirebirdDQLMixin",
     "FirebirdCollationMixin",
+    "FirebirdJSONMixin",
     "FirebirdIdentifierMixin",
     "FirebirdCTEMixin",
     "FirebirdReturningMixin",

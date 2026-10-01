@@ -120,6 +120,7 @@ from .mixins import (
     FirebirdDateTimeMixin,
     FirebirdDQLMixin,
     FirebirdCollationMixin,
+    FirebirdJSONMixin,
     FirebirdIdentifierMixin,
     FirebirdCTEMixin,
     FirebirdReturningMixin,
@@ -195,6 +196,7 @@ class FirebirdDialect(
     FirebirdDateTimeMixin,       # Before DateTimeMixin
     FirebirdDQLMixin,            # Before DQLMixin
     FirebirdCollationMixin,      # Before CollationMixin
+    FirebirdJSONMixin,           # Before JSONMixin
     FirebirdIdentifierMixin,     # Before IdentifierMixin
     FirebirdCTEMixin,            # Before CTEMixin
     FirebirdReturningMixin,
