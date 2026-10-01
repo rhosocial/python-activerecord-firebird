@@ -26,6 +26,15 @@ turned on. Nothing else in the backend needs to change.
 class FirebirdJSONMixin:
     """Records that this dialect has no JSON path support at all."""
 
+    def supports_json_path(self) -> bool:
+        """No released Firebird can read a JSON path. See the module docstring.
+
+        Named separately from supports_json_type because they answer different
+        questions and would drift apart: Firebird has JSON construction from
+        2.5 and no path functions in any release.
+        """
+        return False
+
     def supports_json_type(self) -> bool:
         """No released Firebird has JSON_VALUE or JSON_QUERY.
 
