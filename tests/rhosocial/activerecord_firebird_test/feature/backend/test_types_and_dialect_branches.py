@@ -212,7 +212,7 @@ class TestReturningBranches:
 
     def test_update_returning_snapshot(self, dialect):
         update = UpdateExpression(
-            dialect, "users", {"name": E.Literal(dialect, "Bob")},
+            dialect, E.TableExpression(dialect, "users"), {"name": E.Literal(dialect, "Bob")},
             where=E.Column(dialect, "id") == E.Literal(dialect, 7),
             returning=ReturningClause(dialect, expressions=[E.Column(dialect, "id")]),
         )

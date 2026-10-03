@@ -28,7 +28,7 @@ def _make_merge(dialect, when_matched=None, when_not_matched=None, by_source=Non
     """Build a MERGE expression over a simple two-column target/source pair."""
     return MergeExpression(
         dialect,
-        target_table="tgt",
+        target_table=TableExpression(dialect, "tgt"),
         source=TableExpression(dialect, "src"),
         on_condition=Column(dialect, "id", "tgt") == Column(dialect, "id", "src"),
         when_matched=when_matched or [],
