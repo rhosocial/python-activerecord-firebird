@@ -65,10 +65,24 @@ jobs:
           pip install -r requirements.txt
           pip install -r requirements-dev.txt
 
-      - name: Install activerecord and testsuite
+      - name: Check out activerecord (branch under test)
+        uses: actions/checkout@v6
+        with:
+          repository: rhosocial/python-activerecord
+          ref: fix/schema-name-propagation-gaps
+          path: _activerecord
+
+      - name: Check out testsuite (release branch)
+        uses: actions/checkout@v6
+        with:
+          repository: rhosocial/python-activerecord-testsuite
+          ref: release/v1.0.0.dev17
+          path: _testsuite
+
+      - name: Install activerecord and testsuite (editable)
         run: |
-          pip install "rhosocial-activerecord @ git+https://github.com/rhosocial/python-activerecord.git@release/v1.0.0.dev30"
-          pip install "rhosocial-activerecord-testsuite @ git+https://github.com/rhosocial/python-activerecord-testsuite.git@release/v1.0.0.dev17"
+          pip install -e ./_activerecord
+          pip install -e ./_testsuite
 
       - name: Verify Firebird connection and create test user
         run: |
