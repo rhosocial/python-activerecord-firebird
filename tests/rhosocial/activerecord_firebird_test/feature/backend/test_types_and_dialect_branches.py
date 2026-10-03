@@ -180,7 +180,18 @@ class TestBaseDataTypeRendering:
         assert isinstance(dialect.parse_type("DATE"), DateType)
         assert isinstance(dialect.parse_type("TIME"), TimeType)
         assert isinstance(dialect.parse_type("BOOLEAN"), BooleanType)
-        assert dialect.parse_type("SOMETHING WEIRD") == CustomType(raw="SOMETHING WEIRD")
+        # An identifier-shaped name the framework has no class for is kept, so a
+        # Firebird type it does not model stays reachable.
+        assert dialect.parse_type("SOMETHING_WEIRD") == CustomType(raw="SOMETHING_WEIRD")
+
+    def test_parse_type_refuses_a_name_that_is_not_an_identifier(self, dialect):
+        """A type name lands where a bound parameter cannot go, so it is
+        validated rather than preserved. A space has no meaning there, and
+        accepting one would put arbitrary text into the statement."""
+        from rhosocial.activerecord.backend.expression.type_name import InvalidTypeNameError
+
+        with pytest.raises(InvalidTypeNameError):
+            dialect.parse_type("SOMETHING WEIRD")
 
     def test_parse_type_timestamp_takes_precedence_over_time(self, dialect):
         """F7 anchor: startswith("TIME") used to swallow TIMESTAMP strings."""
