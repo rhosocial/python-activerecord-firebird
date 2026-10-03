@@ -15,17 +15,14 @@ class FirebirdTriggerMixin:
     ) -> Tuple[str, tuple]:
         parts = ["CREATE TRIGGER"]
         parts.append(self.format_identifier(expr.trigger_name))
-        if not getattr(expr, 'active', True):
-            parts.append("INACTIVE")
-        parts.append(expr.timing)
-        parts.append(' OR '.join(expr.events))
+        parts.append(expr.timing.value)
+        parts.append(' OR '.join(e.value for e in expr.events))
         parts.append("ON")
-        parts.append(self.format_identifier(expr.table_name))
-        parts.append(f"POSITION {getattr(expr, 'position', 0)}")
-        when_condition = getattr(expr, 'when_condition', None)
-        if when_condition:
-            parts.append(f"WHEN ({when_condition})")
+        parts.append(expr.table.to_sql()[0])
+        if expr.condition is not None:
+            condition_sql, _ = expr.condition.to_sql()
+            parts.append(f"WHEN ({condition_sql})")
         parts.append("AS")
-        parts.append(expr.body)
+        parts.append(f"EXECUTE {expr.function.to_sql()[0]}")
 
         return ' '.join(parts), ()
