@@ -23,17 +23,20 @@ class TestFirebirdDropTableCascade:
         assert dialect.supports_drop_table_restrict() is False
 
     def test_cascade_rejected(self, dialect):
-        expr = DropTableExpression(dialect, table="users", cascade=True)
+        from rhosocial.activerecord.backend.expression.core import TableExpression
+        expr = DropTableExpression(dialect, table=TableExpression(dialect, "users"), cascade=True)
         with pytest.raises(UnsupportedFeatureError, match="DROP TABLE ... CASCADE"):
             expr.to_sql()
 
     def test_restrict_rejected(self, dialect):
-        expr = DropTableExpression(dialect, table="users", cascade=False)
+        from rhosocial.activerecord.backend.expression.core import TableExpression
+        expr = DropTableExpression(dialect, table=TableExpression(dialect, "users"), cascade=False)
         with pytest.raises(UnsupportedFeatureError, match="DROP TABLE ... RESTRICT"):
             expr.to_sql()
 
     def test_cascade_none_renders_plain(self, dialect):
-        expr = DropTableExpression(dialect, table="users", cascade=None)
+        from rhosocial.activerecord.backend.expression.core import TableExpression
+        expr = DropTableExpression(dialect, table=TableExpression(dialect, "users"), cascade=None)
         sql, params = expr.to_sql()
         assert "CASCADE" not in sql
         assert "RESTRICT" not in sql

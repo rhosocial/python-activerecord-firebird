@@ -350,7 +350,8 @@ class TestSequenceBranches:
 
 class TestCreateTableRebuildSnapshots:
     def test_basic_table(self, dialect):
-        expr = CreateTableExpression(dialect, "users", [
+        from rhosocial.activerecord.backend.expression.core import TableExpression
+        expr = CreateTableExpression(dialect, TableExpression(dialect, "users"), [
             _column(dialect, "id", IntegerType(dialect), ColumnConstraint(dialect, ColumnConstraintType.PRIMARY_KEY)),
             _column(dialect, "name", VarCharType(length=100, dialect=dialect)),
         ])
@@ -363,7 +364,11 @@ class TestCreateTableRebuildSnapshots:
         (False, 'ON COMMIT PRESERVE ROWS'),
     ])
     def test_global_temporary_table(self, dialect, on_commit_delete, expected_tail):
-        expr = CreateTableExpression(dialect, "tmp_t", [_column(dialect, "id", IntegerType(dialect))], temporary=True)
+        from rhosocial.activerecord.backend.expression.core import TableExpression
+        expr = CreateTableExpression(dialect, TableExpression(
+                                                  dialect,
+                                                  "tmp_t",
+                                              ), [_column(dialect, "id", IntegerType(dialect))], temporary=True)
         expr.on_commit_delete = on_commit_delete
         sql, _ = expr.to_sql()
         assert sql.startswith('CREATE GLOBAL TEMPORARY TABLE "TMP_T"')
@@ -375,7 +380,11 @@ class TestCreateTableRebuildSnapshots:
     ])
     def test_global_temporary_word_order_snapshot(self, dialect, on_commit_delete, expected):
         """F5 anchor: exact to_sql() snapshot of the corrected word order."""
-        expr = CreateTableExpression(dialect, "gt_a", [_column(dialect, "id", IntegerType(dialect))], temporary=True)
+        from rhosocial.activerecord.backend.expression.core import TableExpression
+        expr = CreateTableExpression(dialect, TableExpression(
+                                                  dialect,
+                                                  "gt_a",
+                                              ), [_column(dialect, "id", IntegerType(dialect))], temporary=True)
         expr.on_commit_delete = on_commit_delete
         assert expr.to_sql() == (expected, ())
 
@@ -385,9 +394,10 @@ class TestCreateTableRebuildSnapshots:
         Previously the clause was rendered unconditionally; it must now be
         rejected through supports_if_not_exists_table().
         """
+        from rhosocial.activerecord.backend.expression.core import TableExpression
         expr = CreateTableExpression(
             dialect,
-            "tbl_c",
+            TableExpression(dialect, "tbl_c"),
             [_column(dialect, "id", IntegerType(dialect))],
             if_not_exists=True,
         )
@@ -396,9 +406,10 @@ class TestCreateTableRebuildSnapshots:
         assert "IF NOT EXISTS" in str(excinfo.value)
 
     def test_if_not_exists_renders_when_capability_present(self, dialect):
+        from rhosocial.activerecord.backend.expression.core import TableExpression
         expr = CreateTableExpression(
             dialect,
-            "tbl_c",
+            TableExpression(dialect, "tbl_c"),
             [_column(dialect, "id", IntegerType(dialect))],
             if_not_exists=True,
         )
@@ -408,14 +419,19 @@ class TestCreateTableRebuildSnapshots:
         assert sql.startswith('CREATE TABLE IF NOT EXISTS "TBL_C"')
 
     def test_external_file_clause(self, dialect):
-        expr = CreateTableExpression(dialect, "ext_t", [_column(dialect, "id", IntegerType(dialect))])
+        from rhosocial.activerecord.backend.expression.core import TableExpression
+        expr = CreateTableExpression(dialect, TableExpression(
+                                                  dialect,
+                                                  "ext_t",
+                                              ), [_column(dialect, "id", IntegerType(dialect))])
         expr.external_file = "/data/ext.fdb"
         assert expr.to_sql() == ('CREATE TABLE "EXT_T" ("ID" INTEGER) EXTERNAL FILE \'/data/ext.fdb\'', ())
 
     def test_computed_by_column(self, dialect):
         col = _column(dialect, "full_name", VarCharType(length=200, dialect=dialect))
         col.computed_by = '"FIRST_NAME" || \' \' || "LAST_NAME"'
-        assert CreateTableExpression(dialect, "emp", [col]).to_sql() == (
+        from rhosocial.activerecord.backend.expression.core import TableExpression
+        assert CreateTableExpression(dialect, TableExpression(dialect, "emp"), [col]).to_sql() == (
             'CREATE TABLE "EMP" '
             '("FULL_NAME" VARCHAR(200) COMPUTED BY ("FIRST_NAME" || \' \' || "LAST_NAME"))',
             (),
@@ -426,7 +442,8 @@ class TestCreateTableRebuildSnapshots:
 
         col = _column(dialect, "id", IntegerType(dialect))
         col.attributes = [IdentityAttribute(generation="ALWAYS", start=1000, increment=10)]
-        assert CreateTableExpression(dialect, "ident_t", [col]).to_sql() == (
+        from rhosocial.activerecord.backend.expression.core import TableExpression
+        assert CreateTableExpression(dialect, TableExpression(dialect, "ident_t"), [col]).to_sql() == (
             'CREATE TABLE "IDENT_T" '
             '("ID" INTEGER GENERATED ALWAYS AS IDENTITY (START WITH 1000 INCREMENT BY 10))',
             (),
@@ -437,7 +454,8 @@ class TestCreateTableRebuildSnapshots:
             dialect, "id", IntegerType(dialect),
             ColumnConstraint(dialect, ColumnConstraintType.PRIMARY_KEY, is_auto_increment=True),
         )
-        assert CreateTableExpression(dialect, "autoinc", [col]).to_sql() == (
+        from rhosocial.activerecord.backend.expression.core import TableExpression
+        assert CreateTableExpression(dialect, TableExpression(dialect, "autoinc"), [col]).to_sql() == (
             'CREATE TABLE "AUTOINC" ("ID" INTEGER GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY)', ()
         )
 
@@ -447,7 +465,8 @@ class TestCreateTableRebuildSnapshots:
             ColumnConstraint(dialect, ColumnConstraintType.DEFAULT, default_value="O'Brien"),
             ColumnConstraint(dialect, ColumnConstraintType.NOT_NULL),
         )
-        assert CreateTableExpression(dialect, "t5", [col]).to_sql() == (
+        from rhosocial.activerecord.backend.expression.core import TableExpression
+        assert CreateTableExpression(dialect, TableExpression(dialect, "t5"), [col]).to_sql() == (
             "CREATE TABLE \"T5\" (\"STATUS\" VARCHAR(20) DEFAULT 'O''Brien' NOT NULL)", ()
         )
 
@@ -462,7 +481,8 @@ class TestCreateTableRebuildSnapshots:
                 default_value=E.Literal(dialect, "CURRENT_TIMESTAMP"),
             ),
         )
-        assert CreateTableExpression(dialect, "t5b", [col]).to_sql() == (
+        from rhosocial.activerecord.backend.expression.core import TableExpression
+        assert CreateTableExpression(dialect, TableExpression(dialect, "t5b"), [col]).to_sql() == (
             'CREATE TABLE "T5B" ("CREATED_AT" TIMESTAMP DEFAULT ?)', ("CURRENT_TIMESTAMP",)
         )
 
@@ -472,7 +492,8 @@ class TestCreateTableRebuildSnapshots:
             ColumnConstraint(dialect, ColumnConstraintType.DEFAULT, default_value=0),
             ColumnConstraint(dialect, ColumnConstraintType.NULL),
         )
-        assert CreateTableExpression(dialect, "t5c", [col]).to_sql() == (
+        from rhosocial.activerecord.backend.expression.core import TableExpression
+        assert CreateTableExpression(dialect, TableExpression(dialect, "t5c"), [col]).to_sql() == (
             'CREATE TABLE "T5C" ("AMOUNT" DECIMAL(18, 2) DEFAULT 0 NULL)', ()
         )
 
@@ -488,8 +509,9 @@ class TestCreateTableRebuildSnapshots:
             dialect, TableConstraintType.CHECK,
             check_condition=E.Column(dialect, "amount") >= E.Literal(dialect, 0),
         )
+        from rhosocial.activerecord.backend.expression.core import TableExpression
         expr = CreateTableExpression(
-            dialect, "orders",
+            dialect, TableExpression(dialect, "orders"),
             [
                 _column(dialect, "id", IntegerType(dialect)),
                 _column(dialect, "customer_id", IntegerType(dialect)),
@@ -509,7 +531,11 @@ class TestCreateTableRebuildSnapshots:
 
     def test_partition_rejected(self, dialect):
         partition = E.PartitionClause(dialect, method=E.PartitionStrategy.HASH, keys=[E.Column(dialect, "id")])
-        expr = CreateTableExpression(dialect, "pt", [_column(dialect, "id", IntegerType(dialect))], partition=partition)
+        from rhosocial.activerecord.backend.expression.core import TableExpression
+        expr = CreateTableExpression(dialect, TableExpression(
+                                                  dialect,
+                                                  "pt",
+                                              ), [_column(dialect, "id", IntegerType(dialect))], partition=partition)
         with pytest.raises(UnsupportedFeatureError) as excinfo:
             expr.to_sql()
         assert "PARTITION BY clause" in str(excinfo.value)

@@ -43,7 +43,7 @@ class FirebirdCreateTableExpression(CreateTableExpression):
     def __init__(
         self,
         dialect: "SQLDialectBase",
-        table: Any,
+        table: TableExpression,
         columns: List["ColumnDefinition"],
         indexes: Optional[List["IndexDefinition"]] = None,
         table_constraints: Optional[List["TableConstraint"]] = None,

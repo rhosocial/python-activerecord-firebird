@@ -110,9 +110,10 @@ class TestPackageDDL:
 
 class TestFirebirdTableDDLDeclarations:
     def test_table_declaration_defaults_are_absent(self, dialect):
+        from rhosocial.activerecord.backend.expression.core import TableExpression
         expression = CreateTableExpression(
             dialect,
-            "plain_table_defaults",
+            TableExpression(dialect, "plain_table_defaults"),
             [ColumnDefinition(dialect, "id", IntegerType(dialect))],
         )
         sql, params = expression.to_sql()
@@ -123,9 +124,10 @@ class TestFirebirdTableDDLDeclarations:
         assert params == ()
 
     def test_table_inherits_is_carried_and_rejected(self, dialect):
+        from rhosocial.activerecord.backend.expression.core import TableExpression
         expression = CreateTableExpression(
             dialect,
-            "child",
+            TableExpression(dialect, "child"),
             [ColumnDefinition(dialect, "id", IntegerType(dialect))],
             inherits=["parent_a", "parent_b"],
         )
@@ -135,9 +137,10 @@ class TestFirebirdTableDDLDeclarations:
             expression.to_sql()
 
     def test_table_tablespace_is_carried_and_rejected(self, dialect):
+        from rhosocial.activerecord.backend.expression.core import TableExpression
         expression = CreateTableExpression(
             dialect,
-            "spaced",
+            TableExpression(dialect, "spaced"),
             [ColumnDefinition(dialect, "id", IntegerType(dialect))],
             tablespace="ts_data",
         )
