@@ -10,6 +10,7 @@ construction — no database connection.
 import pytest
 
 from rhosocial.activerecord.backend.dialect.exceptions import UnsupportedFeatureError
+from rhosocial.activerecord.backend.expression.core import TableExpression
 from rhosocial.activerecord.backend.expression.statements import AlterTableExpression
 from rhosocial.activerecord.backend.impl.firebird.dialect import FirebirdDialect
 from rhosocial.activerecord.backend.impl.firebird.expression import (
@@ -23,7 +24,7 @@ from rhosocial.activerecord.backend.impl.firebird.expression import (
 
 def _alter(dialect, action):
     """Render a single action through the full ALTER TABLE statement."""
-    return AlterTableExpression(dialect, "users", [action]).to_sql()
+    return AlterTableExpression(dialect, TableExpression(dialect, "users"), [action]).to_sql()
 
 
 class TestAlterTableIdentitySQL:
@@ -73,7 +74,7 @@ class TestAlterTableIdentitySQL:
         dialect = FirebirdDialect((5, 0, 0))
         expr = AlterTableExpression(
             dialect,
-            "users",
+            TableExpression(dialect, "users"),
             [
                 SetGenerated(dialect, "id", "BY DEFAULT"),
                 RestartIdentity(dialect, "id", 500),
