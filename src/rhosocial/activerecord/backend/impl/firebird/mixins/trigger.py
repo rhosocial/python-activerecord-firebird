@@ -23,6 +23,6 @@ class FirebirdTriggerMixin:
             condition_sql, _ = expr.condition.to_sql()
             parts.append(f"WHEN ({condition_sql})")
         parts.append("AS")
-        parts.append(f"EXECUTE {expr.function.to_sql()[0]}")
+        parts.append(f"EXECUTE {expr.function_name.to_sql()[0]}")
 
         return ' '.join(parts), ()

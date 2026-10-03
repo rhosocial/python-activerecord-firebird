@@ -15,6 +15,7 @@ the Firebird-specific instance.
 
 from typing import TYPE_CHECKING, Any, List, Optional
 
+from rhosocial.activerecord.backend.expression.core import TableExpression
 from rhosocial.activerecord.backend.expression.statements.ddl_table import (
     CreateTableExpression,
 )
