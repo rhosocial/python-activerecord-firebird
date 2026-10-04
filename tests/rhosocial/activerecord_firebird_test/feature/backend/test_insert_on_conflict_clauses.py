@@ -40,7 +40,7 @@ class TestFirebirdOnConflictCapabilities:
         """Regression: on_conflict used to be silently dropped; now it raises."""
         source = ValuesSource(dialect, values_list=[[Literal(dialect, 1)]])
         clause = OnConflictClause(dialect, conflict_target=["id"], do_nothing=True)
-        expr = InsertExpression(dialect, into="users", source=source, on_conflict=clause)
+        expr = InsertExpression(dialect, into=TableExpression(dialect, "users"), source=source, on_conflict=clause)
 
         with pytest.raises(UnsupportedFeatureError, match="does not support ON CONFLICT"):
             expr.to_sql()
@@ -49,7 +49,7 @@ class TestFirebirdOnConflictCapabilities:
         source = ValuesSource(dialect, values_list=[[Literal(dialect, 1)]])
         clause1 = OnConflictClause(dialect, conflict_target=["a"], do_nothing=True)
         clause2 = OnConflictClause(dialect, conflict_target=["b"], do_nothing=True)
-        expr = InsertExpression(dialect, into="t", source=source, on_conflict=[clause1, clause2])
+        expr = InsertExpression(dialect, into=TableExpression(dialect, "t"), source=source, on_conflict=[clause1, clause2])
 
         with pytest.raises(UnsupportedFeatureError):
             expr.to_sql()
@@ -57,7 +57,7 @@ class TestFirebirdOnConflictCapabilities:
     def test_plain_insert_still_works(self, dialect):
         """An INSERT without on_conflict renders normally."""
         source = ValuesSource(dialect, values_list=[[Literal(dialect, 1)]])
-        expr = InsertExpression(dialect, into="users", columns=["id"], source=source)
+        expr = InsertExpression(dialect, into=TableExpression(dialect, "users"), columns=["id"], source=source)
         sql, params = expr.to_sql()
         assert "INSERT INTO" in sql
         assert params == (1,)

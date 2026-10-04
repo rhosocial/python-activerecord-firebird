@@ -195,7 +195,7 @@ class TestBaseDataTypeRendering:
 class TestReturningBranches:
     def test_insert_returning_snapshot(self, dialect):
         insert = InsertExpression(
-            dialect, "users",
+            dialect, TableExpression(dialect, "users"),
             ValuesSource(dialect, [[E.RawSQLExpression(dialect, "?")]]),
             columns=["name"],
             returning=ReturningClause(dialect, expressions=[E.Column(dialect, "id"), E.Column(dialect, "name")]),
@@ -204,7 +204,7 @@ class TestReturningBranches:
 
     def test_insert_without_returning_has_no_clause(self, dialect):
         insert = InsertExpression(
-            dialect, "users",
+            dialect, TableExpression(dialect, "users"),
             ValuesSource(dialect, [[E.Literal(dialect, "Bob")]]),
             columns=["name"],
         )
@@ -223,7 +223,7 @@ class TestReturningBranches:
 
     def test_delete_returning_wildcard_snapshot(self, dialect):
         delete = DeleteExpression(
-            dialect, "users",
+            dialect, TableExpression(dialect, "users"),
             where=E.Column(dialect, "id") == E.Literal(dialect, 7),
             returning=ReturningClause(dialect, expressions=[E.RawSQLExpression(dialect, "*")]),
         )
