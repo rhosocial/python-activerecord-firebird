@@ -19,6 +19,7 @@ from rhosocial.activerecord.backend.introspection.types import (
     ViewInfo,
     TriggerInfo,
 )
+from rhosocial.activerecord.backend.dialect.exceptions import UnsupportedFeatureError
 
 # Firebird field types mapping (shared with sync introspector)
 FB_FIELD_TYPES = {
@@ -48,10 +49,56 @@ FB_BLOB_SUB_TYPES = {
 
 
 class FirebirdAsyncIntrospectorMixin(IntrospectorMixin):
-    """Shared build/parse logic for Firebird introspection (async path)."""
+    """Shared build/parse logic for Firebird introspection (async path).
+
+    Namespaces
+    ----------
+    Firebird has one namespace, so every SQL builder here takes the ``schema``
+    argument the core ``IntrospectorMixin`` passes down and **rejects a
+    non-empty one** rather than ignoring it. The parameter exists because the
+    core base declares it; Firebird has nothing to put in it. Silently
+    discarding it would return the whole database's tables for a request that
+    asked for one schema's tables -- an answer that looks successful and is
+    about the wrong objects, which is the failure this layer exists to prevent.
+
+    The system tables these queries read (``RDB$RELATIONS``,
+    ``RDB$RELATION_FIELDS``, ``RDB$INDICES``, ``RDB$REF_CONSTRAINTS``) are
+    ordinary relations reached unqualified and filtered with
+    ``RDB$SYSTEM_FLAG``; ``RDB$`` is a naming convention, not a schema.
+    """
 
     def _get_default_schema(self) -> str:
+        """The namespace every Firebird object lives in -- there is only one.
+
+        Empty rather than ``None`` because callers treat the empty string as
+        "no namespace given", which is exactly the case here.
+        """
         return ""
+
+    def _reject_namespace(self, schema: Optional[str]) -> Optional[str]:
+        """Accept the empty namespace; refuse any other.
+
+        Args:
+            schema: The namespace a caller asked to introspect, or ``None`` /
+                ``""`` for "the whole database".
+
+        Returns:
+            ``None``, so callers can write ``schema = self._reject_namespace(schema)``.
+
+        Raises:
+            UnsupportedFeatureError: ``schema`` names something Firebird has.
+        """
+        if schema:
+            raise UnsupportedFeatureError(
+                self.dialect.name,
+                "schema-scoped introspection",
+                suggestion=(
+                    f"Firebird has a single unnamed namespace, so {schema!r} "
+                    f"cannot be selected from: the whole database is the only "
+                    f"scope. Pass schema=None."
+                ),
+            )
+        return None
 
     def _get_version(self) -> tuple:
         dialect_ver = getattr(self._backend.dialect, 'version', None)
@@ -67,6 +114,7 @@ class FirebirdAsyncIntrospectorMixin(IntrospectorMixin):
                               include_system: bool = False,
                               include_views: bool = True,
                               table_type: Optional[str] = None) -> str:
+        self._reject_namespace(schema)
         if include_system:
             where = ""
         else:
@@ -84,6 +132,7 @@ class FirebirdAsyncIntrospectorMixin(IntrospectorMixin):
         return sql, ()
 
     def _make_column_list_sql(self, table_name: str, schema: Optional[str] = None) -> str:
+        self._reject_namespace(schema)
         sql = f"""
             SELECT
                 rf.RDB$FIELD_NAME AS COLUMN_NAME,
@@ -104,6 +153,7 @@ class FirebirdAsyncIntrospectorMixin(IntrospectorMixin):
         return sql, (table_name,)
 
     def _make_index_list_sql(self, table_name: str, schema: Optional[str] = None) -> str:
+        self._reject_namespace(schema)
         sql = f"""
             SELECT
                 i.RDB$INDEX_NAME AS INDEX_NAME,
@@ -134,6 +184,7 @@ class FirebirdAsyncIntrospectorMixin(IntrospectorMixin):
         return sql, (table_name,)
 
     def _make_foreign_key_sql(self, table_name: str, schema: Optional[str] = None) -> str:
+        self._reject_namespace(schema)
         sql = f"""
             SELECT
                 rc.RDB$CONSTRAINT_NAME AS CONSTRAINT_NAME,
@@ -159,6 +210,7 @@ class FirebirdAsyncIntrospectorMixin(IntrospectorMixin):
         return sql, (table_name,)
 
     def _make_view_list_sql(self, schema: Optional[str] = None) -> str:
+        self._reject_namespace(schema)
         sql = """
             SELECT RDB$RELATION_NAME, RDB$VIEW_SOURCE
             FROM RDB$RELATIONS
@@ -327,6 +379,16 @@ class FirebirdAsyncIntrospectorMixin(IntrospectorMixin):
                          schema: str) -> List[TriggerInfo]:
         return []
 
+    # ------------------------------------------------------------------
+    # Core ``IntrospectorMixin`` entry points
+    #
+    # Each of these is the method the core base class calls; the ``_make_*``
+    # helpers above hold the SQL. Every one of them routes ``schema`` through
+    # ``_reject_namespace`` before the SQL is built, so the core's habit of
+    # substituting ``_get_default_schema()`` for a missing schema cannot turn
+    # into a silently accepted namespace.
+    # ------------------------------------------------------------------
+
     def _build_database_info_sql(self):
         return self._make_database_info_sql()
 
@@ -340,12 +402,17 @@ class FirebirdAsyncIntrospectorMixin(IntrospectorMixin):
         return self._make_index_list_sql(table_name, schema)
 
     def _build_primary_key_sql(self, table_name, schema):
+        # A primary key is found from the table's unique RDB$PRIMARY% index,
+        # so there is nothing for a namespace to narrow -- but the argument is
+        # still refused rather than dropped, so this entry point behaves like
+        # its siblings instead of being the one that quietly ignores it.
+        self._reject_namespace(schema)
         return self._make_primary_key_sql(table_name)
 
     def _build_foreign_key_sql(self, table_name, schema):
         return self._make_foreign_key_sql(table_name, schema)
 
-    def _build_view_list_sql(self, schema):
+    def _build_view_list_sql(self, schema, include_system: bool = False):
         return self._make_view_list_sql(schema)
 
 

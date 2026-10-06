@@ -34,6 +34,7 @@ from .datetime import FirebirdDateTimeMixin
 from .dql import FirebirdDQLMixin
 from .collation import FirebirdCollationMixin
 from .identifier import FirebirdIdentifierMixin
+from .namespace import FirebirdNamespaceMixin
 from .cte import FirebirdCTEMixin
 from .returning import FirebirdReturningMixin
 from .filter_clause import FirebirdFilterClauseMixin
@@ -80,6 +81,7 @@ __all__ = [
     "FirebirdDQLMixin",
     "FirebirdCollationMixin",
     "FirebirdIdentifierMixin",
+    "FirebirdNamespaceMixin",
     "FirebirdCTEMixin",
     "FirebirdReturningMixin",
     "FirebirdFilterClauseMixin",

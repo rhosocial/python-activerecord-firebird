@@ -11,6 +11,7 @@ wrapped in a ``BEGIN ... END`` block (mirroring
 from typing import Any, List, Tuple, TYPE_CHECKING
 
 from rhosocial.activerecord.backend.dialect.exceptions import UnsupportedFeatureError
+from rhosocial.activerecord.backend.expression.objects import Function, Procedure
 
 from ..expression.ddl.routine import FirebirdRoutineMode
 
@@ -28,7 +29,7 @@ class FirebirdRoutineMixin:
         """Format CREATE [OR ALTER | RECREATE] PROCEDURE ... AS <body>."""
         self._check_routine_version("CREATE PROCEDURE", (2, 5, 0))
 
-        parts = [expr.mode.value, "PROCEDURE", self.format_identifier(expr.procedure_name)]
+        parts = [expr.mode.value, "PROCEDURE", Procedure(self, expr.procedure_name).to_sql()[0]]
         if expr.params:
             parts.append(f"({self._format_routine_params(expr.params)})")
         if expr.returns:
@@ -46,7 +47,7 @@ class FirebirdRoutineMixin:
         """
         self._check_routine_version("CREATE FUNCTION", (3, 0, 0))
 
-        parts = [expr.mode.value, "FUNCTION", self.format_identifier(expr.function_name)]
+        parts = [expr.mode.value, "FUNCTION", Function(self, expr.function_name).to_sql()[0]]
         if expr.params:
             parts.append(f"({self._format_routine_params(expr.params)})")
         if getattr(expr, "returns", None):
@@ -60,17 +61,21 @@ class FirebirdRoutineMixin:
         minimum = (3, 0, 0) if expr.routine_type == "FUNCTION" else (2, 5, 0)
         self._check_routine_version(f"{expr.routine_type} routine DDL", minimum)
 
+        # The statement knows which kind it is; name the object accordingly so
+        # the object says PROCEDURE rather than "some routine".
+        name_renderer = self._routine_name_renderer(expr.routine_type)
+
         if expr.mode == FirebirdRoutineMode.DROP:
-            return f"DROP {expr.routine_type} {self.format_identifier(expr.routine_name)}", ()
+            return f"DROP {expr.routine_type} {name_renderer(expr.routine_name)}", ()
 
         if expr.routine_type == "FUNCTION":
-            parts = [expr.mode.value, "FUNCTION", self.format_identifier(expr.routine_name)]
+            parts = [expr.mode.value, "FUNCTION", name_renderer(expr.routine_name)]
             if expr.params:
                 parts.append(f"({self._format_routine_params(expr.params)})")
             if getattr(expr, "returns", None):
                 parts.append(f"RETURNS {self._format_routine_return_type(expr.returns)}")
         else:
-            parts = [expr.mode.value, "PROCEDURE", self.format_identifier(expr.routine_name)]
+            parts = [expr.mode.value, "PROCEDURE", name_renderer(expr.routine_name)]
             if expr.params:
                 parts.append(f"({self._format_routine_params(expr.params)})")
             if expr.returns:
@@ -78,6 +83,16 @@ class FirebirdRoutineMixin:
         parts.append("AS")
         parts.append(self._format_psql_body(expr.body))
         return " ".join(parts), ()
+
+    def _routine_name_renderer(self, routine_type: str):
+        """The renderer for a routine name, chosen by the kind the caller named.
+
+        Firebird spells a procedure and a function the same way, but the object
+        still says which it is, so a caller reading a rendered name back out of
+        a statement cannot mistake one for the other.
+        """
+        kind = Function if routine_type == "FUNCTION" else Procedure
+        return lambda name: kind(self, name).to_sql()[0]
 
     def _format_routine_params(self, params: List[Any]) -> str:
         """Render a parameter list as 'name type, name type'."""

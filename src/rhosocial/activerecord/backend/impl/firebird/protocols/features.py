@@ -1,9 +1,21 @@
-# src/rhosocial/activerecord/backend/impl/firebird/protocols.py
-"""Firebird dialect-specific protocol definitions."""
+# src/rhosocial/activerecord/backend/impl/firebird/protocols/features.py
+"""Firebird's dialect-specific feature protocols.
+
+These are the extensions Firebird adds on top of the core protocol set: the
+capability switches and formatters for Firebird-only SQL (GENERATOR, EXECUTE
+BLOCK, BLOB SUB_TYPE, snapshot isolation, DECFLOAT, packages, monitoring
+tables, ...). They are grouped here so that the concerns the schema-object
+refactor introduced -- :mod:`~.namespace` and :mod:`~.sources` -- have a
+file of their own, matching the ``mixins/`` naming one-for-one.
+"""
 
 from typing import Any, Protocol, Tuple, runtime_checkable
 
-from rhosocial.activerecord.backend.dialect.protocols import DomainSupport
+from rhosocial.activerecord.backend.dialect.protocols import (
+    AlterDomainSupport,
+    CreateDomainSupport,
+    DropDomainSupport,
+)
 
 
 @runtime_checkable
@@ -56,8 +68,15 @@ class FirebirdTableSupport(Protocol):
 
 
 @runtime_checkable
-class FirebirdDomainSupport(DomainSupport, Protocol):
-    """Firebird implementation of the core DOMAIN DDL protocol."""
+class FirebirdDomainSupport(
+    CreateDomainSupport, AlterDomainSupport, DropDomainSupport, Protocol
+):
+    """Firebird implementation of the core DOMAIN DDL protocols.
+
+    The core splits DOMAIN DDL per statement, so this mirrors it: creating,
+    altering and dropping a domain each get their own contract, and Firebird
+    answers all three.
+    """
 
 
 @runtime_checkable

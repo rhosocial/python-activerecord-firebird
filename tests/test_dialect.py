@@ -106,7 +106,10 @@ class TestFirebirdDialectDDLSupport:
 
     def test_create_view(self, dialect):
         assert dialect.supports_create_view() is True
-        assert dialect.supports_or_replace_view() is True
+        # Firebird has no CREATE OR REPLACE VIEW; it has CREATE OR ALTER VIEW
+        # (Firebird 4.0+), which is a different statement and is not what this
+        # switch names.
+        assert dialect.supports_or_replace_view() is False
 
     def test_trigger(self, dialect):
         assert dialect.supports_trigger() is True

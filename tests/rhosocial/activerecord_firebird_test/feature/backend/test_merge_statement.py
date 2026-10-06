@@ -11,7 +11,9 @@ INSERT. All tests are pure construction — no database connection.
 import pytest
 
 from rhosocial.activerecord.backend.dialect.exceptions import UnsupportedFeatureError
-from rhosocial.activerecord.backend.expression import Column, TableExpression
+from rhosocial.activerecord.backend.expression import Column
+from rhosocial.activerecord.backend.expression.objects import Table
+from rhosocial.activerecord.backend.expression.sources import NamedRelationRef
 from rhosocial.activerecord.backend.expression.statements import (
     MergeAction,
     MergeActionType,
@@ -28,8 +30,8 @@ def _make_merge(dialect, when_matched=None, when_not_matched=None, by_source=Non
     """Build a MERGE expression over a simple two-column target/source pair."""
     return MergeExpression(
         dialect,
-        target_table="tgt",
-        source=TableExpression(dialect, "src"),
+        target_table=Table(dialect, "tgt"),
+        source=NamedRelationRef(dialect, Table(dialect, "src")),
         on_condition=Column(dialect, "id", "tgt") == Column(dialect, "id", "src"),
         when_matched=when_matched or [],
         when_not_matched=when_not_matched or [],
@@ -249,7 +251,7 @@ class TestMergeVersionBoundaries:
         dialect = FirebirdDialect((2, 5, 0))
         expr = UpdateOrInsertExpression(
             dialect,
-            "products",
+            Table(dialect, "products"),
             ["id", "name", "price"],
             [1, "Product A", 19.99],
             ["id"],

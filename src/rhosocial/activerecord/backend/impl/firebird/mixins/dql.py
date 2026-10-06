@@ -1,12 +1,13 @@
 # src/rhosocial/activerecord/backend/impl/firebird/mixins/dql.py
 """Firebird DQL formatting mixin."""
 
-from typing import Any, Optional, Tuple, TYPE_CHECKING
+from typing import Optional, Tuple, TYPE_CHECKING
 
 from .version_boundaries import _norm_version
 
 if TYPE_CHECKING:
     from rhosocial.activerecord.backend.expression.query_parts import LimitOffsetClause
+    from rhosocial.activerecord.backend.expression.statements.dql import QueryExpression
 
 
 class FirebirdDQLMixin:
@@ -19,7 +20,7 @@ class FirebirdDQLMixin:
         """Firebird supports explicit NULLS FIRST / NULLS LAST ordering."""
         return True
 
-    def format_query_statement(self, expr: Any) -> Tuple[str, tuple]:
+    def format_query_statement(self, expr: "QueryExpression") -> Tuple[str, tuple]:
         """Format a SELECT statement, qualifying a bare wildcard when mixed with columns.
 
         Firebird rejects ``SELECT *, extra_col ...`` (Token unknown, error -104) and
@@ -36,8 +37,11 @@ class FirebirdDQLMixin:
                         src = expr.from_
                         if isinstance(src, list) and len(src) == 1:
                             src = src[0]
-                        if hasattr(src, 'alias') or hasattr(src, 'name'):
-                            table_name = getattr(src, 'alias', None) or getattr(src, 'name', None)
+                        # What the wildcard can be qualified by is the row
+                        # source's own type, not the presence of an attribute:
+                        # ``row_source_name`` answers for a named relation and
+                        # declines for everything else.
+                        table_name = self.row_source_name(src)
                     if table_name:
                         e.table = table_name
         return super().format_query_statement(expr)

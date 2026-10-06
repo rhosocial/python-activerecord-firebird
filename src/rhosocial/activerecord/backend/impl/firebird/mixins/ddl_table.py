@@ -1,21 +1,29 @@
 # src/rhosocial/activerecord/backend/impl/firebird/mixins/ddl_table.py
-"""Firebird table DDL mixin."""
+"""Firebird table DDL mixin.
+
+Every relation name this mixin emits -- ``CREATE TABLE``, ``REFERENCES``,
+``ALTER TABLE`` -- is rendered from the :class:`Table` object the statement
+holds, so a name that carries a namespace slot is reported instead of quietly
+reaching the parser, which has no qualified-name syntax.
+"""
 
 from typing import Any, List, Tuple, TYPE_CHECKING
 
 if TYPE_CHECKING:  # pragma: no cover
     from rhosocial.activerecord.backend.expression.statements import (
+        AlterTableExpression,
         ColumnDefinition,
         CreateTableExpression,
         TableConstraint,
     )
 
 from rhosocial.activerecord.backend.dialect.mixins.ddl_table import TableMixin
+from rhosocial.activerecord.backend.expression.objects import Table
 
 
 class FirebirdTableMixin:
 
-    # -- Cascade capability switches (declared on the dialect, Ref to TableSupport protocol)
+    # -- Cascade capability switches (declared on the dialect, Ref to DropTableSupport protocol)
 
     def supports_drop_table_cascade(self) -> bool:
         """Firebird has no CASCADE keyword on DROP TABLE."""
@@ -26,21 +34,72 @@ class FirebirdTableMixin:
         return False
 
     # Delegate to TableMixin for DropTableExpression formatting.
-    # FirebirdDialect's MRO resolves TableSupport.format_drop_table_statement
+    # FirebirdDialect's MRO resolves DropTableSupport.format_drop_table_statement
     # (the empty Protocol stub) before TableMixin's actual implementation due to
     # Python's C3 linearization. Re-binding the concrete method here ensures the
     # MRO picks up the TypeScript-level override.
     format_drop_table_statement = TableMixin.format_drop_table_statement
-    # format_drop_table_statement = TableMixin.__dict__['format_drop_table_statement']
 
-    # Same C3 linearization issue applies to ALTER TABLE: TableSupport ships an
-    # empty format_alter_table_statement stub that would otherwise win over the
-    # concrete TableMixin implementation, so re-bind it here as well.
-    format_alter_table_statement = TableMixin.format_alter_table_statement
+    def format_alter_table_statement(self, expr: "AlterTableExpression") -> Tuple[str, tuple]:
+        """Render ALTER TABLE, naming the relation through a schema object.
+
+        Firebird's ALTER TABLE grammar has no table name inside an action, so
+        the relation is named once here and each action -- including the
+        Firebird-only ``ALTER COLUMN "X" SET GENERATED ...`` fragments from
+        ``FirebirdAlterTableModifierMixin``, which are action text without a
+        table -- is appended after it.
+
+        The action-combination rule is the core's: one comma-separated statement
+        when ``supports_multi_action_alter_table()``, otherwise one statement
+        per action joined by ``;``. What changes here is only where the table
+        name comes from: a :class:`Table` schema object rather than a bare
+        ``format_identifier``, so a name carrying a namespace slot is reported.
+
+        Raises:
+            TypeError: ``AlterTableExpression.table`` is not a Table. Another
+                object kind would have had its own name rendered as the relation
+                being altered.
+        """
+        if not isinstance(expr.table, Table):
+            raise TypeError(
+                f"AlterTableExpression.table must be a Table, "
+                f"got {type(expr.table).__name__}"
+            )
+        all_params: List[Any] = []
+        action_parts: List[str] = []
+        for action in expr.actions:
+            action_sql, action_params = action.to_sql()
+            action_parts.append(action_sql)
+            all_params.extend(action_params)
+
+        table_sql, _ = expr.table.to_sql()
+        if not action_parts:
+            return f"ALTER TABLE {table_sql}", ()
+
+        if self.supports_multi_action_alter_table():
+            return f"ALTER TABLE {table_sql} {', '.join(action_parts)}", tuple(all_params)
+        return "; ".join(
+            f"ALTER TABLE {table_sql} {part}" for part in action_parts
+        ), tuple(all_params)
 
     def format_create_table_statement(self, expr: "CreateTableExpression") -> Tuple[str, tuple]:
+        """Render CREATE TABLE, naming the relation through a schema object.
+
+        Raises:
+            TypeError: ``CreateTableExpression.table`` is not a Table. A view or a
+                sequence would have had its own name rendered as the relation
+                being created.
+            UnsupportedFeatureError: A Firebird-unreadable clause was requested --
+                TABLESPACE, INHERITS, PARTITION BY, an inline comment, or
+                IF NOT EXISTS, which Firebird has no syntax for.
+        """
         from rhosocial.activerecord.backend.dialect.exceptions import UnsupportedFeatureError
 
+        if not isinstance(expr.table, Table):
+            raise TypeError(
+                f"CreateTableExpression.table must be a Table, "
+                f"got {type(expr.table).__name__}"
+            )
         if getattr(expr, "tablespace", None):
             raise UnsupportedFeatureError(
                 self.name,
@@ -91,7 +150,10 @@ class FirebirdTableMixin:
                     "Firebird does not support IF NOT EXISTS for tables.",
                 )
             parts.append("IF NOT EXISTS")
-        parts.append(self.format_identifier(expr.table_name))
+        # ``expr.table`` is the Table object itself, not a flat string, and it
+        # renders itself -- so a namespace slot it carries is reported by the
+        # object layer rather than dropped here.
+        parts.append(expr.table.to_sql()[0])
 
         if getattr(expr, 'temporary', False):
             on_commit = getattr(expr, 'on_commit_delete', True)
@@ -245,7 +307,7 @@ class FirebirdTableMixin:
             if expr.columns and expr.foreign_key_table and expr.foreign_key_columns:
                 cols = ', '.join(self.format_identifier(c) for c in expr.columns)
                 ref_cols = ', '.join(self.format_identifier(c) for c in expr.foreign_key_columns)
-                ref_table = self.format_identifier(expr.foreign_key_table)
+                ref_table = expr.foreign_key_table.to_sql()[0]
                 parts.append(f"FOREIGN KEY ({cols}) REFERENCES {ref_table} ({ref_cols})")
             if isinstance(expr, ForeignKeyConstraint):
                 if expr.on_delete != ReferentialAction.NO_ACTION:

@@ -10,11 +10,12 @@ Firebird adds two table-creation clauses with no generic equivalent:
 They live on ``FirebirdCreateTableExpression`` (deriving the generic
 ``CreateTableExpression``) and are rendered by the Firebird
 ``format_create_table_statement`` override, which accepts both the generic and
-the Firebird-specific instance.
+the Firebird-specific instance and reads the table off ``expr.table``.
 """
 
-from typing import TYPE_CHECKING, Any, List, Optional
+from typing import TYPE_CHECKING, List, Optional
 
+from rhosocial.activerecord.backend.expression.objects import Table
 from rhosocial.activerecord.backend.expression.statements.ddl_table import (
     CreateTableExpression,
 )
@@ -38,12 +39,19 @@ class FirebirdCreateTableExpression(CreateTableExpression):
 
     Adds the Firebird-only ``on_commit_delete`` / ``external_file`` table
     clauses.
+
+    ``table`` is the same :class:`Table` object the generic expression takes,
+    not ``Any``. The previous ``Any`` annotation said nothing while the renderer
+    quietly used only ``expr.table_name``, which is how a reference's
+    ``schema_name`` could be dropped without anyone noticing. The Firebird
+    renderer reads ``expr.table`` and the object renders itself, so the
+    annotation describes what is actually consumed.
     """
 
     def __init__(
         self,
         dialect: "SQLDialectBase",
-        table: Any,
+        table: "Table",
         columns: List["ColumnDefinition"],
         indexes: Optional[List["IndexDefinition"]] = None,
         table_constraints: Optional[List["TableConstraint"]] = None,

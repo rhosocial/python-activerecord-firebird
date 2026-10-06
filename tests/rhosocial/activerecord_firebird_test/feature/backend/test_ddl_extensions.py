@@ -8,6 +8,7 @@ report showed concentrated misses in these mixins (see
 import pytest
 
 from rhosocial.activerecord.backend.dialect.exceptions import UnsupportedFeatureError
+from rhosocial.activerecord.backend.expression.objects import Domain, Table
 from rhosocial.activerecord.backend.expression.statements import (
     ColumnDefinition,
     CreateTableExpression,
@@ -36,7 +37,7 @@ def dialect() -> FirebirdDialect:
 class TestDomainDDL:
     def test_create_domain_full(self, dialect):
         expr = FirebirdCreateDomainExpression(
-            dialect, "salary_range", data_type=DecimalType(precision=10, scale=2),
+            dialect, Domain(dialect, "salary_range"), data_type=DecimalType(precision=10, scale=2),
             default=0, not_null=True, check="VALUE >= 0",
         )
         sql, params = expr.to_sql()
@@ -48,7 +49,7 @@ class TestDomainDDL:
 
     def test_create_domain_minimal(self, dialect):
         sql, _ = FirebirdCreateDomainExpression(
-            dialect, "flag", data_type=IntegerType(dialect)
+            dialect, Domain(dialect, "flag"), data_type=IntegerType(dialect)
         ).to_sql()
         assert sql == "CREATE DOMAIN \"FLAG\" AS INTEGER"
 
@@ -62,7 +63,7 @@ class TestDomainDDL:
         extra_kwargs = {FirebirdDomainAlterMode.SET_DEFAULT: {"value": 7}}
         for mode, expected in cases:
             sql, _ = FirebirdAlterDomainExpression(
-                dialect, "d", mode=mode, **extra_kwargs.get(mode, {})
+                dialect, Domain(dialect, "d"), mode=mode, **extra_kwargs.get(mode, {})
             ).to_sql()
             assert sql == expected
 
@@ -70,19 +71,19 @@ class TestDomainDDL:
         # "SET DEFAULT None"; it must fail loudly instead.
         with pytest.raises(ValueError, match="SET DEFAULT requires a value"):
             FirebirdAlterDomainExpression(
-                dialect, "d", mode=FirebirdDomainAlterMode.SET_DEFAULT
+                dialect, Domain(dialect, "d"), mode=FirebirdDomainAlterMode.SET_DEFAULT
             ).to_sql()
 
     def test_alter_domain_add_constraint(self, dialect):
         sql, _ = FirebirdAlterDomainExpression(
-            dialect, "d", mode=FirebirdDomainAlterMode.ADD_CONSTRAINT,
+            dialect, Domain(dialect, "d"), mode=FirebirdDomainAlterMode.ADD_CONSTRAINT,
             constraint_sql="VALUE > 0",
         ).to_sql()
         assert sql == 'ALTER DOMAIN "D" ADD CHECK (VALUE > 0)'
 
 
     def test_drop_domain(self, dialect):
-        sql, _ = FirebirdDropDomainExpression(dialect, "obsolete").to_sql()
+        sql, _ = FirebirdDropDomainExpression(dialect, Domain(dialect, "obsolete")).to_sql()
         assert sql == 'DROP DOMAIN "OBSOLETE"'
 
 
@@ -112,7 +113,7 @@ class TestFirebirdTableDDLDeclarations:
     def test_table_declaration_defaults_are_absent(self, dialect):
         expression = CreateTableExpression(
             dialect,
-            "plain_table_defaults",
+            Table(dialect, "plain_table_defaults"),
             [ColumnDefinition(dialect, "id", IntegerType(dialect))],
         )
         sql, params = expression.to_sql()
@@ -125,7 +126,7 @@ class TestFirebirdTableDDLDeclarations:
     def test_table_inherits_is_carried_and_rejected(self, dialect):
         expression = CreateTableExpression(
             dialect,
-            "child",
+            Table(dialect, "child"),
             [ColumnDefinition(dialect, "id", IntegerType(dialect))],
             inherits=["parent_a", "parent_b"],
         )
@@ -137,7 +138,7 @@ class TestFirebirdTableDDLDeclarations:
     def test_table_tablespace_is_carried_and_rejected(self, dialect):
         expression = CreateTableExpression(
             dialect,
-            "spaced",
+            Table(dialect, "spaced"),
             [ColumnDefinition(dialect, "id", IntegerType(dialect))],
             tablespace="ts_data",
         )

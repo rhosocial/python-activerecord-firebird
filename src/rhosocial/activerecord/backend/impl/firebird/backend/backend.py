@@ -389,7 +389,12 @@ class FirebirdBackend(
         for col in values:
             set_clauses.append(f"{self.dialect.format_identifier(col)} = {self.dialect.get_parameter_placeholder()}")
         where_sql = where_clause[0] if where_clause else "1=1"
-        sql = f"UPDATE {self.dialect.format_identifier(table_name)} SET {', '.join(set_clauses)} WHERE {where_sql}"
+        # The target is a relation reference rendered through the dialect's
+        # schema-object layer, so a caller that hands over a qualified
+        # reference is told Firebird cannot express it instead of having the
+        # qualification dropped here.
+        target_sql = self.dialect.format_table_reference(table_name)
+        sql = f"UPDATE {target_sql} SET {', '.join(set_clauses)} WHERE {where_sql}"
         if returning_columns:
             ret_str = ', '.join(self.dialect.format_identifier(c) for c in returning_columns)
             sql += f" RETURNING {ret_str}"
@@ -401,7 +406,8 @@ class FirebirdBackend(
         if isinstance(table_name, DeleteOptions):
             return super().delete(table_name)
         all_params = []
-        sql = f"DELETE FROM {self.dialect.format_identifier(table_name)}"
+        target_sql = self.dialect.format_table_reference(table_name)
+        sql = f"DELETE FROM {target_sql}"
         if where_clause:
             where_sql, where_params = where_clause
             sql += f" WHERE {where_sql}"

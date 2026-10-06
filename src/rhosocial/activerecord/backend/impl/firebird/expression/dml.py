@@ -17,23 +17,35 @@ if TYPE_CHECKING:  # pragma: no cover
 
 class UpdateOrInsertExpression(BaseExpression):
     """``UPDATE OR INSERT INTO table (cols) VALUES (vals) MATCHING (match)
-    [RETURNING …]``."""
+    [RETURNING …]``.
+
+    The target is a table *reference*, not a bare string: ``table`` accepts a
+    :class:`~...expression.objects.Table` or a plain name, and the dialect
+    renders whichever it is handed through the object layer. A bare
+    ``_table_name`` attribute made the string the only thing the formatter could
+    read, and hid whatever the caller had actually attached to the target.
+    """
 
     def __init__(
         self,
         dialect: "SQLDialectBase",
-        table_name: str,
+        table: Any,
         insert_columns: List[str],
         insert_values: List[Any],
         match_columns: List[str],
         returning_columns: Optional[List[str]] = None,
     ):
         super().__init__(dialect)
-        self._table_name = table_name
+        self.table = table
         self._insert_columns = insert_columns
         self._insert_values = insert_values
         self._match_columns = match_columns
         self._returning_columns = returning_columns
+
+    @property
+    def table_name(self) -> Any:
+        """The target relation reference this statement updates or inserts into."""
+        return self.table
 
     @property
     def format_method(self) -> str:

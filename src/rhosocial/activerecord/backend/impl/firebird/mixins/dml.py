@@ -4,6 +4,7 @@
 from typing import Any, List, Tuple, TYPE_CHECKING
 
 from rhosocial.activerecord.backend.dialect.exceptions import UnsupportedFeatureError
+from rhosocial.activerecord.backend.expression.objects import Table
 
 from .version_boundaries import _norm_version
 
@@ -25,6 +26,19 @@ if TYPE_CHECKING:
 class FirebirdDMLOperationMixin:
 
     def format_insert_statement(self, expr: "InsertExpression") -> Tuple[str, tuple]:
+        """Render INSERT INTO <target> <columns> <source> [RETURNING ...].
+
+        Raises:
+            TypeError: ``InsertExpression.into`` is not a Table. Another object
+                kind would have had its own name rendered as the INTO target.
+            UnsupportedFeatureError: An ON CONFLICT clause was requested, which
+                Firebird has no syntax for and which would otherwise be dropped.
+        """
+        if not isinstance(expr.into, Table):
+            raise TypeError(
+                f"InsertExpression.into must be a Table, "
+                f"got {type(expr.into).__name__}"
+            )
         if expr.on_conflict:
             # Firebird has no ON CONFLICT clause; raise instead of silently
             # dropping the clause via the shared capability gate.
@@ -74,6 +88,17 @@ class FirebirdDMLOperationMixin:
         return sql, tuple(all_params)
 
     def format_update_statement(self, expr: "UpdateExpression") -> Tuple[str, tuple]:
+        """Render UPDATE <target> SET ... [WHERE ...] [RETURNING ...].
+
+        Raises:
+            TypeError: ``UpdateExpression.table`` is not a Table. Another object
+                kind would have had its own name rendered as the UPDATE target.
+        """
+        if not isinstance(expr.table, Table):
+            raise TypeError(
+                f"UpdateExpression.table must be a Table, "
+                f"got {type(expr.table).__name__}"
+            )
         all_params: List[Any] = []
 
         table_sql, table_params = expr.table.to_sql()
@@ -105,6 +130,21 @@ class FirebirdDMLOperationMixin:
         return sql, tuple(all_params)
 
     def format_delete_statement(self, expr: "DeleteExpression") -> Tuple[str, tuple]:
+        """Render DELETE FROM <target> [WHERE ...] [RETURNING ...].
+
+        Raises:
+            TypeError: An entry of ``DeleteExpression.tables`` is not a Table.
+                Another object kind would have had its own name rendered after
+                DELETE FROM. Every entry is checked, not just the one this
+                renderer reads, so a bad entry cannot hide behind a good one at
+                position 0.
+        """
+        for position, entry in enumerate(expr.tables):
+            if not isinstance(entry, Table):
+                raise TypeError(
+                    f"DeleteExpression.tables must hold Table instances, "
+                    f"got {type(entry).__name__} at position {position}"
+                )
         all_params: List[Any] = []
 
         table_sql, table_params = expr.tables[0].to_sql()
@@ -125,7 +165,7 @@ class FirebirdDMLOperationMixin:
         return sql, tuple(all_params)
 
     def format_update_or_insert(self, expr: "UpdateOrInsertExpression") -> Tuple[str, tuple]:
-        table_name = expr._table_name
+        table_name = expr.table_name
         insert_columns = expr._insert_columns
         insert_values = expr._insert_values
         match_columns = expr._match_columns
@@ -138,7 +178,7 @@ class FirebirdDMLOperationMixin:
         match_str = ', '.join(self.format_identifier(c) for c in match_columns)
 
         parts = [
-            f"UPDATE OR INSERT INTO {self.format_identifier(table_name)}",
+            f"UPDATE OR INSERT INTO {self.format_table_reference(table_name)}",
             f"({cols_str})",
             f"VALUES ({val_strs})",
             f"MATCHING ({match_str})",
@@ -159,8 +199,21 @@ class FirebirdDMLOperationMixin:
         DELETE is only legal in the ``WHEN MATCHED`` and ``WHEN NOT
         MATCHED BY SOURCE`` branches; the ``WHEN NOT MATCHED`` branch may
         only INSERT.
+
+        Raises:
+            TypeError: ``MergeExpression.target_table`` is not a Table. Another
+                object kind would have had its own name rendered as the merge
+                target.
+            UnsupportedFeatureError: The branch structure is not one Firebird's
+                grammar accepts at this engine version.
         """
         from rhosocial.activerecord.backend.expression.statements import MergeActionType
+
+        if not isinstance(expr.target_table, Table):
+            raise TypeError(
+                f"MergeExpression.target_table must be a Table, "
+                f"got {type(expr.target_table).__name__}"
+            )
 
         version = getattr(self, 'version', (2, 5, 0))
 

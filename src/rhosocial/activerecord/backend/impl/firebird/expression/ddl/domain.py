@@ -5,6 +5,7 @@ from enum import Enum
 from typing import Any, Optional, Sequence, Set, TYPE_CHECKING, Union
 
 from rhosocial.activerecord.backend.expression.bases import SQLPredicate
+from rhosocial.activerecord.backend.expression.objects import Domain
 from rhosocial.activerecord.backend.expression.operators import RawSQLPredicate
 from rhosocial.activerecord.backend.expression.serialization import ExpressionRegistry
 from rhosocial.activerecord.backend.expression.statements.ddl_domain import (
@@ -153,7 +154,7 @@ class FirebirdCreateDomainExpression(CreateDomainExpression):
     def __init__(
         self,
         dialect: "SQLDialectBase",
-        domain_name: str,
+        domain: Domain,
         data_type: DataType,
         default: Any = None,
         not_null: bool = False,
@@ -180,7 +181,7 @@ class FirebirdCreateDomainExpression(CreateDomainExpression):
         normalized_checks = _coalesce_checks(dialect, check, checks)
         super().__init__(
             dialect,
-            domain_name,
+            domain,
             data_type,
             default=default,
             nullability=normalized_nullability,
@@ -197,7 +198,7 @@ class FirebirdAlterDomainExpression(AlterDomainExpression):
     def __init__(
         self,
         dialect: "SQLDialectBase",
-        domain_name: str,
+        domain: Domain,
         mode: Optional[FirebirdDomainAlterMode] = None,
         value: Any = None,
         data_type: Optional[Union[DataType, str]] = None,
@@ -237,7 +238,7 @@ class FirebirdAlterDomainExpression(AlterDomainExpression):
                     or not self._actions_equivalent(expected_action, selected_actions[0])
                 ):
                     raise ValueError("mode and actions describe different ALTER DOMAIN changes")
-        super().__init__(dialect, domain_name, selected_actions)
+        super().__init__(dialect, domain, selected_actions)
         self.mode = mode
         self.value = value
         self.data_type = data_type

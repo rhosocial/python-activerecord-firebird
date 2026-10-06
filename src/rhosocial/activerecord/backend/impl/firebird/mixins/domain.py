@@ -5,6 +5,7 @@ from typing import Optional, Tuple, Type, TYPE_CHECKING
 
 from rhosocial.activerecord.backend.dialect.exceptions import UnsupportedFeatureError
 from rhosocial.activerecord.backend.dialect.mixins import DomainMixin
+from rhosocial.activerecord.backend.expression.objects import Domain
 from rhosocial.activerecord.backend.expression.statements.ddl_domain import (
     AddDomainCheckAction,
     AlterDomainExpression,
@@ -113,13 +114,28 @@ class FirebirdDomainMixin(DomainMixin):
         self,
         expr: CreateDomainExpression,
     ) -> Tuple[str, tuple]:
+        """Render CREATE DOMAIN <name> AS <type> [...checks].
+
+        Raises:
+            TypeError: ``CreateDomainExpression.domain`` is not a Domain. A table
+                or a sequence would have had its own name rendered as the domain.
+            UnsupportedFeatureError: The clause requested is not one Firebird
+                spells, or this engine version does not have DOMAINs.
+            ValueError: A DEFAULT or collation that cannot be rendered without
+                bind parameters, or a collation with an empty segment.
+        """
         if not self.supports_domains() or not self.supports_create_domain():
             raise UnsupportedFeatureError(self.name, "CREATE DOMAIN")
+        if not isinstance(expr.domain, Domain):
+            raise TypeError(
+                f"CreateDomainExpression.domain must be a Domain, "
+                f"got {type(expr.domain).__name__}"
+            )
         data_type = _bind_data_type(self, expr.data_type)
         type_sql, type_params = data_type.to_sql()
         parts = [
             "CREATE DOMAIN",
-            self.format_identifier(expr.domain_name),
+            expr.domain.to_sql()[0],
             "AS",
             type_sql,
         ]
@@ -168,8 +184,22 @@ class FirebirdDomainMixin(DomainMixin):
         self,
         expr: AlterDomainExpression,
     ) -> Tuple[str, tuple]:
+        """Render ALTER DOMAIN <name> <actions>.
+
+        Raises:
+            TypeError: ``AlterDomainExpression.domain`` is not a Domain. Another
+                object kind would have had its own name rendered as the domain
+                being altered.
+            UnsupportedFeatureError: The action set is not one Firebird accepts,
+                or this engine version does not have DOMAINs.
+        """
         if not self.supports_domains() or not self.supports_alter_domain():
             raise UnsupportedFeatureError(self.name, "ALTER DOMAIN")
+        if not isinstance(expr.domain, Domain):
+            raise TypeError(
+                f"AlterDomainExpression.domain must be a Domain, "
+                f"got {type(expr.domain).__name__}"
+            )
         if len(expr.actions) > 1 and not self.supports_multiple_domain_alter_actions():
             raise UnsupportedFeatureError(self.name, "multiple ALTER DOMAIN actions")
         action_groups = {
@@ -215,7 +245,7 @@ class FirebirdDomainMixin(DomainMixin):
             action_parts.append(action_sql)
             action_params.extend(params)
         return (
-            f'ALTER DOMAIN {self.format_identifier(expr.domain_name)} {" ".join(action_parts)}',
+            f'ALTER DOMAIN {expr.domain.to_sql()[0]} {" ".join(action_parts)}',
             tuple(action_params),
         )
 
@@ -241,7 +271,9 @@ class FirebirdDomainMixin(DomainMixin):
             type_sql, type_params = data_type.to_sql()
             return f"TYPE {type_sql}", tuple(type_params)
         if isinstance(expr, RenameDomainAction):
-            return f"TO {self.format_identifier(expr.new_name)}", ()
+            # The rename target is a domain like any other: it names the object
+            # the domain becomes, so it goes through the same object layer.
+            return f"TO {Domain(self, expr.new_name).to_sql()[0]}", ()
         if isinstance(expr, SetDomainNotNullAction):
             return "SET NOT NULL", ()
         if isinstance(expr, DropDomainNotNullAction):
