@@ -26,7 +26,11 @@ from rhosocial.activerecord.backend.expression.statements import (
     ValuesSource,
     ReferentialAction,
 )
-from rhosocial.activerecord.backend.expression.statements.ddl_sequence import CreateSequenceExpression
+from rhosocial.activerecord.backend.expression.statements.ddl_sequence import (
+    AlterSequenceExpression,
+    CreateSequenceExpression,
+    DropSequenceExpression,
+)
 from rhosocial.activerecord.backend.expression.types import (
     BigIntType,
     BooleanType,
@@ -323,20 +327,74 @@ class TestSkipLockedBranches:
 class TestSequenceBranches:
     def test_create_sequence_defaults(self, dialect):
         expr = CreateSequenceExpression(dialect, Sequence(dialect, "seq_a"))
-        assert dialect.format_create_sequence(expr) == ('CREATE SEQUENCE "SEQ_A"', ())
+        assert dialect.format_create_sequence_statement(expr) == (
+            'CREATE SEQUENCE "SEQ_A"', ()
+        )
 
     def test_create_sequence_start_and_increment(self, dialect):
         expr = CreateSequenceExpression(
             dialect, Sequence(dialect, "seq_b"), start=100, increment=5
         )
-        assert dialect.format_create_sequence(expr) == (
+        assert dialect.format_create_sequence_statement(expr) == (
             'CREATE SEQUENCE "SEQ_B" START WITH 100 INCREMENT BY 5', ()
+        )
+
+    def test_create_sequence_explicit_defaults_are_omitted(self, dialect):
+        """A request for the defaults is the same SQL as omitting them."""
+        expr = CreateSequenceExpression(
+            dialect, Sequence(dialect, "seq_d"), start=1, increment=1
+        )
+        assert dialect.format_create_sequence_statement(expr) == (
+            'CREATE SEQUENCE "SEQ_D"', ()
+        )
+
+    def test_create_sequence_explicit_zero_start_is_kept(self, dialect):
+        """``START WITH 0`` is a real request, not a missing value.
+
+        The old ``getattr(expr, 'start', None) or 1`` treated ``0`` as absent
+        and silently fell back to the default, which changes the sequence's
+        first value.
+        """
+        expr = CreateSequenceExpression(dialect, Sequence(dialect, "seq_e"), start=0)
+        assert dialect.format_create_sequence_statement(expr) == (
+            'CREATE SEQUENCE "SEQ_E" START WITH 0', ()
         )
 
     def test_create_generator_form(self, dialect):
         expr = CreateSequenceExpression(dialect, Sequence(dialect, "gen_c"))
         expr.use_generator = True
-        assert dialect.format_create_sequence(expr) == ('CREATE GENERATOR "GEN_C"', ())
+        assert dialect.format_create_sequence_statement(expr) == (
+            'CREATE GENERATOR "GEN_C"', ()
+        )
+
+    def test_create_generator_accepts_start_and_increment(self, dialect):
+        """The legacy spelling takes the same two clauses as the standard one."""
+        expr = CreateSequenceExpression(
+            dialect, Sequence(dialect, "gen_d"), start=7, increment=3
+        )
+        expr.use_generator = True
+        assert dialect.format_create_sequence_statement(expr) == (
+            'CREATE GENERATOR "GEN_D" START WITH 7 INCREMENT BY 3', ()
+        )
+
+    @pytest.mark.parametrize("kwargs,feature", [
+        ({"if_not_exists": True}, "CREATE SEQUENCE IF NOT EXISTS"),
+        ({"minvalue": 1}, "SEQUENCE MINVALUE"),
+        ({"maxvalue": 10}, "SEQUENCE MAXVALUE"),
+        ({"cycle": True}, "SEQUENCE CYCLE"),
+        ({"cache": 10}, "SEQUENCE CACHE"),
+        ({"order": True}, "SEQUENCE ORDER"),
+        ({"owned_by": "t.id"}, "SEQUENCE OWNED BY"),
+    ])
+    def test_unsupported_create_option_is_refused_not_dropped(
+        self, dialect, kwargs, feature
+    ):
+        expr = CreateSequenceExpression(
+            dialect, Sequence(dialect, "seq_f"), **kwargs
+        )
+        with pytest.raises(UnsupportedFeatureError) as exc_info:
+            dialect.format_create_sequence_statement(expr)
+        assert feature in str(exc_info.value)
 
     def test_gen_id_step(self, dialect):
         assert GenIdExpression(dialect, "gen_c", 2).to_sql() == ('GEN_ID("GEN_C", 2)', ())
@@ -347,8 +405,83 @@ class TestSequenceBranches:
     def test_sequence_capability_flags(self, dialect):
         assert dialect.supports_sequence() is True
         assert dialect.supports_create_sequence() is True
+        assert dialect.supports_drop_sequence() is True
         assert dialect.supports_alter_sequence() is True
         assert dialect.supports_create_generator() is True
+
+    def test_sequence_option_probes(self, dialect):
+        """Firebird's grammar has ``START WITH`` and ``INCREMENT`` only."""
+        assert dialect.supports_sequence_start() is True
+        assert dialect.supports_sequence_increment() is True
+        for probe in (
+            dialect.supports_sequence_if_not_exists,
+            dialect.supports_sequence_if_exists,
+            dialect.supports_sequence_minvalue,
+            dialect.supports_sequence_maxvalue,
+            dialect.supports_sequence_cycle,
+            dialect.supports_sequence_cache,
+            dialect.supports_sequence_order,
+            dialect.supports_sequence_owned_by,
+        ):
+            assert probe() is False
+
+    def test_sequence_version_gate(self):
+        """This backend declares sequence support from Firebird 3.0.
+
+        The ``SEQUENCE`` spelling itself is older (2.5 already lists it as a
+        synonym for ``GENERATOR``); the gate follows the declared floor.
+        """
+        assert FirebirdDialect((2, 5, 0)).supports_sequence() is False
+        assert FirebirdDialect((2, 5, 0)).supports_create_sequence() is False
+        assert FirebirdDialect((2, 5, 0)).supports_alter_sequence() is False
+        assert FirebirdDialect((3, 0, 0)).supports_sequence() is True
+        assert FirebirdDialect((4, 0, 0)).supports_sequence() is True
+        assert FirebirdDialect((5, 0, 0)).supports_sequence() is True
+
+    def test_sequence_version_gate_refuses_the_render(self):
+        dialect = FirebirdDialect((2, 5, 0))
+        expr = CreateSequenceExpression(dialect, Sequence(dialect, "seq_g"))
+        with pytest.raises(UnsupportedFeatureError):
+            dialect.format_create_sequence_statement(expr)
+
+    def test_create_sequence_dispatches_to_the_firebird_formatter(self, dialect):
+        """The dispatched name resolves to this backend, not core or a protocol.
+
+        ``FirebirdSequenceMixin`` precedes ``SequenceMixin`` and the
+        ``CreateSequenceSupport`` protocol in the bases, so the method the
+        expression dispatches to is the Firebird one. A protocol body or the
+        core formatter would both satisfy ``getattr``, so the identity is pinned
+        rather than the name merely existing.
+        """
+        from rhosocial.activerecord.backend.impl.firebird.mixins.sequence import (
+            FirebirdSequenceMixin,
+        )
+
+        assert (
+            type(dialect).format_create_sequence_statement
+            is FirebirdSequenceMixin.format_create_sequence_statement
+        )
+
+    def test_old_undispatched_name_is_gone(self, dialect):
+        """``format_create_sequence`` was reachable by nothing and is deleted."""
+        assert not hasattr(dialect, "format_create_sequence")
+
+    def test_drop_and_alter_render_through_core(self, dialect):
+        """Firebird has no local drop/alter formatter; core's render its grammar.
+
+        Both clauses core emits here are the ones Firebird's ``ALTER SEQUENCE``
+        grammar has (``RESTART [WITH]`` and ``INCREMENT [BY]``); ``DROP
+        SEQUENCE`` takes no options, which is why the ``IF EXISTS`` probe is
+        False and a request for it raises rather than being dropped.
+        """
+        assert DropSequenceExpression(dialect, Sequence(dialect, "seq_h")).to_sql() == (
+            'DROP SEQUENCE "SEQ_H"', ()
+        )
+        assert AlterSequenceExpression(
+            dialect, Sequence(dialect, "seq_h"), restart=5, increment=2
+        ).to_sql() == (
+            'ALTER SEQUENCE "SEQ_H" RESTART WITH 5 INCREMENT BY 2', ()
+        )
 
 
 class TestCreateTableRebuildSnapshots:

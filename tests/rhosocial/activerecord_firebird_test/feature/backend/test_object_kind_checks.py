@@ -272,26 +272,28 @@ class TestRightObjectKindStillRenders:
     """
 
     def test_create_sequence(self, dialect):
-        # The dispatched formatter is core's ``format_create_sequence_statement``,
-        # not Firebird's ``format_create_sequence`` -- see the note on that
-        # method -- so the expected text is the core one.
+        # The dispatched formatter is Firebird's own
+        # ``format_create_sequence_statement``, reached because
+        # ``FirebirdSequenceMixin`` precedes ``SequenceMixin`` in the bases. It
+        # never emits ``NO CYCLE``: Firebird's grammar has no such words.
         sql, params = ddl_sequence.CreateSequenceExpression(
             dialect, Sequence(dialect, "gen")
         ).to_sql()
-        assert sql == 'CREATE SEQUENCE "GEN" NO CYCLE'
+        assert sql == 'CREATE SEQUENCE "GEN"'
         assert params == ()
 
     def test_create_sequence_is_guarded_on_the_path_that_actually_runs(self, dialect):
-        """The live guard is core's; Firebird's copy guards a direct call.
+        """The dispatched formatter refuses a wrong object kind.
 
-        Both are asserted so neither can be removed unnoticed. If the dispatched
-        formatter ever changes, this names which of the two is load-bearing.
+        The same guard is asserted through ``to_sql()`` and through a direct
+        call, so a rename that put the method out of the dispatch's reach would
+        show up as a ``TypeError`` from the wrong place.
         """
         wrong = ddl_sequence.CreateSequenceExpression(dialect, Table(dialect, "users"))
         with pytest.raises(TypeError, match=r"CreateSequenceExpression\.sequence"):
             wrong.to_sql()
         with pytest.raises(TypeError, match=r"CreateSequenceExpression\.sequence"):
-            dialect.format_create_sequence(wrong)
+            dialect.format_create_sequence_statement(wrong)
 
     def test_create_table(self, dialect):
         sql, _ = ddl_table.CreateTableExpression(
