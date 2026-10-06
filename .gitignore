@@ -159,3 +159,7 @@ tests/config/
 scripts/*
 !scripts/preflight.sh
 !scripts/install-git-hooks.sh
+
+# Local Firebird client library, installed beside the project to run the
+# suite on Windows (the driver looks it up on PATH or via load_api).
+fbclient/

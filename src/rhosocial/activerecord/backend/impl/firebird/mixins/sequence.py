@@ -200,8 +200,26 @@ class FirebirdSequenceMixin:
         return False
 
     def supports_sequence_start(self) -> bool:
-        """``START WITH`` is one of the two clauses Firebird's grammar has."""
+        """``START WITH`` is one of the two clauses Firebird's grammar has.
+
+        This describes the ``CREATE SEQUENCE ... START WITH`` clause. It does
+        *not* describe ``ALTER SEQUENCE``: the ALTER grammar has no ``START``
+        at all (the server answers ``Token unknown - START``), so
+        :meth:`supports_alter_sequence_start` is the probe the ALTER formatter
+        must consult instead of this one.
+        """
         return True
+
+    def supports_alter_sequence_start(self) -> bool:
+        """Firebird's ``ALTER SEQUENCE`` grammar has no ``START`` clause.
+
+        ``ALTER SEQUENCE`` can only ``RESTART [WITH]`` and change the
+        ``INCREMENT [BY]``; ``START WITH`` belongs to ``CREATE SEQUENCE``
+        alone. The two are different clauses, so the CREATE probe's ``True``
+        must not be reused here -- ``ALTER SEQUENCE ... START WITH 5`` is a
+        syntax error on the server.
+        """
+        return False
 
     def supports_sequence_increment(self) -> bool:
         """``INCREMENT [BY]`` is the other clause Firebird's grammar has."""
