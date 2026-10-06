@@ -324,8 +324,5 @@ class FirebirdTableMixin:
     def supports_computed_by(self) -> bool:
         return True
 
-    def supports_identity_columns(self) -> bool:
-        return True
-
     def supports_external_file(self) -> bool:
         return True

@@ -70,7 +70,10 @@ class TestFirebirdDialectFeatureSupport:
         assert fb4_dialect.supports_decfloat() is True
 
     def test_identity_fb3(self, dialect):
-        assert dialect.supports_identity_columns() is True
+        assert dialect.supports_identity_column() is True
+
+    def test_identity_fb2_5(self, sqlite_style_dialect):
+        assert sqlite_style_dialect.supports_identity_column() is False
 
 
 class TestFirebirdDialectUnsupportedFeatures:

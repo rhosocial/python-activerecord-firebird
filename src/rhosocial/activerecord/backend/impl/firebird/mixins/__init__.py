@@ -43,6 +43,7 @@ from .grouping import FirebirdGroupingMixin
 from .array import FirebirdArrayMixin
 from .explain import FirebirdExplainMixin
 from .generated_column import FirebirdGeneratedColumnMixin
+from .identity_column import FirebirdIdentityColumnMixin
 from .function import FirebirdFunctionMixin
 from .truncate import FirebirdTruncateMixin
 from .unsupported import FirebirdUnsupportedFeaturesMixin
@@ -90,6 +91,7 @@ __all__ = [
     "FirebirdArrayMixin",
     "FirebirdExplainMixin",
     "FirebirdGeneratedColumnMixin",
+    "FirebirdIdentityColumnMixin",
     "FirebirdFunctionMixin",
     "FirebirdTruncateMixin",
     "FirebirdUnsupportedFeaturesMixin",

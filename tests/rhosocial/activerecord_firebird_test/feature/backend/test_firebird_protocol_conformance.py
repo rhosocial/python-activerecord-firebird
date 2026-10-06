@@ -82,7 +82,7 @@ FIREBIRD_PROTOCOLS = [
     dialect_protocols.AlterTableSupport,
     dialect_protocols.AlterTypeSupport,
     dialect_protocols.ArraySupport,
-    dialect_protocols.AutoIncrementSupport,
+    dialect_protocols.AutoIncrementColumnSupport,
     dialect_protocols.CTESupport,
     dialect_protocols.CollationSupport,
     dialect_protocols.ColumnAttributeSupport,
@@ -120,6 +120,12 @@ FIREBIRD_PROTOCOLS = [
     dialect_protocols.FilterClauseSupport,
     dialect_protocols.FulltextIndexSupport,
     dialect_protocols.GeneratedColumnSupport,
+    # The two server-generated-column mechanisms, declared separately. The
+    # identity clause is rendered through the core formatter with Firebird's
+    # measured probes; the parameterless AUTO_INCREMENT marker is declared
+    # with its switch False, so a caller learns the answer by name and the
+    # formatter refuses rather than emitting a token the server rejects.
+    dialect_protocols.IdentityColumnSupport,
     dialect_protocols.GraphSupport,
     dialect_protocols.ILIKESupport,
     dialect_protocols.IntrospectionSupport,

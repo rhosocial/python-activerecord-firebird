@@ -47,6 +47,8 @@ from rhosocial.activerecord.backend.dialect.protocols import (
     IntrospectionSupport,
     TransactionControlSupport,
     GeneratedColumnSupport,
+    IdentityColumnSupport,
+    AutoIncrementColumnSupport,
     ViewObjectSupport,
     RoutineObjectSupport,
     CreateTableSupport,
@@ -101,6 +103,8 @@ from rhosocial.activerecord.backend.dialect.mixins import (
     SequenceMixin,
     TriggerMixin,
     GeneratedColumnMixin,
+    IdentityColumnMixin,
+    AutoIncrementMixin,
     ViewMixin,
     FunctionMixin,
     IntrospectionMixin,
@@ -167,6 +171,7 @@ from .mixins import (
     FirebirdArrayMixin,
     FirebirdExplainMixin,
     FirebirdGeneratedColumnMixin,
+    FirebirdIdentityColumnMixin,
     FirebirdFunctionMixin,
     FirebirdTruncateMixin,
     FirebirdUnsupportedFeaturesMixin,
@@ -248,6 +253,7 @@ class FirebirdDialect(
     FirebirdArrayMixin,          # Before ArrayMixin
     FirebirdExplainMixin,        # Before ExplainMixin
     FirebirdGeneratedColumnMixin, # Before GeneratedColumnMixin
+    FirebirdIdentityColumnMixin, # Before IdentityColumnMixin and AutoIncrementMixin
     FirebirdFunctionMixin,       # Before FunctionMixin
     FirebirdTruncateMixin,       # Before TruncateMixin
     FirebirdUnsupportedFeaturesMixin,  # Before Array/Graph/OrderedSet/Qualify mixins
@@ -304,6 +310,14 @@ class FirebirdDialect(
     SchemaMixin,
     IndexMixin,
     GeneratedColumnMixin,
+    # The identity clause and the parameterless AUTO_INCREMENT marker are
+    # separate mechanisms with separate protocols; Firebird declares the
+    # identity formatter by inheriting IdentityColumnMixin and answers the
+    # auto-increment marker through AutoIncrementMixin's False gate. Neither
+    # renders SQL the server rejects: the identity probes are measured and the
+    # marker is refused by name.
+    IdentityColumnMixin,
+    AutoIncrementMixin,
     ViewMixin,
     FunctionMixin,
     IntrospectionMixin,
@@ -374,6 +388,13 @@ class FirebirdDialect(
     IntrospectionSupport,
     TransactionControlSupport,
     GeneratedColumnSupport,
+    # IdentityColumnSupport is satisfied by the core IdentityColumnMixin with
+    # Firebird's measured probes; AutoIncrementColumnSupport by the core
+    # AutoIncrementMixin with Firebird's False answer. Both switches being
+    # reachable by name is the point -- a capability question should be
+    # answerable before rendering, not only as a side effect of a refusal.
+    IdentityColumnSupport,
+    AutoIncrementColumnSupport,
     ViewObjectSupport,
     RoutineObjectSupport,
     CreateTableSupport,
