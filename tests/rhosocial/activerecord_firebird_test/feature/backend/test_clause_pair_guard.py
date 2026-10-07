@@ -7,9 +7,9 @@ is the state where none of the pair's parameters is set, and setting both raises
 capability probe answers whether Firebird can express the option at all. A
 spelling the server cannot express must be refused **by name** -- never dropped.
 
-Firebird's grammar has no spelling for either side of every pair this file
-covers (measured on 5.0.4 and 6.0.0; see the probes' docstrings), so the four
-states through ``FirebirdDialect`` are:
+Firebird's grammar has no spelling for either side of every *declined* pair this
+file covers (measured on 5.0.4 and 6.0.0; see the probes' docstrings), so the
+four states through ``FirebirdDialect`` are:
 
 ====================  ==================================================
 neither parameter     neither spelling rendered (the statement renders)
@@ -17,6 +17,11 @@ parameter A           ``UnsupportedFeatureError`` naming A's option
 parameter B           ``UnsupportedFeatureError`` naming B's option
 both parameters       ``ValueError`` at construction
 ====================  ==================================================
+
+The lock-wait pair is the exception: ``WAIT`` and ``NO WAIT`` both prepare on
+5.0.4 and 6.0.0 (measured), so its A/B states render the spelling instead of
+refusing it. A case marks that with ``capable=True``, and its probe must answer
+``True`` -- an answer that disagrees with the renderer is the defect.
 
 A formatter that ignores one of the pair's parameters collapses state B into
 "neither": the request is silently dropped and this file fails. That is the
@@ -47,11 +52,13 @@ from rhosocial.activerecord.backend.dialect.exceptions import UnsupportedFeature
 from rhosocial.activerecord.backend.expression.core import Column
 from rhosocial.activerecord.backend.expression.objects import (
     Function,
+    MaterializedView,
     Sequence,
     Table,
     View,
 )
 from rhosocial.activerecord.backend.expression.predicates import ComparisonPredicate
+from rhosocial.activerecord.backend.expression.query_sources import CTEExpression
 from rhosocial.activerecord.backend.expression.statements.ddl_function import (
     DropFunctionExpression,
 )
@@ -63,26 +70,42 @@ from rhosocial.activerecord.backend.expression.statements.ddl_sequence import (
     CreateSequenceExpression,
 )
 from rhosocial.activerecord.backend.expression.statements.ddl_table import (
+    CreateTableAsExpression,
     DropTableExpression,
     ForeignKeyConstraint,
     IdentityClause,
     TableConstraint,
     TableConstraintType,
 )
-from rhosocial.activerecord.backend.expression.statements.ddl_view import (
-    DropViewExpression,
+from rhosocial.activerecord.backend.expression.statements.ddl_truncate import (
+    TruncateExpression,
 )
+from rhosocial.activerecord.backend.expression.statements.ddl_view import (
+    CreateMaterializedViewExpression,
+    DropViewExpression,
+    RefreshMaterializedViewExpression,
+)
+from rhosocial.activerecord.backend.expression.statements.dql import QueryExpression
 from rhosocial.activerecord.backend.expression.transaction import (
     BeginTransactionExpression,
     SetTransactionExpression,
 )
 from rhosocial.activerecord.backend.impl.dummy.dialect import DummyDialect
 from rhosocial.activerecord.backend.impl.firebird.dialect import FirebirdDialect
+from rhosocial.activerecord.backend.impl.firebird.mixins.cte import (
+    FirebirdCTEMixin,
+)
 from rhosocial.activerecord.backend.impl.firebird.mixins.sequence import (
     FirebirdSequenceMixin,
 )
 from rhosocial.activerecord.backend.impl.firebird.mixins.ddl_table import (
     FirebirdTableMixin,
+)
+from rhosocial.activerecord.backend.impl.firebird.mixins.transaction import (
+    FirebirdTransactionMixin,
+)
+from rhosocial.activerecord.backend.impl.firebird.mixins.truncate import (
+    FirebirdTruncateMixin,
 )
 
 
@@ -117,7 +140,12 @@ def _check(d, **kw):
 
 
 class PairCase:
-    """One two-spelling clause pair, its builder and its refusal evidence."""
+    """One two-spelling clause pair, its builder and its refusal evidence.
+
+    ``capable=True`` marks a pair both of whose spellings the server accepts:
+    the A/B states render (and the probe must answer ``True``) instead of
+    raising. The default is the declined case.
+    """
 
     def __init__(
         self,
@@ -134,6 +162,7 @@ class PairCase:
         a_value=True,
         b_value=True,
         neither_error=None,
+        capable=False,
     ):
         self.case_id = case_id
         self.builder = builder
@@ -148,6 +177,7 @@ class PairCase:
         self.a_value = a_value
         self.b_value = b_value
         self.neither_error = neither_error
+        self.capable = capable
 
     def render(self, dialect, **kwargs):
         sql, _params = self.builder(dialect, **kwargs).to_sql()
@@ -319,6 +349,35 @@ PAIR_CASES = (
         "DEFERRABLE transaction",
         a_probe="supports_deferrable_transaction",
     ),
+    # Firebird's lock-wait pair is *not* declined: both spellings prepare on
+    # 5.0.4 and 6.0.0 (measured; see FirebirdTransactionMixin's probe). The
+    # parameters must therefore render, one spelling each, and the probe must
+    # answer True -- a dialect whose formatter drops one of them collapses the
+    # states this case distinguishes.
+    PairCase(
+        "BeginTransactionExpression.wait",
+        lambda d, **kw: BeginTransactionExpression(d, **kw),
+        "wait",
+        "no_wait",
+        r"(?<!NO )WAIT\b",
+        r"NO WAIT\b",
+        "transaction WAIT",
+        "transaction NO WAIT",
+        a_probe="supports_transaction_wait",
+        capable=True,
+    ),
+    PairCase(
+        "SetTransactionExpression.wait",
+        lambda d, **kw: SetTransactionExpression(d, **kw),
+        "wait",
+        "no_wait",
+        r"(?<!NO )WAIT\b",
+        r"NO WAIT\b",
+        "transaction WAIT",
+        "transaction NO WAIT",
+        a_probe="supports_transaction_wait",
+        capable=True,
+    ),
     PairCase(
         "DropTableExpression.cascade",
         lambda d, **kw: DropTableExpression(d, _table(d), **kw),
@@ -382,12 +441,30 @@ class TestFourStatesArePairwiseDistinguishable:
         )
 
     @pytest.mark.parametrize("case", PAIR_CASES, ids=PAIR_IDS)
-    def test_a_set_is_refused_by_name(self, case):
+    def test_a_set_is_refused_or_renders_a(self, case):
+        if case.capable:
+            sql = case.render(_dialect(), **{case.a: case.a_value})
+            assert case.matches_a(sql), (
+                f"{case.case_id}: setting {case.a!r} did not render its spelling: {sql!r}"
+            )
+            assert not case.matches_b(sql), (
+                f"{case.case_id}: setting {case.a!r} also rendered {case.b!r}: {sql!r}"
+            )
+            return
         with pytest.raises(UnsupportedFeatureError, match=re.escape(case.a_feature)):
             case.render(_dialect(), **{case.a: case.a_value})
 
     @pytest.mark.parametrize("case", PAIR_CASES, ids=PAIR_IDS)
-    def test_b_set_is_refused_by_name(self, case):
+    def test_b_set_is_refused_or_renders_b(self, case):
+        if case.capable:
+            sql = case.render(_dialect(), **{case.b: case.b_value})
+            assert case.matches_b(sql), (
+                f"{case.case_id}: setting {case.b!r} did not render its spelling: {sql!r}"
+            )
+            assert not case.matches_a(sql), (
+                f"{case.case_id}: setting {case.b!r} also rendered {case.a!r}: {sql!r}"
+            )
+            return
         with pytest.raises(UnsupportedFeatureError, match=re.escape(case.b_feature)):
             case.render(_dialect(), **{case.b: case.b_value})
 
@@ -399,17 +476,23 @@ class TestFourStatesArePairwiseDistinguishable:
             case.render(_dialect(), **{case.a: case.a_value, case.b: case.b_value})
 
     @pytest.mark.parametrize("case", PAIR_CASES, ids=PAIR_IDS)
-    def test_probe_declines_the_pair(self, case):
-        """The refusal is the capability answer, not an accident of the formatter."""
+    def test_probe_matches_the_formatter(self, case):
+        """The renderer's answer and the capability answer cannot disagree."""
         dialect = _dialect()
         for probe_name in {case.a_probe, case.b_probe}:
             assert probe_name is not None, f"{case.case_id}: no probe declared"
             probe = getattr(dialect, probe_name, None)
             assert callable(probe), f"{case.case_id}: {probe_name} is not answered"
-            assert probe() is False, (
-                f"{case.case_id}: {probe_name} answers True but the formatter "
-                f"refuses the option; declaration and renderer disagree"
-            )
+            if case.capable:
+                assert probe() is True, (
+                    f"{case.case_id}: {probe_name} answers {probe()!r} but the "
+                    f"formatter renders the option; declaration and renderer disagree"
+                )
+            else:
+                assert probe() is False, (
+                    f"{case.case_id}: {probe_name} answers True but the formatter "
+                    f"refuses the option; declaration and renderer disagree"
+                )
 
 
 class TestPatternsMatchTheRealSpellings:
@@ -473,6 +556,8 @@ class TestGuardIsNotVacuous:
             "AlterConstraint.enforced",
             "BeginTransactionExpression.deferrable",
             "SetTransactionExpression.deferrable",
+            "BeginTransactionExpression.wait",
+            "SetTransactionExpression.wait",
             "DropTableExpression.cascade",
             "DropViewExpression.cascade",
             "DropFunctionExpression.cascade",
@@ -647,4 +732,242 @@ class TestParameterInventoryIsComplete:
             "FirebirdTableMixin.format_table_constraint does not read these "
             f"parameters: {missing}. A parameter the formatter never reads is "
             "silently dropped."
+        )
+
+
+# ---------------------------------------------------------------------------
+# The master probes the new core gates consult
+# ---------------------------------------------------------------------------
+#
+# Core gave three previously-decorative probes a call site and added a fourth
+# (supports_with_data_clause), and the transaction wait pair arrived with
+# supports_transaction_wait. Firebird's answers are measured, not assumed --
+# see each probe's docstring for the statements and the server responses. This
+# class pins both halves: the answer, and the fact that the answer is
+# Firebird's own declaration rather than an inherited default.
+
+#: The Firebird mixin each probe must resolve to. The per-version answers are
+#: asserted in the tests below; the point here is that the declaration is
+#: Firebird's own, not an inherited core default.
+MASTER_PROBES = (
+    ("supports_transaction_wait", FirebirdTransactionMixin),
+    ("supports_create_table_as", FirebirdTableMixin),
+    ("supports_with_data_clause", FirebirdTableMixin),
+    ("supports_materialized_cte", FirebirdCTEMixin),
+    ("supports_truncate", FirebirdTruncateMixin),
+)
+
+
+class _FirebirdCarriersEnabled(FirebirdDialect):
+    """The carriers on, the WITH [NO] DATA clause still declined.
+
+    Firebird refuses ``CREATE TABLE ... AS`` on 5.x and materialized views in
+    every version, so the clause gate cannot be observed through the real
+    dialect. This witness enables the carriers and pins the clause answer to
+    False, so the clause gate itself is exercised.
+    """
+
+    def supports_create_table_as(self) -> bool:
+        return True
+
+    def supports_with_data_clause(self) -> bool:
+        return False
+
+    def supports_materialized_view(self) -> bool:
+        return True
+
+    def supports_refresh_materialized_view(self) -> bool:
+        return True
+
+
+def _one_column_query(d):
+    return QueryExpression(d, select=[Column(d, "id")], from_=Table(d, "t"))
+
+
+class TestFirebirdAnswersTheMeasuredMasterProbes:
+    """The measured answer, the declared answer and the renderer must agree."""
+
+    @pytest.mark.parametrize(
+        "probe_name,mixin", MASTER_PROBES, ids=[p[0] for p in MASTER_PROBES]
+    )
+    def test_probe_is_declared_on_the_firebird_mixin(self, probe_name, mixin):
+        resolved = getattr(FirebirdDialect, probe_name)
+        assert resolved is getattr(mixin, probe_name), (
+            f"FirebirdDialect.{probe_name} resolves to "
+            f"{getattr(resolved, '__qualname__', resolved)}; it must be declared "
+            f"by {mixin.__name__} so the measured answer is explicit"
+        )
+
+    def test_transaction_wait_is_declared_true(self):
+        for version in ((5, 0, 0), (6, 0, 0)):
+            assert FirebirdDialect(version).supports_transaction_wait() is True, version
+
+    def test_materialized_cte_is_declined_and_the_hint_refused(self):
+        for version in ((5, 0, 0), (6, 0, 0)):
+            d = FirebirdDialect(version)
+            assert d.supports_materialized_cte() is False, version
+            with pytest.raises(UnsupportedFeatureError, match="MATERIALIZED CTE"):
+                CTEExpression(d, "c", _one_column_query(d), materialized=True).to_sql()
+            with pytest.raises(UnsupportedFeatureError, match="NOT MATERIALIZED CTE"):
+                CTEExpression(d, "c", _one_column_query(d), not_materialized=True).to_sql()
+            sql, _ = CTEExpression(d, "c", _one_column_query(d)).to_sql()
+            assert "MATERIALIZED" not in sql, sql
+
+    def test_truncate_is_declined_and_refused_by_name(self):
+        for version in ((5, 0, 0), (6, 0, 0)):
+            d = FirebirdDialect(version)
+            assert d.supports_truncate() is False, version
+            with pytest.raises(UnsupportedFeatureError, match="TRUNCATE"):
+                TruncateExpression(d, Table(d, "t")).to_sql()
+
+    def test_create_table_as_is_version_gated(self):
+        """Measured: 5.0.4 answers Token unknown - AS; 6.0.0 creates the table."""
+        assert FirebirdDialect((5, 0, 0)).supports_create_table_as() is False
+        assert FirebirdDialect((6, 0, 0)).supports_create_table_as() is True
+
+        fb5 = FirebirdDialect((5, 0, 0))
+        with pytest.raises(UnsupportedFeatureError, match=re.escape("CREATE TABLE ... AS")):
+            CreateTableAsExpression(fb5, Table(fb5, "t"), _one_column_query(fb5)).to_sql()
+
+        fb6 = FirebirdDialect((6, 0, 0))
+        sql, _ = CreateTableAsExpression(fb6, Table(fb6, "t"), _one_column_query(fb6)).to_sql()
+        assert sql == 'CREATE TABLE "T" AS SELECT "ID" FROM "T"', sql
+
+    def test_with_data_clause_is_version_gated_and_the_gate_is_live(self):
+        """Measured: 6.0.0 populates WITH DATA and leaves WITH NO DATA empty."""
+        assert FirebirdDialect((5, 0, 0)).supports_with_data_clause() is False
+        assert FirebirdDialect((6, 0, 0)).supports_with_data_clause() is True
+
+        fb6 = FirebirdDialect((6, 0, 0))
+        with_data, _ = CreateTableAsExpression(
+            fb6, Table(fb6, "t"), _one_column_query(fb6), with_data=True
+        ).to_sql()
+        assert with_data.endswith("WITH DATA"), with_data
+        no_data, _ = CreateTableAsExpression(
+            fb6, Table(fb6, "t"), _one_column_query(fb6), no_data=True
+        ).to_sql()
+        assert no_data.endswith("WITH NO DATA"), no_data
+
+        # The witness keeps the carriers but declines the clause: every
+        # consumer must refuse the requested spelling by name.
+        carrier = _FirebirdCarriersEnabled((6, 0, 0))
+        assert carrier.supports_with_data_clause() is False
+        for builder, keyword in (
+            (
+                lambda **kw: CreateTableAsExpression(
+                    carrier, Table(carrier, "t"), _one_column_query(carrier), **kw
+                ),
+                "with_data",
+            ),
+            (
+                lambda **kw: CreateTableAsExpression(
+                    carrier, Table(carrier, "t"), _one_column_query(carrier), **kw
+                ),
+                "no_data",
+            ),
+            (
+                lambda **kw: CreateMaterializedViewExpression(
+                    carrier, MaterializedView(carrier, "mv"), _one_column_query(carrier), **kw
+                ),
+                "with_data",
+            ),
+            (
+                lambda **kw: CreateMaterializedViewExpression(
+                    carrier, MaterializedView(carrier, "mv"), _one_column_query(carrier), **kw
+                ),
+                "no_data",
+            ),
+            (
+                lambda **kw: RefreshMaterializedViewExpression(
+                    carrier, MaterializedView(carrier, "mv"), **kw
+                ),
+                "with_data",
+            ),
+            (
+                lambda **kw: RefreshMaterializedViewExpression(
+                    carrier, MaterializedView(carrier, "mv"), **kw
+                ),
+                "no_data",
+            ),
+        ):
+            feature = "WITH DATA" if keyword == "with_data" else "WITH NO DATA"
+            with pytest.raises(UnsupportedFeatureError, match=re.escape(feature)):
+                builder(**{keyword: True}).to_sql()
+
+
+# ---------------------------------------------------------------------------
+# The transaction wait pair's wiring
+# ---------------------------------------------------------------------------
+#
+# The pair arrived in core after the Phase 2 pass. Firebird's formatters must
+# read both parameters; the dead pre-expression helper that hardcoded WAIT must
+# not come back as a second, unreachable path.
+
+BEGIN_TRANSACTION_PARAMS = {
+    "self",
+    "dialect",
+    "isolation_level",
+    "mode",
+    "deferrable",
+    "not_deferrable",
+    "wait",
+    "no_wait",
+    "begin_type",
+}
+
+SET_TRANSACTION_PARAMS = {
+    "self",
+    "dialect",
+    "isolation_level",
+    "mode",
+    "session",
+    "deferrable",
+    "not_deferrable",
+    "wait",
+    "no_wait",
+}
+
+#: The parameters the transaction formatters must read from the expression.
+TRANSACTION_PAIR_PARAMS = ("_wait", "_no_wait")
+
+
+class TestTransactionWaitPairIsWired:
+    def test_begin_transaction_signature_is_pinned(self):
+        actual = set(inspect.signature(BeginTransactionExpression.__init__).parameters)
+        assert actual == BEGIN_TRANSACTION_PARAMS, (
+            "BeginTransactionExpression's parameter list changed; the Firebird "
+            "formatter must consume the new parameter before this pin is updated.\n"
+            f"  added:   {sorted(actual - BEGIN_TRANSACTION_PARAMS)}\n"
+            f"  removed: {sorted(BEGIN_TRANSACTION_PARAMS - actual)}"
+        )
+
+    def test_set_transaction_signature_is_pinned(self):
+        actual = set(inspect.signature(SetTransactionExpression.__init__).parameters)
+        assert actual == SET_TRANSACTION_PARAMS, (
+            "SetTransactionExpression's parameter list changed; the Firebird "
+            "formatter must consume the new parameter before this pin is updated.\n"
+            f"  added:   {sorted(actual - SET_TRANSACTION_PARAMS)}\n"
+            f"  removed: {sorted(SET_TRANSACTION_PARAMS - actual)}"
+        )
+
+    @pytest.mark.parametrize(
+        "method_name",
+        ["format_begin_transaction", "format_set_transaction"],
+    )
+    def test_firebird_formatter_consumes_both_wait_parameters(self, method_name):
+        source = inspect.getsource(getattr(FirebirdTransactionMixin, method_name))
+        missing = [
+            name for name in TRANSACTION_PAIR_PARAMS if f"expr.{name}" not in source
+        ]
+        assert not missing, (
+            f"FirebirdTransactionMixin.{method_name} does not read these "
+            f"parameters: {missing}. A parameter the formatter never reads is "
+            "silently dropped."
+        )
+
+    def test_the_dead_begin_helper_is_gone(self):
+        """A second, unreachable rendering path is the defect, not the fix."""
+        assert not hasattr(FirebirdTransactionMixin, "_format_begin_sql"), (
+            "FirebirdTransactionMixin._format_begin_sql was the dead helper that "
+            "hardcoded WAIT; the pair is rendered by the format_* methods now"
         )

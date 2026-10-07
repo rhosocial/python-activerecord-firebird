@@ -14,34 +14,17 @@ if TYPE_CHECKING:
 
 class FirebirdTransactionMixin:
 
-    def _format_begin_sql(self, isolation_level=None, mode=None, wait=True, lock_timeout=None):
-        parts = ["SET TRANSACTION"]
+    def supports_transaction_wait(self) -> bool:
+        """Firebird's ``SET TRANSACTION`` grammar accepts ``WAIT`` and ``NO WAIT``.
 
-        if isolation_level:
-            level_map = {
-                'READ UNCOMMITTED': 'READ COMMITTED',
-                'READ COMMITTED': 'READ COMMITTED',
-                'REPEATABLE READ': 'SNAPSHOT',
-                'SERIALIZABLE': 'SNAPSHOT TABLE STABILITY',
-            }
-            fb_level = level_map.get(
-                isolation_level.upper() if isinstance(isolation_level, str) else isolation_level,
-                isolation_level,
-            )
-            parts.append(f"ISOLATION LEVEL {fb_level}")
-
-        if mode:
-            parts.append(mode.upper())
-
-        if wait:
-            parts.append("WAIT")
-        else:
-            parts.append("NO WAIT")
-
-        if lock_timeout is not None:
-            parts.append(f"LOCK TIMEOUT {lock_timeout}")
-
-        return " ".join(parts)
+        Measured on 5.0.4 and 6.0.0: ``SET TRANSACTION WAIT``, ``SET
+        TRANSACTION NO WAIT``, and both spellings after an ``ISOLATION LEVEL``
+        clause prepare successfully, while ``DEFERRABLE`` in the same position
+        is answered with ``Token unknown - DEFERRABLE`` -- so the measurement
+        distinguishes acceptance from a parse failure. The parameters ``wait``
+        and ``no_wait`` select the spelling; neither set renders nothing.
+        """
+        return True
 
     def supports_transaction_mode(self) -> bool:
         return True
@@ -92,7 +75,18 @@ class FirebirdTransactionMixin:
                     f"{self.name} does not support [NOT] DEFERRABLE transactions.",
                 )
 
-        parts.append("WAIT")
+        # WAIT / NO WAIT is the same shape. Firebird's grammar accepts both
+        # spellings (measured), so each parameter renders its own word; a
+        # dialect that declines the pair refuses by name instead of dropping.
+        if expr._wait or expr._no_wait:
+            if not self.supports_transaction_wait():
+                feature = "WAIT" if expr._wait else "NO WAIT"
+                raise UnsupportedFeatureError(
+                    self.name, f"transaction {feature}",
+                    f"{self.name} does not support the {feature} transaction clause.",
+                )
+            parts.append("WAIT" if expr._wait else "NO WAIT")
+
         return " ".join(parts), ()
 
     def format_set_transaction(self, expr: "SetTransactionExpression") -> Tuple[str, tuple]:
@@ -120,4 +114,15 @@ class FirebirdTransactionMixin:
                     self.name, "DEFERRABLE transaction",
                     f"{self.name} does not support [NOT] DEFERRABLE transactions.",
                 )
+
+        # WAIT / NO WAIT, one parameter per spelling; see BEGIN above.
+        if expr._wait or expr._no_wait:
+            if not self.supports_transaction_wait():
+                feature = "WAIT" if expr._wait else "NO WAIT"
+                raise UnsupportedFeatureError(
+                    self.name, f"transaction {feature}",
+                    f"{self.name} does not support the {feature} transaction clause.",
+                )
+            parts.append("WAIT" if expr._wait else "NO WAIT")
+
         return " ".join(parts), ()

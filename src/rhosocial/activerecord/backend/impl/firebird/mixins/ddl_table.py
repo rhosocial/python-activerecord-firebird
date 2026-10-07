@@ -20,10 +20,35 @@ if TYPE_CHECKING:  # pragma: no cover
 from rhosocial.activerecord.backend.dialect.mixins.ddl_table import TableMixin
 from rhosocial.activerecord.backend.expression.objects import Table
 
+from .version_boundaries import _norm_version
+
 
 class FirebirdTableMixin:
 
     # -- Cascade capability switches (declared on the dialect, Ref to DropTableSupport protocol)
+
+    def supports_create_table_as(self) -> bool:
+        """Whether ``CREATE TABLE ... AS <query>`` (CTAS) is supported.
+
+        Measured on the two live servers: 5.0.4 answers ``Token unknown -
+        AS`` for both ``CREATE TABLE t AS (SELECT ...)`` and ``CREATE TABLE t
+        AS SELECT ...``; 6.0.0 creates the table, populates it, and accepts
+        ``WITH DATA`` / ``WITH NO DATA`` on it. The gate is therefore the
+        version the measurement found, not a flat answer.
+        """
+        return _norm_version(self.version) >= (6, 0, 0)
+
+    def supports_with_data_clause(self) -> bool:
+        """Whether the ``WITH [NO] DATA`` population clause is supported.
+
+        The clause is shared by CTAS, CREATE MATERIALIZED VIEW and REFRESH
+        MATERIALIZED VIEW. Firebird's only carrier is the 6.0.0 CTAS (measured:
+        bare CTAS populates one row; ``WITH DATA`` populates one row; ``WITH NO
+        DATA`` creates an empty table). 5.0.4 has no CTAS at all, and no
+        Firebird version has materialized views, so the clause answers with the
+        same version gate as the CTAS statement.
+        """
+        return _norm_version(self.version) >= (6, 0, 0)
 
     def supports_drop_table_cascade(self) -> bool:
         """Firebird has no CASCADE keyword on DROP TABLE."""
