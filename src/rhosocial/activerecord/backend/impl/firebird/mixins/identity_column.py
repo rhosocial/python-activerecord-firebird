@@ -8,10 +8,11 @@ this mixin declares only what the server accepts, probe by probe, and never
 overrides the rendering itself.
 
 Measured on Firebird 5.0.4 and 6.0.0 through the driver this suite uses:
-``START WITH`` and ``INCREMENT BY`` execute; ``MINVALUE``, ``MAXVALUE`` and
-``CYCLE`` / ``NO CYCLE`` are refused with ``Token unknown``. The ``False``
-probes keep the refused options off the wire -- the core formatter raises
-``UnsupportedFeatureError`` naming the option instead of dropping it.
+``START WITH`` and ``INCREMENT BY`` execute; ``MINVALUE``, ``MAXVALUE``,
+``CYCLE`` / ``NO CYCLE``, ``ORDER`` / ``NO ORDER`` and ``CACHE`` / ``NO CACHE``
+are refused with ``Token unknown``. The ``False`` probes keep the refused
+options off the wire -- the core formatter raises ``UnsupportedFeatureError``
+naming the option instead of dropping it.
 
 ``supports_auto_increment_column()`` answers for the *other* mechanism: the
 parameterless ``AUTO_INCREMENT`` marker. Firebird has no such keyword; its
@@ -81,6 +82,24 @@ class FirebirdIdentityColumnMixin:
 
         Measured on 5.0.4 and 6.0.0: ``CYCLE`` is answered with ``Token
         unknown - CYCLE`` and ``NO CYCLE`` with ``Token unknown - NO``. Both
+        spellings the expression can carry are refused.
+        """
+        return False
+
+    def supports_identity_order(self) -> bool:
+        """Firebird's identity clause has no ``ORDER`` / ``NO ORDER``.
+
+        Measured on 5.0.4 and 6.0.0: ``ORDER`` is answered with ``Token
+        unknown - ORDER`` and ``NO ORDER`` with ``Token unknown - NO``. Both
+        spellings the expression can carry are refused.
+        """
+        return False
+
+    def supports_identity_cache(self) -> bool:
+        """Firebird's identity clause has no ``CACHE`` / ``NO CACHE``.
+
+        Measured on 5.0.4 and 6.0.0: ``CACHE n`` is answered with ``Token
+        unknown - CACHE`` and ``NO CACHE`` with ``Token unknown - NO``. Both
         spellings the expression can carry are refused.
         """
         return False

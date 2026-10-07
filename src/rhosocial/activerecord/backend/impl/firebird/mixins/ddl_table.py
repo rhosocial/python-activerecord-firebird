@@ -278,10 +278,21 @@ class FirebirdTableMixin:
         )
         from rhosocial.activerecord.backend.dialect.exceptions import UnsupportedFeatureError
 
-        if getattr(expr, "deferrable", None) is not None:
+        # Deferrability is a two-spelling option (DEFERRABLE / NOT DEFERRABLE)
+        # with one parameter per spelling, and INITIALLY DEFERRED / IMMEDIATE is
+        # its own attribute. Firebird's grammar has neither pair's spellings
+        # (measured on 5.0.4 and 6.0.0: ``Token unknown - DEFERRABLE`` /
+        # ``- NOT`` / ``- INITIALLY``), so a requested spelling is refused by
+        # name rather than dropped.
+        if expr.deferrable or expr.not_deferrable:
             raise UnsupportedFeatureError(
                 self.name, "DEFERRABLE constraint",
                 "Firebird does not support deferrable constraints.",
+            )
+        if expr.initially_deferred or expr.initially_immediate:
+            raise UnsupportedFeatureError(
+                self.name, "INITIALLY DEFERRED/IMMEDIATE constraint",
+                "Firebird does not support initially deferred/immediate constraints.",
             )
         if isinstance(expr, ForeignKeyConstraint) and getattr(expr, "match_type", None) is not None:
             raise UnsupportedFeatureError(
@@ -318,6 +329,26 @@ class FirebirdTableMixin:
             check_sql, check_params = expr.check_condition.to_sql()
             parts.append(f"CHECK ({check_sql})")
             params.extend(check_params)
+
+        # Enforcement is a two-spelling option (ENFORCED / NOT ENFORCED) with
+        # one parameter per spelling. Firebird's grammar has neither (measured
+        # on 5.0.4 and 6.0.0: ``Token unknown - ENFORCED`` / ``- NOT``), so a
+        # requested spelling is refused by name rather than dropped.
+        if expr.enforced or expr.not_enforced:
+            if expr.constraint_type not in (
+                TableConstraintType.CHECK,
+                TableConstraintType.FOREIGN_KEY,
+            ):
+                raise ValueError(
+                    "ENFORCED/NOT ENFORCED is only valid for CHECK and "
+                    "FOREIGN KEY constraints"
+                )
+            if not self.supports_constraint_enforced():
+                raise UnsupportedFeatureError(
+                    self.name, "ENFORCED/NOT ENFORCED constraint",
+                    "Firebird does not support ENFORCED/NOT ENFORCED constraints.",
+                )
+            parts.append("ENFORCED" if expr.enforced else "NOT ENFORCED")
 
         return ' '.join(parts), tuple(params)
 

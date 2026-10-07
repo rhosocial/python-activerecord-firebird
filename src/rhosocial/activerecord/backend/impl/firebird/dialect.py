@@ -839,10 +839,25 @@ class FirebirdDialect(
         return False
 
     def supports_deferrable_constraint(self) -> bool:
+        """Firebird has no DEFERRABLE / INITIALLY ... constraint attributes.
+
+        Measured on Firebird 5.0.4 and 6.0.0: ``DEFERRABLE``, ``NOT
+        DEFERRABLE``, ``INITIALLY DEFERRED`` and ``INITIALLY IMMEDIATE`` are
+        all answered with ``Token unknown`` on table and column constraints
+        alike. The formatter refuses a requested spelling by name.
+        """
         return False
 
     def supports_constraint_enforced(self) -> bool:
-        return True
+        """Firebird has no ENFORCED / NOT ENFORCED constraint control.
+
+        Measured on Firebird 5.0.4 and 6.0.0: ``CHECK (...) ENFORCED`` and
+        ``CHECK (...) NOT ENFORCED`` are answered with ``Token unknown -
+        ENFORCED`` / ``Token unknown - NOT``, and so are the FOREIGN KEY and
+        column-constraint forms. The formatter refuses a requested spelling by
+        name rather than dropping it.
+        """
+        return False
 
     def supports_add_constraint(self) -> bool:
         return True

@@ -382,13 +382,17 @@ class TestSequenceBranches:
         ({"minvalue": 1}, "SEQUENCE MINVALUE"),
         ({"maxvalue": 10}, "SEQUENCE MAXVALUE"),
         ({"cycle": True}, "SEQUENCE CYCLE"),
+        ({"no_cycle": True}, "SEQUENCE CYCLE"),
         ({"cache": 10}, "SEQUENCE CACHE"),
+        ({"no_cache": True}, "SEQUENCE CACHE"),
         ({"order": True}, "SEQUENCE ORDER"),
+        ({"no_order": True}, "SEQUENCE ORDER"),
         ({"owned_by": "t.id"}, "SEQUENCE OWNED BY"),
     ])
     def test_unsupported_create_option_is_refused_not_dropped(
         self, dialect, kwargs, feature
     ):
+        """Both spellings of every pair are refused by name, never dropped."""
         expr = CreateSequenceExpression(
             dialect, Sequence(dialect, "seq_f"), **kwargs
         )

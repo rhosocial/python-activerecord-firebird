@@ -5,8 +5,9 @@ Firebird executes core's standard ``GENERATED {ALWAYS|BY DEFAULT} AS IDENTITY``
 render unchanged from 3.0 on, so the dialect declares the probes and inherits
 the core formatter rather than overriding it. This file asserts both halves:
 
-* the probe answers, per version, including the three options measured against
-  the live servers (``MINVALUE`` / ``MAXVALUE`` / ``CYCLE``: all refused);
+* the probe answers, per version, including the options measured against
+  the live servers (``MINVALUE`` / ``MAXVALUE`` / ``CYCLE`` / ``ORDER`` /
+  ``CACHE``: all refused, both spellings of each pair);
 * the rendered ``CREATE TABLE`` is accepted by the server, with a sentinel
   first so a classifier that cannot see a rejection cannot green-light
   anything.
@@ -59,13 +60,18 @@ IDENTITY_CASES = (
 )
 
 #: One refused option -> constructor kwargs and the feature name the refusal
-#: must carry. ``NO CYCLE`` is listed separately because the formatter emits a
-#: different spelling for ``cycle=False``.
+#: must carry. Each two-spelling pair is listed once per spelling: both sides
+#: are refused by name. ``cycle=False`` is no longer a spelling -- the negative
+#: form is ``no_cycle=True``.
 REFUSED_OPTIONS = (
     ("minvalue", {"minvalue": 1}, "IDENTITY MINVALUE"),
     ("maxvalue", {"maxvalue": 9999}, "IDENTITY MAXVALUE"),
-    ("cycle_true", {"cycle": True}, "IDENTITY CYCLE"),
-    ("cycle_false", {"cycle": False}, "IDENTITY CYCLE"),
+    ("cycle", {"cycle": True}, "IDENTITY CYCLE"),
+    ("no_cycle", {"no_cycle": True}, "IDENTITY CYCLE"),
+    ("order", {"order": True}, "IDENTITY ORDER"),
+    ("no_order", {"no_order": True}, "IDENTITY ORDER"),
+    ("cache", {"cache": 10}, "IDENTITY CACHE"),
+    ("no_cache", {"no_cache": True}, "IDENTITY CACHE"),
 )
 
 
@@ -84,6 +90,12 @@ class _OptionsDeclaredDialect(FirebirdDialect):
         return True
 
     def supports_identity_cycle(self) -> bool:
+        return True
+
+    def supports_identity_order(self) -> bool:
+        return True
+
+    def supports_identity_cache(self) -> bool:
         return True
 
 
@@ -138,6 +150,8 @@ class TestProbeDeclarations:
         assert dialect.supports_identity_minvalue() is False
         assert dialect.supports_identity_maxvalue() is False
         assert dialect.supports_identity_cycle() is False
+        assert dialect.supports_identity_order() is False
+        assert dialect.supports_identity_cache() is False
 
     @pytest.mark.parametrize(
         "version", PRE_IDENTITY_VERSIONS + IDENTITY_VERSIONS

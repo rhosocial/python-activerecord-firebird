@@ -3,6 +3,8 @@
 
 from typing import Tuple, TYPE_CHECKING
 
+from rhosocial.activerecord.backend.dialect.exceptions import UnsupportedFeatureError
+
 if TYPE_CHECKING:
     from rhosocial.activerecord.backend.expression.transaction import (
         BeginTransactionExpression,
@@ -78,6 +80,18 @@ class FirebirdTransactionMixin:
         else:
             parts.append("READ WRITE")
 
+        # DEFERRABLE / NOT DEFERRABLE is a two-spelling option with one
+        # parameter per spelling. Firebird's SET TRANSACTION grammar has
+        # neither (measured on 5.0.4 and 6.0.0: ``Token unknown -
+        # DEFERRABLE`` / ``- NOT``), so a requested spelling is refused by
+        # name rather than dropped.
+        if expr._deferrable or expr._not_deferrable:
+            if not self.supports_deferrable_transaction():
+                raise UnsupportedFeatureError(
+                    self.name, "DEFERRABLE transaction",
+                    f"{self.name} does not support [NOT] DEFERRABLE transactions.",
+                )
+
         parts.append("WAIT")
         return " ".join(parts), ()
 
@@ -98,4 +112,12 @@ class FirebirdTransactionMixin:
             parts.append("READ ONLY")
         elif expr._mode == TransactionMode.READ_WRITE:
             parts.append("READ WRITE")
+
+        # Same pair as BEGIN: Firebird's grammar has neither spelling.
+        if expr._deferrable or expr._not_deferrable:
+            if not self.supports_deferrable_transaction():
+                raise UnsupportedFeatureError(
+                    self.name, "DEFERRABLE transaction",
+                    f"{self.name} does not support [NOT] DEFERRABLE transactions.",
+                )
         return " ".join(parts), ()

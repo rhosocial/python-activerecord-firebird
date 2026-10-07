@@ -135,6 +135,10 @@ from rhosocial.activerecord.backend.expression.statements.ddl_trigger import (
     TriggerTiming,
 )
 from rhosocial.activerecord.backend.expression.statements.dql import QueryExpression
+from rhosocial.activerecord.backend.expression.transaction import (
+    BeginTransactionExpression,
+    SetTransactionExpression,
+)
 from rhosocial.activerecord.backend.expression.statements.dml import (
     MergeAction,
     MergeActionType,
@@ -145,6 +149,7 @@ from rhosocial.activerecord.testsuite.utils.expression import (
     make_instance,
     register_all,
     register_special_constructor,
+    roundtrip_expression,
 )
 
 CORE_EXPR_PKG = "rhosocial.activerecord.backend.expression"
@@ -1212,3 +1217,236 @@ class TestMatrixIntegrity:
             + ", ".join(f"{count} {name}" for name, count in sorted(census.items()))
             + f" (of {len(REGISTERED)} collected)"
         )
+
+
+# ---------------------------------------------------------------------------
+# The clause-pair parameters round-trip
+# ---------------------------------------------------------------------------
+#
+# The sweep above builds every class once with introspective defaults, which
+# leaves every two-spelling pair unset. The fields the round split would
+# therefore not be exercised by it. Each pair is instantiated here with one
+# spelling set and round-tripped through all three encodings; ``get_params``
+# reads the constructor signature, so a pair field the serializer dropped or
+# normalized would surface as a parameter mismatch. Both spellings are built
+# and their parameter maps compared, so a serializer that conflated them is
+# caught even though the pair may be inexpressible on Firebird's server.
+
+PAIR_BEARING_CASES = (
+    (
+        "CreateSequenceExpression.cycle",
+        lambda d: ddl_sequence.CreateSequenceExpression(d, Sequence(d, "s"), cycle=True),
+        lambda d: ddl_sequence.CreateSequenceExpression(d, Sequence(d, "s"), no_cycle=True),
+        "cycle",
+        "no_cycle",
+        True,
+        True,
+    ),
+    (
+        "CreateSequenceExpression.cache",
+        lambda d: ddl_sequence.CreateSequenceExpression(d, Sequence(d, "s"), cache=10),
+        lambda d: ddl_sequence.CreateSequenceExpression(d, Sequence(d, "s"), no_cache=True),
+        "cache",
+        "no_cache",
+        10,
+        True,
+    ),
+    (
+        "CreateSequenceExpression.order",
+        lambda d: ddl_sequence.CreateSequenceExpression(d, Sequence(d, "s"), order=True),
+        lambda d: ddl_sequence.CreateSequenceExpression(d, Sequence(d, "s"), no_order=True),
+        "order",
+        "no_order",
+        True,
+        True,
+    ),
+    (
+        "AlterSequenceExpression.cycle",
+        lambda d: ddl_sequence.AlterSequenceExpression(d, Sequence(d, "s"), cycle=True),
+        lambda d: ddl_sequence.AlterSequenceExpression(d, Sequence(d, "s"), no_cycle=True),
+        "cycle",
+        "no_cycle",
+        True,
+        True,
+    ),
+    (
+        "AlterSequenceExpression.cache",
+        lambda d: ddl_sequence.AlterSequenceExpression(d, Sequence(d, "s"), cache=10),
+        lambda d: ddl_sequence.AlterSequenceExpression(d, Sequence(d, "s"), no_cache=True),
+        "cache",
+        "no_cache",
+        10,
+        True,
+    ),
+    (
+        "AlterSequenceExpression.order",
+        lambda d: ddl_sequence.AlterSequenceExpression(d, Sequence(d, "s"), order=True),
+        lambda d: ddl_sequence.AlterSequenceExpression(d, Sequence(d, "s"), no_order=True),
+        "order",
+        "no_order",
+        True,
+        True,
+    ),
+    (
+        "IdentityClause.cycle",
+        lambda d: ddl_table.IdentityClause(d, cycle=True),
+        lambda d: ddl_table.IdentityClause(d, no_cycle=True),
+        "cycle",
+        "no_cycle",
+        True,
+        True,
+    ),
+    (
+        "IdentityClause.cache",
+        lambda d: ddl_table.IdentityClause(d, cache=10),
+        lambda d: ddl_table.IdentityClause(d, no_cache=True),
+        "cache",
+        "no_cache",
+        10,
+        True,
+    ),
+    (
+        "IdentityClause.order",
+        lambda d: ddl_table.IdentityClause(d, order=True),
+        lambda d: ddl_table.IdentityClause(d, no_order=True),
+        "order",
+        "no_order",
+        True,
+        True,
+    ),
+    (
+        "ForeignKeyConstraint.deferrable",
+        lambda d: ddl_table.ForeignKeyConstraint(
+            d, columns=["a"], foreign_key_table=Table(d, "t2"),
+            foreign_key_columns=["b"], deferrable=True,
+        ),
+        lambda d: ddl_table.ForeignKeyConstraint(
+            d, columns=["a"], foreign_key_table=Table(d, "t2"),
+            foreign_key_columns=["b"], not_deferrable=True,
+        ),
+        "deferrable",
+        "not_deferrable",
+        True,
+        True,
+    ),
+    (
+        "ForeignKeyConstraint.initially",
+        lambda d: ddl_table.ForeignKeyConstraint(
+            d, columns=["a"], foreign_key_table=Table(d, "t2"),
+            foreign_key_columns=["b"], initially_deferred=True,
+        ),
+        lambda d: ddl_table.ForeignKeyConstraint(
+            d, columns=["a"], foreign_key_table=Table(d, "t2"),
+            foreign_key_columns=["b"], initially_immediate=True,
+        ),
+        "initially_deferred",
+        "initially_immediate",
+        True,
+        True,
+    ),
+    (
+        "TableConstraint.enforced",
+        lambda d: ddl_table.TableConstraint(
+            d, TableConstraintType.CHECK,
+            check_condition=ComparisonPredicate(d, ">", Column(d, "a"), Column(d, "b")),
+            enforced=True,
+        ),
+        lambda d: ddl_table.TableConstraint(
+            d, TableConstraintType.CHECK,
+            check_condition=ComparisonPredicate(d, ">", Column(d, "a"), Column(d, "b")),
+            not_enforced=True,
+        ),
+        "enforced",
+        "not_enforced",
+        True,
+        True,
+    ),
+    (
+        "BeginTransactionExpression.deferrable",
+        lambda d: BeginTransactionExpression(d, deferrable=True),
+        lambda d: BeginTransactionExpression(d, not_deferrable=True),
+        "deferrable",
+        "not_deferrable",
+        True,
+        True,
+    ),
+    (
+        "SetTransactionExpression.deferrable",
+        lambda d: SetTransactionExpression(d, deferrable=True),
+        lambda d: SetTransactionExpression(d, not_deferrable=True),
+        "deferrable",
+        "not_deferrable",
+        True,
+        True,
+    ),
+    (
+        "DropTableExpression.cascade",
+        lambda d: ddl_table.DropTableExpression(d, Table(d, "t"), cascade=True),
+        lambda d: ddl_table.DropTableExpression(d, Table(d, "t"), restrict=True),
+        "cascade",
+        "restrict",
+        True,
+        True,
+    ),
+    (
+        "DropViewExpression.cascade",
+        lambda d: ddl_view.DropViewExpression(d, View(d, "v"), cascade=True),
+        lambda d: ddl_view.DropViewExpression(d, View(d, "v"), restrict=True),
+        "cascade",
+        "restrict",
+        True,
+        True,
+    ),
+    (
+        "DropFunctionExpression.cascade",
+        lambda d: ddl_function.DropFunctionExpression(d, Function(d, "f"), cascade=True),
+        lambda d: ddl_function.DropFunctionExpression(d, Function(d, "f"), restrict=True),
+        "cascade",
+        "restrict",
+        True,
+        True,
+    ),
+)
+
+PAIR_BEARING_IDS = [case[0] for case in PAIR_BEARING_CASES]
+
+
+class TestClausePairFieldsRoundTrip:
+    """The round's new pair fields survive dict / JSON / XML serialization."""
+
+    @pytest.mark.parametrize(
+        "case_id,a_builder,b_builder,a,b,a_value,b_value",
+        PAIR_BEARING_CASES,
+        ids=PAIR_BEARING_IDS,
+    )
+    def test_a_spelling_round_trips(
+        self, fb4_dialect, case_id, a_builder, b_builder, a, b, a_value, b_value
+    ):
+        instance = a_builder(fb4_dialect)
+        params = instance.get_params()
+        assert params[a] == a_value, f"{case_id}: {a} was not stored"
+        assert not params[b], f"{case_id}: {b} must stay unset"
+        roundtrip_expression(f"{case_id}.{a}", instance, fb4_dialect)
+
+    @pytest.mark.parametrize(
+        "case_id,a_builder,b_builder,a,b,a_value,b_value",
+        PAIR_BEARING_CASES,
+        ids=PAIR_BEARING_IDS,
+    )
+    def test_b_spelling_round_trips(
+        self, fb4_dialect, case_id, a_builder, b_builder, a, b, a_value, b_value
+    ):
+        instance = b_builder(fb4_dialect)
+        params = instance.get_params()
+        assert params[b] == b_value, f"{case_id}: {b} was not stored"
+        assert not params[a], f"{case_id}: {a} must stay unset"
+        roundtrip_expression(f"{case_id}.{b}", instance, fb4_dialect)
+
+    def test_the_two_spellings_do_not_share_a_parameter(self, fb4_dialect):
+        """A serializer that conflated the pair would pass the tests above."""
+        for case_id, a_builder, b_builder, a, b, a_value, b_value in PAIR_BEARING_CASES:
+            params_a = a_builder(fb4_dialect).get_params()
+            params_b = b_builder(fb4_dialect).get_params()
+            assert params_a != params_b, case_id
+            assert params_a[a] == a_value and params_b[b] == b_value, case_id
+            assert params_a[b] != b_value and params_b[a] != a_value, case_id

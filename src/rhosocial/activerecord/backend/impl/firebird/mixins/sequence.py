@@ -45,11 +45,14 @@ class FirebirdSequenceMixin:
         ``supports_sequence_start()`` and ``supports_sequence_increment()`` are
         the only option probes that answer ``True``. Every other option the
         expression can carry -- ``IF NOT EXISTS``, ``MINVALUE``, ``MAXVALUE``,
-        ``CYCLE``, ``CACHE``, ``ORDER``, ``OWNED BY`` -- is refused with
-        ``UnsupportedFeatureError`` naming it rather than dropped, because
-        dropping the clause would silently change the statement's meaning.
-        ``NO CYCLE`` is never emitted: Firebird's grammar has no such words, and
-        ``supports_sequence_cycle()`` is ``False``.
+        ``CYCLE`` / ``NO CYCLE``, ``CACHE`` / ``NO CACHE``, ``ORDER`` /
+        ``NO ORDER``, ``OWNED BY`` -- is refused with ``UnsupportedFeatureError``
+        naming it rather than dropped, because dropping the clause would
+        silently change the statement's meaning. Each two-spelling option has
+        one parameter per spelling, and both spellings of a pair are refused
+        here: Firebird's grammar has neither, and the corresponding probes
+        answer ``False`` (measured on Firebird 5.0.4 and 6.0.0; each probe
+        below records the server's answer).
 
         ``supports_sequence()`` is consulted first and unconditionally, and is
         version-gated at Firebird 3.0, the oldest version this backend declares
@@ -110,7 +113,10 @@ class FirebirdSequenceMixin:
                     self.name, "SEQUENCE MAXVALUE",
                     f"{self.name} does not support the MAXVALUE sequence option."
                 )
-        if expr.cycle:
+        # Each pair's parameter selects a spelling; the probe answers whether
+        # Firebird can express the option at all. Both spellings of a pair are
+        # refused by name -- neither is ever dropped.
+        if expr.cycle or expr.no_cycle:
             if not self.supports_sequence_cycle():
                 raise UnsupportedFeatureError(
                     self.name, "SEQUENCE CYCLE",
@@ -122,7 +128,13 @@ class FirebirdSequenceMixin:
                     self.name, "SEQUENCE CACHE",
                     f"{self.name} does not support the CACHE sequence option."
                 )
-        if expr.order:
+        if expr.no_cache:
+            if not self.supports_sequence_cache():
+                raise UnsupportedFeatureError(
+                    self.name, "SEQUENCE CACHE",
+                    f"{self.name} does not support the CACHE sequence option."
+                )
+        if expr.order or expr.no_order:
             if not self.supports_sequence_order():
                 raise UnsupportedFeatureError(
                     self.name, "SEQUENCE ORDER",
@@ -232,13 +244,27 @@ class FirebirdSequenceMixin:
         return False
 
     def supports_sequence_cycle(self) -> bool:
-        """Firebird has no ``CYCLE`` / ``NO CYCLE`` words at all."""
+        """Firebird has no ``CYCLE`` / ``NO CYCLE`` words at all.
+
+        Measured on Firebird 5.0.4 and 6.0.0: both spellings are answered with
+        ``Token unknown - CYCLE`` / ``Token unknown - NO``.
+        """
         return False
 
     def supports_sequence_cache(self) -> bool:
+        """Firebird has no ``CACHE n`` / ``NO CACHE`` words at all.
+
+        Measured on Firebird 5.0.4 and 6.0.0: both spellings are answered with
+        ``Token unknown - CACHE`` / ``Token unknown - NO``.
+        """
         return False
 
     def supports_sequence_order(self) -> bool:
+        """Firebird has no ``ORDER`` / ``NO ORDER`` words at all.
+
+        Measured on Firebird 5.0.4 and 6.0.0: both spellings are answered with
+        ``Token unknown - ORDER`` / ``Token unknown - NO``.
+        """
         return False
 
     def supports_sequence_owned_by(self) -> bool:
