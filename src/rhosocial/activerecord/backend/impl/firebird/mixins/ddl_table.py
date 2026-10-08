@@ -1,21 +1,54 @@
 # src/rhosocial/activerecord/backend/impl/firebird/mixins/ddl_table.py
-"""Firebird table DDL mixin."""
+"""Firebird table DDL mixin.
+
+Every relation name this mixin emits -- ``CREATE TABLE``, ``REFERENCES``,
+``ALTER TABLE`` -- is rendered from the :class:`Table` object the statement
+holds, so a name that carries a namespace slot is reported instead of quietly
+reaching the parser, which has no qualified-name syntax.
+"""
 
 from typing import Any, List, Tuple, TYPE_CHECKING
 
 if TYPE_CHECKING:  # pragma: no cover
     from rhosocial.activerecord.backend.expression.statements import (
+        AlterTableExpression,
         ColumnDefinition,
         CreateTableExpression,
         TableConstraint,
     )
 
 from rhosocial.activerecord.backend.dialect.mixins.ddl_table import TableMixin
+from rhosocial.activerecord.backend.expression.objects import Table
+
+from .version_boundaries import _norm_version
 
 
 class FirebirdTableMixin:
 
-    # -- Cascade capability switches (declared on the dialect, Ref to TableSupport protocol)
+    # -- Cascade capability switches (declared on the dialect, Ref to DropTableSupport protocol)
+
+    def supports_create_table_as(self) -> bool:
+        """Whether ``CREATE TABLE ... AS <query>`` (CTAS) is supported.
+
+        Measured on the two live servers: 5.0.4 answers ``Token unknown -
+        AS`` for both ``CREATE TABLE t AS (SELECT ...)`` and ``CREATE TABLE t
+        AS SELECT ...``; 6.0.0 creates the table, populates it, and accepts
+        ``WITH DATA`` / ``WITH NO DATA`` on it. The gate is therefore the
+        version the measurement found, not a flat answer.
+        """
+        return _norm_version(self.version) >= (6, 0, 0)
+
+    def supports_with_data_clause(self) -> bool:
+        """Whether the ``WITH [NO] DATA`` population clause is supported.
+
+        The clause is shared by CTAS, CREATE MATERIALIZED VIEW and REFRESH
+        MATERIALIZED VIEW. Firebird's only carrier is the 6.0.0 CTAS (measured:
+        bare CTAS populates one row; ``WITH DATA`` populates one row; ``WITH NO
+        DATA`` creates an empty table). 5.0.4 has no CTAS at all, and no
+        Firebird version has materialized views, so the clause answers with the
+        same version gate as the CTAS statement.
+        """
+        return _norm_version(self.version) >= (6, 0, 0)
 
     def supports_drop_table_cascade(self) -> bool:
         """Firebird has no CASCADE keyword on DROP TABLE."""
@@ -26,21 +59,72 @@ class FirebirdTableMixin:
         return False
 
     # Delegate to TableMixin for DropTableExpression formatting.
-    # FirebirdDialect's MRO resolves TableSupport.format_drop_table_statement
+    # FirebirdDialect's MRO resolves DropTableSupport.format_drop_table_statement
     # (the empty Protocol stub) before TableMixin's actual implementation due to
     # Python's C3 linearization. Re-binding the concrete method here ensures the
     # MRO picks up the TypeScript-level override.
     format_drop_table_statement = TableMixin.format_drop_table_statement
-    # format_drop_table_statement = TableMixin.__dict__['format_drop_table_statement']
 
-    # Same C3 linearization issue applies to ALTER TABLE: TableSupport ships an
-    # empty format_alter_table_statement stub that would otherwise win over the
-    # concrete TableMixin implementation, so re-bind it here as well.
-    format_alter_table_statement = TableMixin.format_alter_table_statement
+    def format_alter_table_statement(self, expr: "AlterTableExpression") -> Tuple[str, tuple]:
+        """Render ALTER TABLE, naming the relation through a schema object.
+
+        Firebird's ALTER TABLE grammar has no table name inside an action, so
+        the relation is named once here and each action -- including the
+        Firebird-only ``ALTER COLUMN "X" SET GENERATED ...`` fragments from
+        ``FirebirdAlterTableModifierMixin``, which are action text without a
+        table -- is appended after it.
+
+        The action-combination rule is the core's: one comma-separated statement
+        when ``supports_multi_action_alter_table()``, otherwise one statement
+        per action joined by ``;``. What changes here is only where the table
+        name comes from: a :class:`Table` schema object rather than a bare
+        ``format_identifier``, so a name carrying a namespace slot is reported.
+
+        Raises:
+            TypeError: ``AlterTableExpression.table`` is not a Table. Another
+                object kind would have had its own name rendered as the relation
+                being altered.
+        """
+        if not isinstance(expr.table, Table):
+            raise TypeError(
+                f"AlterTableExpression.table must be a Table, "
+                f"got {type(expr.table).__name__}"
+            )
+        all_params: List[Any] = []
+        action_parts: List[str] = []
+        for action in expr.actions:
+            action_sql, action_params = action.to_sql()
+            action_parts.append(action_sql)
+            all_params.extend(action_params)
+
+        table_sql, _ = expr.table.to_sql()
+        if not action_parts:
+            return f"ALTER TABLE {table_sql}", ()
+
+        if self.supports_multi_action_alter_table():
+            return f"ALTER TABLE {table_sql} {', '.join(action_parts)}", tuple(all_params)
+        return "; ".join(
+            f"ALTER TABLE {table_sql} {part}" for part in action_parts
+        ), tuple(all_params)
 
     def format_create_table_statement(self, expr: "CreateTableExpression") -> Tuple[str, tuple]:
+        """Render CREATE TABLE, naming the relation through a schema object.
+
+        Raises:
+            TypeError: ``CreateTableExpression.table`` is not a Table. A view or a
+                sequence would have had its own name rendered as the relation
+                being created.
+            UnsupportedFeatureError: A Firebird-unreadable clause was requested --
+                TABLESPACE, INHERITS, PARTITION BY, an inline comment, or
+                IF NOT EXISTS, which Firebird has no syntax for.
+        """
         from rhosocial.activerecord.backend.dialect.exceptions import UnsupportedFeatureError
 
+        if not isinstance(expr.table, Table):
+            raise TypeError(
+                f"CreateTableExpression.table must be a Table, "
+                f"got {type(expr.table).__name__}"
+            )
         if getattr(expr, "tablespace", None):
             raise UnsupportedFeatureError(
                 self.name,
@@ -91,7 +175,10 @@ class FirebirdTableMixin:
                     "Firebird does not support IF NOT EXISTS for tables.",
                 )
             parts.append("IF NOT EXISTS")
-        parts.append(self.format_identifier(expr.table_name))
+        # ``expr.table`` is the Table object itself, not a flat string, and it
+        # renders itself -- so a namespace slot it carries is reported by the
+        # object layer rather than dropped here.
+        parts.append(expr.table.to_sql()[0])
 
         if getattr(expr, 'temporary', False):
             on_commit = getattr(expr, 'on_commit_delete', True)
@@ -216,10 +303,21 @@ class FirebirdTableMixin:
         )
         from rhosocial.activerecord.backend.dialect.exceptions import UnsupportedFeatureError
 
-        if getattr(expr, "deferrable", None) is not None:
+        # Deferrability is a two-spelling option (DEFERRABLE / NOT DEFERRABLE)
+        # with one parameter per spelling, and INITIALLY DEFERRED / IMMEDIATE is
+        # its own attribute. Firebird's grammar has neither pair's spellings
+        # (measured on 5.0.4 and 6.0.0: ``Token unknown - DEFERRABLE`` /
+        # ``- NOT`` / ``- INITIALLY``), so a requested spelling is refused by
+        # name rather than dropped.
+        if expr.deferrable or expr.not_deferrable:
             raise UnsupportedFeatureError(
                 self.name, "DEFERRABLE constraint",
                 "Firebird does not support deferrable constraints.",
+            )
+        if expr.initially_deferred or expr.initially_immediate:
+            raise UnsupportedFeatureError(
+                self.name, "INITIALLY DEFERRED/IMMEDIATE constraint",
+                "Firebird does not support initially deferred/immediate constraints.",
             )
         if isinstance(expr, ForeignKeyConstraint) and getattr(expr, "match_type", None) is not None:
             raise UnsupportedFeatureError(
@@ -245,7 +343,7 @@ class FirebirdTableMixin:
             if expr.columns and expr.foreign_key_table and expr.foreign_key_columns:
                 cols = ', '.join(self.format_identifier(c) for c in expr.columns)
                 ref_cols = ', '.join(self.format_identifier(c) for c in expr.foreign_key_columns)
-                ref_table = self.format_identifier(expr.foreign_key_table)
+                ref_table = expr.foreign_key_table.to_sql()[0]
                 parts.append(f"FOREIGN KEY ({cols}) REFERENCES {ref_table} ({ref_cols})")
             if isinstance(expr, ForeignKeyConstraint):
                 if expr.on_delete != ReferentialAction.NO_ACTION:
@@ -257,12 +355,29 @@ class FirebirdTableMixin:
             parts.append(f"CHECK ({check_sql})")
             params.extend(check_params)
 
+        # Enforcement is a two-spelling option (ENFORCED / NOT ENFORCED) with
+        # one parameter per spelling. Firebird's grammar has neither (measured
+        # on 5.0.4 and 6.0.0: ``Token unknown - ENFORCED`` / ``- NOT``), so a
+        # requested spelling is refused by name rather than dropped.
+        if expr.enforced or expr.not_enforced:
+            if expr.constraint_type not in (
+                TableConstraintType.CHECK,
+                TableConstraintType.FOREIGN_KEY,
+            ):
+                raise ValueError(
+                    "ENFORCED/NOT ENFORCED is only valid for CHECK and "
+                    "FOREIGN KEY constraints"
+                )
+            if not self.supports_constraint_enforced():
+                raise UnsupportedFeatureError(
+                    self.name, "ENFORCED/NOT ENFORCED constraint",
+                    "Firebird does not support ENFORCED/NOT ENFORCED constraints.",
+                )
+            parts.append("ENFORCED" if expr.enforced else "NOT ENFORCED")
+
         return ' '.join(parts), tuple(params)
 
     def supports_computed_by(self) -> bool:
-        return True
-
-    def supports_identity_columns(self) -> bool:
         return True
 
     def supports_external_file(self) -> bool:

@@ -70,7 +70,10 @@ class TestFirebirdDialectFeatureSupport:
         assert fb4_dialect.supports_decfloat() is True
 
     def test_identity_fb3(self, dialect):
-        assert dialect.supports_identity_columns() is True
+        assert dialect.supports_identity_column() is True
+
+    def test_identity_fb2_5(self, sqlite_style_dialect):
+        assert sqlite_style_dialect.supports_identity_column() is False
 
 
 class TestFirebirdDialectUnsupportedFeatures:
@@ -106,7 +109,10 @@ class TestFirebirdDialectDDLSupport:
 
     def test_create_view(self, dialect):
         assert dialect.supports_create_view() is True
-        assert dialect.supports_or_replace_view() is True
+        # Firebird has no CREATE OR REPLACE VIEW; it has CREATE OR ALTER VIEW
+        # (Firebird 4.0+), which is a different statement and is not what this
+        # switch names.
+        assert dialect.supports_or_replace_view() is False
 
     def test_trigger(self, dialect):
         assert dialect.supports_trigger() is True

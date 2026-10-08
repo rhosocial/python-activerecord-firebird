@@ -22,7 +22,10 @@ from rhosocial.activerecord.backend.expression import (  # noqa: E402
     Column,
     Literal,
     QueryExpression,
-    TableExpression,
+)
+from rhosocial.activerecord.backend.expression.objects import Table  # noqa: E402
+from rhosocial.activerecord.backend.expression.sources import (  # noqa: E402
+    NamedRelationRef,
 )
 
 
@@ -31,7 +34,7 @@ def get_order(dialect, order_id: int):
     return QueryExpression(
         dialect,
         select=[Column(dialect, "id"), Column(dialect, "status"), Column(dialect, "user_id")],
-        from_=TableExpression(dialect, "orders"),
+        from_=NamedRelationRef(dialect, Table(dialect, "orders")),
         where=Column(dialect, "id") == Literal(dialect, order_id),
     )
 
@@ -41,7 +44,7 @@ def check_inventory(dialect, order_id: int):
     return QueryExpression(
         dialect,
         select=[Column(dialect, "available")],
-        from_=TableExpression(dialect, "inventory"),
+        from_=NamedRelationRef(dialect, Table(dialect, "inventory")),
         where=Column(dialect, "order_id") == Literal(dialect, order_id),
     )
 
@@ -51,7 +54,7 @@ def reserve_inventory(dialect, order_id: int):
     return QueryExpression(
         dialect,
         select=[Column(dialect, "id"), Column(dialect, "available")],
-        from_=TableExpression(dialect, "inventory"),
+        from_=NamedRelationRef(dialect, Table(dialect, "inventory")),
         where=Column(dialect, "order_id") == Literal(dialect, order_id),
     )
 
@@ -61,7 +64,7 @@ def send_notification(dialect, user_id: int, type: str):
     return QueryExpression(
         dialect,
         select=[Column(dialect, "id")],
-        from_=TableExpression(dialect, "notifications"),
+        from_=NamedRelationRef(dialect, Table(dialect, "notifications")),
         where=Column(dialect, "user_id") == Literal(dialect, user_id),
     )
 
@@ -71,7 +74,7 @@ def process_payment(dialect, order_id: int, amount: float):
     return QueryExpression(
         dialect,
         select=[Column(dialect, "status"), Column(dialect, "transaction_id")],
-        from_=TableExpression(dialect, "payments"),
+        from_=NamedRelationRef(dialect, Table(dialect, "payments")),
         where=Column(dialect, "order_id") == Literal(dialect, order_id),
     )
 
@@ -81,7 +84,7 @@ def release_inventory(dialect, order_id: int):
     return QueryExpression(
         dialect,
         select=[Column(dialect, "id")],
-        from_=TableExpression(dialect, "inventory"),
+        from_=NamedRelationRef(dialect, Table(dialect, "inventory")),
         where=Column(dialect, "order_id") == Literal(dialect, order_id),
     )
 
@@ -91,7 +94,7 @@ def create_order_record(dialect, order_id: int, user_id: int, amount: float):
     return QueryExpression(
         dialect,
         select=[Column(dialect, "id"), Column(dialect, "created_at")],
-        from_=TableExpression(dialect, "order_records"),
+        from_=NamedRelationRef(dialect, Table(dialect, "order_records")),
         where=Column(dialect, "order_id") == Literal(dialect, order_id),
     )
 
@@ -101,7 +104,7 @@ def confirm_inventory(dialect, order_id: int):
     return QueryExpression(
         dialect,
         select=[Column(dialect, "id")],
-        from_=TableExpression(dialect, "inventory"),
+        from_=NamedRelationRef(dialect, Table(dialect, "inventory")),
         where=Column(dialect, "order_id") == Literal(dialect, order_id),
     )
 

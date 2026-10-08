@@ -518,8 +518,11 @@ class AsyncFirebirdBackend(
                 f"{self.dialect.format_identifier(col)} = {self.dialect.get_parameter_placeholder()}"
             )
         where_sql = where_clause[0] if where_clause else "1=1"
+        # Mirror of the sync path: the target is a relation reference rendered
+        # through the dialect's schema-object layer, never a bare identifier.
+        target_sql = self.dialect.format_table_reference(table_name)
         sql = (
-            f"UPDATE {self.dialect.format_identifier(table_name)} "
+            f"UPDATE {target_sql} "
             f"SET {', '.join(set_clauses)} WHERE {where_sql}"
         )
         if returning_columns:
@@ -538,7 +541,8 @@ class AsyncFirebirdBackend(
         if isinstance(table_name, DeleteOptions):
             return await super().delete(table_name)
         all_params = []
-        sql = f"DELETE FROM {self.dialect.format_identifier(table_name)}"
+        target_sql = self.dialect.format_table_reference(table_name)
+        sql = f"DELETE FROM {target_sql}"
         if where_clause:
             where_sql, where_params = where_clause
             sql += f" WHERE {where_sql}"

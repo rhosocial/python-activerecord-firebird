@@ -34,6 +34,7 @@ from .datetime import FirebirdDateTimeMixin
 from .dql import FirebirdDQLMixin
 from .collation import FirebirdCollationMixin
 from .identifier import FirebirdIdentifierMixin
+from .namespace import FirebirdNamespaceMixin
 from .cte import FirebirdCTEMixin
 from .returning import FirebirdReturningMixin
 from .filter_clause import FirebirdFilterClauseMixin
@@ -42,6 +43,7 @@ from .grouping import FirebirdGroupingMixin
 from .array import FirebirdArrayMixin
 from .explain import FirebirdExplainMixin
 from .generated_column import FirebirdGeneratedColumnMixin
+from .identity_column import FirebirdIdentityColumnMixin
 from .function import FirebirdFunctionMixin
 from .truncate import FirebirdTruncateMixin
 from .unsupported import FirebirdUnsupportedFeaturesMixin
@@ -80,6 +82,7 @@ __all__ = [
     "FirebirdDQLMixin",
     "FirebirdCollationMixin",
     "FirebirdIdentifierMixin",
+    "FirebirdNamespaceMixin",
     "FirebirdCTEMixin",
     "FirebirdReturningMixin",
     "FirebirdFilterClauseMixin",
@@ -88,6 +91,7 @@ __all__ = [
     "FirebirdArrayMixin",
     "FirebirdExplainMixin",
     "FirebirdGeneratedColumnMixin",
+    "FirebirdIdentityColumnMixin",
     "FirebirdFunctionMixin",
     "FirebirdTruncateMixin",
     "FirebirdUnsupportedFeaturesMixin",

@@ -6,6 +6,8 @@
 connection.
 """
 
+import pytest
+
 from rhosocial.activerecord.backend.impl.firebird.dialect import FirebirdDialect
 from rhosocial.activerecord.backend.impl.firebird.expression import (
     FirebirdCommentExpression,
@@ -140,3 +142,98 @@ class TestCommentDispatch:
     def test_supports_comment_on_true_across_supported_versions(self):
         assert FirebirdDialect((2, 5, 0)).supports_comment_on() is True
         assert FirebirdDialect((5, 0, 0)).supports_comment_on() is True
+
+
+#: Firebird's COMMENT ON targets that the framework's catalogue has **no kind
+#: for**, so the target stays a plain string and is spelled by
+#: ``format_identifier``. This is deliberate, not an omission: a role, a user, an
+#: exception, a package and an external function are all things Firebird persists
+#: and none of them is a ``SchemaObject`` in this framework's taxonomy, so there
+#: is nothing to build and dispatch on kind has nothing to dispatch to.
+STRING_ONLY_TARGETS = (
+    FirebirdCommentObjectType.ROLE,
+    FirebirdCommentObjectType.USER,
+    FirebirdCommentObjectType.EXCEPTION,
+    FirebirdCommentObjectType.PACKAGE,
+    FirebirdCommentObjectType.EXTERNAL_FUNCTION,
+    FirebirdCommentObjectType.DATABASE,
+    FirebirdCommentObjectType.INDEX,
+    FirebirdCommentObjectType.FILTER,
+    FirebirdCommentObjectType.CHARACTER_SET,
+    FirebirdCommentObjectType.COLLATION,
+    FirebirdCommentObjectType.GLOBAL_MAPPING,
+)
+
+
+class TestObjectKindDispatchTable:
+    """The dispatch is on object *kind*, and the string-only targets are pinned.
+
+    The table used to be keyed by formatter name, which meant adding a kind meant
+    adding a formatter; it is keyed by the object class each kind names, so a
+    target that corresponds to a catalogue object is built and renders itself --
+    which is what gives a namespace slot on it somewhere to be reported instead
+    of being dropped.
+    """
+
+    def test_every_entry_names_a_schema_object_kind(self):
+        from rhosocial.activerecord.backend.expression.objects import SchemaObject
+        from rhosocial.activerecord.backend.impl.firebird.mixins.comment import (
+            FirebirdCommentMixin,
+        )
+
+        table = FirebirdCommentMixin._COMMENT_OBJECT_KINDS
+        assert table, "the dispatch table is empty; every target would stringify"
+        for target, kind in table.items():
+            assert isinstance(kind, type) and issubclass(kind, SchemaObject), (
+                f"{target!r} dispatches to {kind!r}, which is not a SchemaObject "
+                f"subclass -- an entry here must name something buildable"
+            )
+
+    @pytest.mark.parametrize("target", STRING_ONLY_TARGETS, ids=lambda t: t.name)
+    def test_deliberate_exception_target_is_not_in_the_table(self, target):
+        from rhosocial.activerecord.backend.impl.firebird.mixins.comment import (
+            FirebirdCommentMixin,
+        )
+
+        assert target.value not in FirebirdCommentMixin._COMMENT_OBJECT_KINDS, (
+            f"{target.value} gained an entry in the object-kind dispatch table. "
+            f"Either it is right -- in which case this pin must be removed -- or "
+            f"it dispatches to a kind that does not exist."
+        )
+
+    @pytest.mark.parametrize("target", STRING_ONLY_TARGETS, ids=lambda t: t.name)
+    def test_deliberate_exception_target_renders_as_one_identifier(self, target):
+        dialect = FirebirdDialect((4, 0, 0))
+        sql, params = FirebirdCommentExpression(
+            dialect, target, "some_name", "c"
+        ).to_sql()
+        assert sql == f'COMMENT ON {target.value} "SOME_NAME" IS \'c\''
+        assert params == ()
+
+    @pytest.mark.parametrize("target", STRING_ONLY_TARGETS, ids=lambda t: t.name)
+    def test_the_two_containers_are_handled_outside_the_table(self, target):
+        """COLUMN and PARAMETER name a *member*, so they never reach the table."""
+        from rhosocial.activerecord.backend.impl.firebird.mixins.comment import (
+            FirebirdCommentMixin,
+        )
+
+        assert target.value not in FirebirdCommentMixin._COMMENT_OBJECT_KINDS
+        assert FirebirdCommentObjectType.COLUMN.value not in FirebirdCommentMixin._COMMENT_OBJECT_KINDS
+        assert FirebirdCommentObjectType.PARAMETER.value not in FirebirdCommentMixin._COMMENT_OBJECT_KINDS
+
+    def test_object_kinds_render_through_the_object_layer(self):
+        """A kind in the table quotes through format_identifier, like everything else."""
+        dialect = FirebirdDialect((4, 0, 0))
+        for target, kind in (
+            (FirebirdCommentObjectType.TABLE, "TABLE"),
+            (FirebirdCommentObjectType.VIEW, "VIEW"),
+            (FirebirdCommentObjectType.GENERATOR, "GENERATOR"),
+            (FirebirdCommentObjectType.SEQUENCE, "SEQUENCE"),
+            (FirebirdCommentObjectType.DOMAIN, "DOMAIN"),
+            (FirebirdCommentObjectType.PROCEDURE, "PROCEDURE"),
+            (FirebirdCommentObjectType.FUNCTION, "FUNCTION"),
+            (FirebirdCommentObjectType.TRIGGER, "TRIGGER"),
+        ):
+            sql, _ = FirebirdCommentExpression(dialect, target, "t", "c").to_sql()
+            assert sql == f'COMMENT ON {kind} "T" IS \'c\''
+

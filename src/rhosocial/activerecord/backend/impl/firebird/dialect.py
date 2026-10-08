@@ -23,7 +23,7 @@ from rhosocial.activerecord.backend.dialect.protocols import (
     JSONSupport,
     ReturningSupport,
     SetOperationSupport,
-    SequenceSupport,
+    SequenceObjectSupport,
     UpsertSupport,
     LockingSupport,
     ExplainSupport,
@@ -39,21 +39,46 @@ from rhosocial.activerecord.backend.dialect.protocols import (
     QualifyClauseSupport,
     OrderedSetAggregationSupport,
     GraphSupport,
-    TableSupport,
+    TableObjectSupport,
     TruncateSupport,
-    SchemaSupport,
-    IndexSupport,
-    TriggerSupport,
+    IndexObjectSupport,
+    TriggerObjectSupport,
     ConstraintSupport,
     IntrospectionSupport,
     TransactionControlSupport,
     GeneratedColumnSupport,
-    ViewSupport,
-    FunctionSupport,
-    UserDefinedTypeSupport,
+    IdentityColumnSupport,
+    AutoIncrementColumnSupport,
+    ViewObjectSupport,
+    RoutineObjectSupport,
+    CreateTableSupport,
+    DropTableSupport,
+    AlterTableSupport,
+    CreateViewSupport,
+    DropViewSupport,
+    CreateIndexSupport,
+    DropIndexSupport,
+    CreateTriggerSupport,
+    DropTriggerSupport,
+    CreateRoutineSupport,
+    DropRoutineSupport,
+    CreateSequenceSupport,
+    AlterSequenceSupport,
+    DropSequenceSupport,
+    CreateDomainSupport,
+    AlterDomainSupport,
+    DropDomainSupport,
+    CreateTypeSupport,
+    AlterTypeSupport,
+    DropTypeSupport,
+    TypeObjectSupport,
+    CreateSchemaSupport,
+    DropSchemaSupport,
+    CommentSupport,
 )
 from rhosocial.activerecord.backend.dialect.mixins import (
     CollationMixin,
+    NamespaceMixin,
     CTEMixin,
     WindowFunctionMixin,
     JSONMixin,
@@ -78,9 +103,25 @@ from rhosocial.activerecord.backend.dialect.mixins import (
     SequenceMixin,
     TriggerMixin,
     GeneratedColumnMixin,
+    IdentityColumnMixin,
+    AutoIncrementMixin,
     ViewMixin,
     FunctionMixin,
     IntrospectionMixin,
+    # Object naming: one mixin per object kind the dialect can spell, plus the
+    # NamespaceMixin they all reach through. See the note on the class bases.
+    TableNameMixin,
+    ViewNameMixin,
+    IndexNameMixin,
+    SequenceNameMixin,
+    TriggerNameMixin,
+    FunctionNameMixin,
+    ProcedureNameMixin,
+    DomainNameMixin,
+    TypeNameMixin,
+    DatabaseNameMixin,
+    SchemaNameMixin,
+    NamespaceMixin,
     # Core infrastructure mixins (shared by all modern backends)
     PredicateMixin,
     ExpressionMixin,
@@ -121,6 +162,7 @@ from .mixins import (
     FirebirdDQLMixin,
     FirebirdCollationMixin,
     FirebirdIdentifierMixin,
+    FirebirdNamespaceMixin,
     FirebirdCTEMixin,
     FirebirdReturningMixin,
     FirebirdFilterClauseMixin,
@@ -129,6 +171,7 @@ from .mixins import (
     FirebirdArrayMixin,
     FirebirdExplainMixin,
     FirebirdGeneratedColumnMixin,
+    FirebirdIdentityColumnMixin,
     FirebirdFunctionMixin,
     FirebirdTruncateMixin,
     FirebirdUnsupportedFeaturesMixin,
@@ -140,7 +183,6 @@ from .protocols import (
     FirebirdLockingSupport,
     FirebirdTransactionSupport,
     FirebirdTableSupport,
-    FirebirdDomainSupport,
     FirebirdTriggerSupport,
     FirebirdReturningSupport,
     FirebirdIntrospectionSupport,
@@ -163,11 +205,11 @@ from .protocols import (
     FirebirdCollationSupport,
     FirebirdExceptionSupport,
     FirebirdContextVariableSupport,
+    FirebirdDomainSupport,
 )
 
 if TYPE_CHECKING:
     from rhosocial.activerecord.backend.expression.statements import (
-        CreateTableExpression,
         ColumnDefinition,
         TableConstraint,
     )
@@ -184,11 +226,17 @@ _SUGGESTION_TEMPORAL = "Firebird does not support temporal tables."
 
 
 class FirebirdDialect(
-    SQLDialectBase,
     # Firebird-specific mixins MUST precede their generic counterparts so that
     # the C3 linearization resolves the overrides to the Firebird versions.
-    # (SQLDialectBase is intentionally first; the two methods it defines that
-    # Firebird must override are re-declared on this class below.)
+    #
+    # SQLDialectBase sits after every implementation mixin rather than first.
+    # It defines ``format_identifier`` -- the one primitive Firebird overrides,
+    # by upper-casing the identifier and doubling any inner quote -- and listed
+    # first it would shadow FirebirdIdentifierMixin, forcing a second copy of
+    # that method onto this class. It stays *before* the Protocol bases on
+    # purpose: a runtime_checkable Protocol defines ``__init__``, so putting
+    # SQLDialectBase after them would let ``super().__init__()`` land on a
+    # Protocol and skip the base constructor entirely.
     FirebirdTransactionMixin,    # Before TransactionControlMixin
     FirebirdExpressionMixin,     # Before ExpressionMixin
     FirebirdWindowFunctionMixin, # Before WindowFunctionMixin
@@ -196,6 +244,7 @@ class FirebirdDialect(
     FirebirdDQLMixin,            # Before DQLMixin
     FirebirdCollationMixin,      # Before CollationMixin
     FirebirdIdentifierMixin,     # Before IdentifierMixin
+    FirebirdNamespaceMixin,      # Before RelationSourceMixin; spells one level, refuses the rest
     FirebirdCTEMixin,            # Before CTEMixin
     FirebirdReturningMixin,
     FirebirdFilterClauseMixin,   # Before FilterClauseMixin
@@ -204,6 +253,7 @@ class FirebirdDialect(
     FirebirdArrayMixin,          # Before ArrayMixin
     FirebirdExplainMixin,        # Before ExplainMixin
     FirebirdGeneratedColumnMixin, # Before GeneratedColumnMixin
+    FirebirdIdentityColumnMixin, # Before IdentityColumnMixin and AutoIncrementMixin
     FirebirdFunctionMixin,       # Before FunctionMixin
     FirebirdTruncateMixin,       # Before TruncateMixin
     FirebirdUnsupportedFeaturesMixin,  # Before Array/Graph/OrderedSet/Qualify mixins
@@ -260,16 +310,56 @@ class FirebirdDialect(
     SchemaMixin,
     IndexMixin,
     GeneratedColumnMixin,
+    # The identity clause and the parameterless AUTO_INCREMENT marker are
+    # separate mechanisms with separate protocols; Firebird declares the
+    # identity formatter by inheriting IdentityColumnMixin and answers the
+    # auto-increment marker through AutoIncrementMixin's False gate. Neither
+    # renders SQL the server rejects: the identity probes are measured and the
+    # marker is refused by name.
+    IdentityColumnMixin,
+    AutoIncrementMixin,
     ViewMixin,
     FunctionMixin,
     IntrospectionMixin,
+    # Object naming, one mixin per object kind the dialect can spell, plus the
+    # NamespaceMixin they all reach through.
+    #
+    # These have to *precede* the matching *ObjectSupport protocols further down
+    # for the same reason FirebirdTableMixin re-binds
+    # format_drop_table_statement: C3 resolves to whichever base comes first, so
+    # a mixin listed after a Protocol loses to the Protocol's `...` stub and
+    # every object renders as None. NamespaceMixin precedes NamespaceSupport for
+    # the same reason -- without it the three naming switches return None rather
+    # than False, and the core's validate_namespace reads None as "no
+    # qualification", which happens to be Firebird's answer but by accident
+    # rather than by decision. A test asserts the resolution rather than trusting
+    # it.
+    #
+    # Firebird declares no materialized view, foreign table, synonym or property
+    # graph, so those formatters are absent and a statement holding one is
+    # refused rather than silently rendered.
+    TableNameMixin,
+    ViewNameMixin,
+    IndexNameMixin,
+    SequenceNameMixin,
+    TriggerNameMixin,
+    FunctionNameMixin,
+    ProcedureNameMixin,
+    DomainNameMixin,
+    TypeNameMixin,
+    DatabaseNameMixin,
+    SchemaNameMixin,
+    NamespaceMixin,
+    # Last of the implementation mixins, first of the declarations: see the
+    # class comment for why SQLDialectBase cannot lead the list.
+    SQLDialectBase,
     CollationSupport,
     CTESupport,
     WindowFunctionSupport,
     JSONSupport,
     ReturningSupport,
     SetOperationSupport,
-    SequenceSupport,
+    SequenceObjectSupport,
     UpsertSupport,
     LockingSupport,
     ExplainSupport,
@@ -285,24 +375,61 @@ class FirebirdDialect(
     QualifyClauseSupport,
     OrderedSetAggregationSupport,
     GraphSupport,
-    TableSupport,
+    TableObjectSupport,
     TruncateSupport,
-    SchemaSupport,
-    IndexSupport,
-    TriggerSupport,
+    # The DDL protocols for schemas stay in, and they now split per statement:
+    # CreateSchemaSupport / DropSchemaSupport replace the single umbrella.
+    # They are satisfied by SchemaMixin (above) with every switch False, which
+    # is Firebird's answer rather than an omission -- there is no CREATE
+    # SCHEMA to render.
+    IndexObjectSupport,
+    TriggerObjectSupport,
     ConstraintSupport,
     IntrospectionSupport,
     TransactionControlSupport,
     GeneratedColumnSupport,
-    ViewSupport,
-    FunctionSupport,
+    # IdentityColumnSupport is satisfied by the core IdentityColumnMixin with
+    # Firebird's measured probes; AutoIncrementColumnSupport by the core
+    # AutoIncrementMixin with Firebird's False answer. Both switches being
+    # reachable by name is the point -- a capability question should be
+    # answerable before rendering, not only as a side effect of a refusal.
+    IdentityColumnSupport,
+    AutoIncrementColumnSupport,
+    ViewObjectSupport,
+    RoutineObjectSupport,
+    CreateTableSupport,
+    DropTableSupport,
+    AlterTableSupport,
+    CreateViewSupport,
+    DropViewSupport,
+    CreateIndexSupport,
+    DropIndexSupport,
+    CreateTriggerSupport,
+    DropTriggerSupport,
+    CreateRoutineSupport,
+    DropRoutineSupport,
+    CreateSequenceSupport,
+    AlterSequenceSupport,
+    DropSequenceSupport,
+    CreateTypeSupport,
+    AlterTypeSupport,
+    DropTypeSupport,
+    TypeObjectSupport,
+    CreateSchemaSupport,
+    DropSchemaSupport,
+    CommentSupport,
+    # FirebirdDomainSupport subclasses the three core DOMAIN DDL protocols, so
+    # it has to precede them in this list: C3 puts a subclass ahead of its base.
+    FirebirdDomainSupport,
+    CreateDomainSupport,
+    AlterDomainSupport,
+    DropDomainSupport,
     FirebirdDMLOperationSupport,
     FirebirdGeneratorSupport,
     FirebirdBlobSupport,
     FirebirdLockingSupport,
     FirebirdTransactionSupport,
     FirebirdTableSupport,
-    FirebirdDomainSupport,
     FirebirdTriggerSupport,
     FirebirdReturningSupport,
     FirebirdIntrospectionSupport,
@@ -325,7 +452,6 @@ class FirebirdDialect(
     FirebirdCollationSupport,
     FirebirdExceptionSupport,
     FirebirdContextVariableSupport,
-    UserDefinedTypeSupport,
     FirebirdPartitionMixin,
     FirebirdTypeSupportMixin,
 ):
@@ -343,6 +469,19 @@ class FirebirdDialect(
     - DECFLOAT (FB 4.0+)
     - EXECUTE BLOCK (FB 2.5+)
     - ROWS syntax (FB 2.5+)
+
+    Namespaces: **none**. Firebird has no ``CREATE SCHEMA``, relation names
+    cannot be qualified, and the ``RDB$`` system tables are ordinary relations
+    with a naming convention rather than a namespace. The naming switches
+    ``supports_catalog_qualification()`` and
+    ``supports_schema_qualification()`` therefore answer ``False``, which is
+    what the core ``validate_namespace`` reads before spelling a name: a name
+    carrying a namespace slot raises ``UnsupportedFeatureError`` rather than
+    being rendered as a qualification Firebird's parser rejects. The same answer
+    is available directly from ``validate_schema_name()`` and
+    ``validate_catalog_name()`` under the names callers reach for, so a caller
+    can ask before rendering rather than having to render to find out.
+    See :mod:`..protocols.namespace` for the full argument.
     """
 
     def __init__(self, version: Optional[Tuple[int, int, int]] = None):
@@ -410,21 +549,16 @@ class FirebirdDialect(
     def supports_lock_timeout(self) -> bool:
         return True
 
-    # SQLDialectBase is the first base, so the methods it defines cannot be
-    # overridden by any mixin that follows it in the MRO. Re-declare the two
-    # that Firebird needs to override so the Firebird behavior wins.
-    def format_identifier(self, identifier: str, need_quote: bool = True) -> str:
-        return FirebirdIdentifierMixin.format_identifier(self, identifier, need_quote)
+    # ``format_identifier`` needs no bridge: SQLDialectBase is listed last in
+    # the bases, so FirebirdIdentifierMixin -- the one and only definition of
+    # that primitive in this backend -- wins outright.
 
     def supports_explain_plan(self) -> bool:
         return FirebirdExplainMixin.supports_explain_plan(self)
 
-    # FirebirdTableMixin overrides the table/column formatters, but it is
-    # composed after DDLColumnMixin/TableMixin in the MRO; bridge explicitly
-    # so the Firebird implementations (e.g. IDENTITY auto-increment) win.
-    def format_create_table_statement(self, expr: "CreateTableExpression") -> Tuple[str, tuple]:
-        return FirebirdTableMixin.format_create_table_statement(self, expr)
-
+    # DDLColumnMixin precedes FirebirdTableMixin in the MRO, so the column and
+    # constraint formatters need a bridge; the Firebird versions carry
+    # IDENTITY auto-increment and the Firebird-only constraint refusals.
     def format_column_definition(self, col_def: "ColumnDefinition") -> Tuple[str, tuple]:
         return FirebirdTableMixin.format_column_definition(self, col_def)
 
@@ -614,13 +748,21 @@ class FirebirdDialect(
 
 
     def supports_or_replace_view(self) -> bool:
-        return True
-
-
-
+        # Firebird has no ``CREATE OR REPLACE VIEW``. Firebird 4.0 added
+        # ``CREATE OR ALTER VIEW``, which is a different statement: OR ALTER
+        # also alters the columns and the definition of an existing view,
+        # where OR REPLACE only replaces the definition. Substituting one for
+        # the other behind a capability switch would make the switch lie about
+        # what runs, so it is declared False and
+        # ``supports_create_or_replace_view()`` (which the generic renderer
+        # actually gates on) refuses ``replace=True``.
+        return False
 
     def supports_view_check_option(self) -> bool:
-        return True
+        # Firebird views are updatable unconditionally and the grammar has no
+        # ``WITH [LOCAL|CASCADED] CHECK OPTION`` clause, so there is nothing
+        # to render. Declaring support produced a clause the parser rejects.
+        return False
 
     def supports_cascade_view(self) -> bool:
         # Firebird's DROP VIEW has no CASCADE clause.
@@ -697,10 +839,25 @@ class FirebirdDialect(
         return False
 
     def supports_deferrable_constraint(self) -> bool:
+        """Firebird has no DEFERRABLE / INITIALLY ... constraint attributes.
+
+        Measured on Firebird 5.0.4 and 6.0.0: ``DEFERRABLE``, ``NOT
+        DEFERRABLE``, ``INITIALLY DEFERRED`` and ``INITIALLY IMMEDIATE`` are
+        all answered with ``Token unknown`` on table and column constraints
+        alike. The formatter refuses a requested spelling by name.
+        """
         return False
 
     def supports_constraint_enforced(self) -> bool:
-        return True
+        """Firebird has no ENFORCED / NOT ENFORCED constraint control.
+
+        Measured on Firebird 5.0.4 and 6.0.0: ``CHECK (...) ENFORCED`` and
+        ``CHECK (...) NOT ENFORCED`` are answered with ``Token unknown -
+        ENFORCED`` / ``Token unknown - NOT``, and so are the FOREIGN KEY and
+        column-constraint forms. The formatter refuses a requested spelling by
+        name rather than dropping it.
+        """
+        return False
 
     def supports_add_constraint(self) -> bool:
         return True

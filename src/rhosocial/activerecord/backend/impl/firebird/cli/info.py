@@ -23,22 +23,23 @@ from rhosocial.activerecord.backend.dialect.protocols import (
     ExplainSupport,
     GraphSupport,
     SetOperationSupport,
-    ViewSupport,
-    TableSupport,
+    ViewObjectSupport,
+    TableObjectSupport,
     TruncateSupport,
     GeneratedColumnSupport,
-    TriggerSupport,
-    FunctionSupport,
+    TriggerObjectSupport,
+    RoutineObjectSupport,
     AdvancedGroupingSupport,
     ArraySupport,
     ILIKESupport,
-    IndexSupport,
+    IndexObjectSupport,
     LockingSupport,
     MergeSupport,
     OrderedSetAggregationSupport,
     QualifyClauseSupport,
-    SchemaSupport,
-    SequenceSupport,
+    CreateSchemaSupport,
+    DropSchemaSupport,
+    SequenceObjectSupport,
     TemporalTableSupport,
 )
 from rhosocial.activerecord.backend.impl.firebird.protocols import (
@@ -68,6 +69,7 @@ from rhosocial.activerecord.backend.impl.firebird.protocols import (
     FirebirdContextVariableSupport,
     FirebirdLockingSupport,
     FirebirdDMLOperationSupport,
+    FirebirdNamespaceSupport,
 )
 
 from .connection import add_connection_args, add_version_arg, resolve_connection_config_from_args
@@ -99,10 +101,22 @@ PROTOCOL_FAMILY_GROUPS: Dict[str, list] = {
     ],
     "Transaction & Locking": [LockingSupport, TemporalTableSupport],
     "Query Analysis": [ExplainSupport, GraphSupport, QualifyClauseSupport],
-    "DDL - Table": [TableSupport, TruncateSupport, GeneratedColumnSupport],
-    "DDL - View": [ViewSupport],
-    "DDL - Schema & Index": [SchemaSupport, IndexSupport],
-    "DDL - Sequence & Trigger": [SequenceSupport, TriggerSupport, FunctionSupport],
+    # The *ObjectSupport rows are naming contracts, not capability switches:
+    # they exist so the report says how a name is spelled, and their support
+    # percentage is the namespace answer (0 of 3 on Firebird, which has no
+    # namespace above the database file) rather than a DDL capability.
+    "DDL - Table": [TableObjectSupport, TruncateSupport, GeneratedColumnSupport],
+    "DDL - View": [ViewObjectSupport],
+    "DDL - Schema & Index": [
+        CreateSchemaSupport,
+        DropSchemaSupport,
+        IndexObjectSupport,
+    ],
+    "DDL - Sequence & Trigger": [
+        SequenceObjectSupport,
+        TriggerObjectSupport,
+        RoutineObjectSupport,
+    ],
     "String Matching": [ILIKESupport],
     "Firebird-specific": [
         FirebirdGeneratorSupport,
@@ -131,6 +145,11 @@ PROTOCOL_FAMILY_GROUPS: Dict[str, list] = {
         FirebirdContextVariableSupport,
         FirebirdLockingSupport,
         FirebirdDMLOperationSupport,
+        # Namespaces: reported because the answer is a refusal, and "0 of 3
+        # supported" is exactly the useful thing to see. FirebirdRowSourceSupport
+        # is a rendering contract with no capability switch, so it stays out of
+        # this report rather than adding an empty row.
+        FirebirdNamespaceSupport,
     ],
 }
 

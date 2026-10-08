@@ -4,8 +4,13 @@
 import pytest
 from rhosocial.activerecord.backend.dialect.exceptions import UnsupportedFeatureError
 from rhosocial.activerecord.backend.dialect.mixins import DomainMixin, UserDefinedTypeMixin
-from rhosocial.activerecord.backend.dialect.protocols import DomainSupport, UserDefinedTypeSupport
+from rhosocial.activerecord.backend.dialect.protocols import (
+    AlterDomainSupport,
+    CreateDomainSupport,
+    DropDomainSupport,
+)
 from rhosocial.activerecord.backend.expression import Literal
+from rhosocial.activerecord.backend.expression.objects import Domain
 from rhosocial.activerecord.backend.expression.serialization import (
     ExpressionRegistry,
     deserialize,
@@ -75,7 +80,7 @@ class TestCreateDomain:
         dialect = FirebirdDialect((4, 0, 0))
         expression = FirebirdCreateDomainExpression(
             dialect,
-            "salary_range",
+            Domain(dialect, "salary_range"),
             DecimalType(precision=10, scale=2),
             default=0,
             not_null=True,
@@ -95,7 +100,7 @@ class TestCreateDomain:
         condition = DomainValueExpression(dialect) > Literal(dialect, 0, inline_literals=True)
         expression = CreateDomainExpression(
             dialect,
-            "positive_code",
+            Domain(dialect, "positive_code"),
             VarCharType(length=8),
             default=Literal(dialect, "A", inline_literals=True),
             nullability=DomainNullability.NOT_NULL,
@@ -113,7 +118,7 @@ class TestCreateDomain:
         dialect = FirebirdDialect((4, 0, 0))
         expression = FirebirdCreateDomainExpression(
             dialect,
-            "amount",
+            Domain(dialect, "amount"),
             DecimalType(precision=10, scale=2),
         )
 
@@ -124,7 +129,7 @@ class TestCreateDomain:
         sqlite = SQLiteDialect(version=(3, 45, 0))
         expression = FirebirdCreateDomainExpression(
             dialect,
-            "ratio",
+            Domain(dialect, "ratio"),
             FirebirdDecFloatType(sqlite, precision=16),
         )
 
@@ -134,7 +139,7 @@ class TestCreateDomain:
         dialect = FirebirdDialect((4, 0, 0))
         expression = CreateDomainExpression(
             dialect,
-            "positive",
+            Domain(dialect, "positive"),
             IntegerType(dialect),
             checks=[
                 _check(
@@ -152,7 +157,7 @@ class TestCreateDomain:
         dialect = FirebirdDialect((4, 0, 0))
         expression = CreateDomainExpression(
             dialect,
-            "bounded",
+            Domain(dialect, "bounded"),
             IntegerType(dialect),
             checks=[_positive_check(dialect), _positive_check(dialect)],
         )
@@ -164,7 +169,7 @@ class TestCreateDomain:
         dialect = FirebirdDialect((4, 0, 0))
         expression = CreateDomainExpression(
             dialect,
-            "nullable",
+            Domain(dialect, "nullable"),
             IntegerType(dialect),
             nullability=DomainNullability.NULLABLE,
         )
@@ -178,7 +183,7 @@ class TestCreateDomain:
         with pytest.raises(ValueError, match="non-empty SQL predicate"):
             FirebirdCreateDomainExpression(
                 dialect,
-                "invalid_check",
+                Domain(dialect, "invalid_check"),
                 IntegerType(dialect),
                 check=" ",
             )
@@ -210,7 +215,7 @@ class TestAlterDomain:
         )
 
         for mode, fields, expected in cases:
-            expression = FirebirdAlterDomainExpression(dialect, "d", mode, **fields)
+            expression = FirebirdAlterDomainExpression(dialect, Domain(dialect, "d"), mode, **fields)
             assert isinstance(expression, AlterDomainExpression)
             assert expression.to_sql() == (expected, ())
 
@@ -246,7 +251,7 @@ class TestAlterDomain:
         action = FirebirdSetDomainDataTypeAction(dialect, "VARCHAR(20)")
         expression = FirebirdAlterDomainExpression(
             dialect,
-            "d",
+            Domain(dialect, "d"),
             FirebirdDomainAlterMode.SET_TYPE,
             data_type_name="DECIMAL(10, 2)",
         )
@@ -360,7 +365,7 @@ class TestAlterDomain:
             FirebirdSetDomainDataTypeAction(dialect, VarCharType(length=12)),
             SetDomainDefaultAction(dialect, 7),
         ]
-        expression = FirebirdAlterDomainExpression(dialect, "d", actions=actions)
+        expression = FirebirdAlterDomainExpression(dialect, Domain(dialect, "d"), actions=actions)
 
         assert expression.to_sql() == (
             'ALTER DOMAIN "D" TO "D_V2" TYPE VARCHAR(12) '
@@ -372,7 +377,7 @@ class TestAlterDomain:
         dialect = FirebirdDialect((4, 0, 0))
         expression = AlterDomainExpression(
             dialect,
-            "d",
+            Domain(dialect, "d"),
             [
                 DropDomainDefaultAction(dialect),
                 RenameDomainAction(dialect, "d_v2"),
@@ -390,12 +395,12 @@ class TestAlterDomain:
         )
         add_expression = AlterDomainExpression(
             dialect,
-            "d",
+            Domain(dialect, "d"),
             [AddDomainCheckAction(dialect, named_check)],
         )
         drop_expression = AlterDomainExpression(
             dialect,
-            "d",
+            Domain(dialect, "d"),
             [DropDomainCheckAction(dialect, name="positive_check")],
         )
 
@@ -408,14 +413,14 @@ class TestAlterDomain:
         dialect = FirebirdDialect((4, 0, 0))
         add_expression = FirebirdAlterDomainExpression(
             dialect,
-            "d",
+            Domain(dialect, "d"),
             FirebirdDomainAlterMode.ADD_CONSTRAINT,
             constraint_name="positive_check",
             constraint_sql="VALUE > 0",
         )
         drop_expression = FirebirdAlterDomainExpression(
             dialect,
-            "d",
+            Domain(dialect, "d"),
             FirebirdDomainAlterMode.DROP_CONSTRAINT,
             constraint_name="positive_check",
         )
@@ -429,7 +434,7 @@ class TestAlterDomain:
         dialect = FirebirdDialect((4, 0, 0))
         expression = AlterDomainExpression(
             dialect,
-            "d",
+            Domain(dialect, "d"),
             [
                 AddDomainCheckAction(dialect, _positive_check(dialect)),
                 AddDomainCheckAction(dialect, _positive_check(dialect)),
@@ -445,19 +450,19 @@ class TestAlterDomain:
         with pytest.raises(ValueError, match="SET DEFAULT requires a value"):
             FirebirdAlterDomainExpression(
                 dialect,
-                "d",
+                Domain(dialect, "d"),
                 FirebirdDomainAlterMode.SET_DEFAULT,
             )
         with pytest.raises(ValueError, match="ADD CONSTRAINT requires constraint_sql"):
             FirebirdAlterDomainExpression(
                 dialect,
-                "d",
+                Domain(dialect, "d"),
                 FirebirdDomainAlterMode.ADD_CONSTRAINT,
             )
         with pytest.raises(ValueError, match="SET TYPE requires data_type"):
             FirebirdAlterDomainExpression(
                 dialect,
-                "d",
+                Domain(dialect, "d"),
                 FirebirdDomainAlterMode.SET_TYPE,
             )
 
@@ -467,7 +472,7 @@ class TestAlterDomain:
         with pytest.raises(ValueError, match="different ALTER DOMAIN changes"):
             FirebirdAlterDomainExpression(
                 dialect,
-                "d",
+                Domain(dialect, "d"),
                 FirebirdDomainAlterMode.SET_DEFAULT,
                 value=7,
                 actions=[DropDomainDefaultAction(dialect)],
@@ -479,16 +484,16 @@ class TestVersionBoundaries:
         dialect = FirebirdDialect((2, 5, 0))
         create = FirebirdCreateDomainExpression(
             dialect,
-            "positive",
+            Domain(dialect, "positive"),
             IntegerType(dialect),
             not_null=True,
         )
         alter = AlterDomainExpression(
             dialect,
-            "positive",
+            Domain(dialect, "positive"),
             [FirebirdSetDomainDataTypeAction(dialect, IntegerType(dialect))],
         )
-        drop = FirebirdDropDomainExpression(dialect, "positive")
+        drop = FirebirdDropDomainExpression(dialect, Domain(dialect, "positive"))
 
         assert create.to_sql() == ('CREATE DOMAIN "POSITIVE" AS INTEGER NOT NULL', ())
         assert alter.to_sql() == ('ALTER DOMAIN "POSITIVE" TYPE INTEGER', ())
@@ -498,7 +503,7 @@ class TestVersionBoundaries:
     def test_not_null_actions_require_firebird_30(self, action_type):
         dialect = FirebirdDialect((2, 5, 0))
         action = action_type(dialect)
-        expression = AlterDomainExpression(dialect, "positive", [action])
+        expression = AlterDomainExpression(dialect, Domain(dialect, "positive"), [action])
 
         assert dialect.supports_alter_domain_action(action_type) is False
         with pytest.raises(UnsupportedFeatureError, match="ALTER DOMAIN action"):
@@ -514,9 +519,9 @@ class TestVersionBoundaries:
         dialect = FirebirdDialect((2, 0, 0))
 
         with pytest.raises(UnsupportedFeatureError, match="CREATE DOMAIN"):
-            FirebirdCreateDomainExpression(dialect, "d", IntegerType(dialect)).to_sql()
+            FirebirdCreateDomainExpression(dialect, Domain(dialect, "d"), IntegerType(dialect)).to_sql()
         with pytest.raises(UnsupportedFeatureError, match="DROP DOMAIN"):
-            DropDomainExpression(dialect, "d").to_sql()
+            DropDomainExpression(dialect, Domain(dialect, "d")).to_sql()
 
 
 class TestCapabilities:
@@ -565,11 +570,18 @@ class TestCapabilities:
     def test_domain_protocols_and_mro(self):
         dialect = FirebirdDialect((4, 0, 0))
 
-        assert issubclass(FirebirdDomainSupport, DomainSupport)
+        # The core splits DOMAIN DDL per statement, so the Firebird protocol
+        # mirrors it rather than hanging off one umbrella.
+        for core_protocol in (
+            CreateDomainSupport,
+            AlterDomainSupport,
+            DropDomainSupport,
+        ):
+            assert issubclass(FirebirdDomainSupport, core_protocol)
+            assert isinstance(dialect, core_protocol)
         assert isinstance(dialect, FirebirdDomainSupport)
-        assert isinstance(dialect, DomainSupport)
         assert isinstance(dialect, DomainMixin)
-        assert isinstance(dialect, UserDefinedTypeSupport)
+        assert isinstance(dialect, UserDefinedTypeMixin)
 
 
 class TestDispatchAndSerialization:
@@ -646,7 +658,7 @@ class TestDispatchAndSerialization:
         expressions = (
             FirebirdCreateDomainExpression(
                 dialect,
-                "positive",
+                Domain(dialect, "positive"),
                 IntegerType(dialect),
                 default=0,
                 not_null=True,
@@ -654,19 +666,19 @@ class TestDispatchAndSerialization:
             ),
             FirebirdAlterDomainExpression(
                 dialect,
-                "positive",
+                Domain(dialect, "positive"),
                 FirebirdDomainAlterMode.SET_DEFAULT,
                 value=1,
             ),
             FirebirdAlterDomainExpression(
                 dialect,
-                "positive",
+                Domain(dialect, "positive"),
                 FirebirdDomainAlterMode.SET_TYPE,
                 data_type_name="DECIMAL(10, 2)",
             ),
             FirebirdAlterDomainExpression(
                 dialect,
-                "positive",
+                Domain(dialect, "positive"),
                 actions=[
                     FirebirdSetDomainDataTypeAction(
                         dialect,
@@ -674,7 +686,7 @@ class TestDispatchAndSerialization:
                     )
                 ],
             ),
-            FirebirdDropDomainExpression(dialect, "positive"),
+            FirebirdDropDomainExpression(dialect, Domain(dialect, "positive")),
             FirebirdSetDomainDataTypeAction(
                 dialect,
                 FirebirdDecFloatType(precision=16),

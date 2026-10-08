@@ -8,6 +8,7 @@ from the expression node it is handed.
 All tests are pure construction — no database connection.
 """
 
+from rhosocial.activerecord.backend.expression.objects import Table
 from rhosocial.activerecord.backend.impl.firebird.dialect import FirebirdDialect
 from rhosocial.activerecord.backend.impl.firebird.expression import (
     BlobColumnExpression,
@@ -61,7 +62,7 @@ class TestUpdateOrInsertExpression:
         dialect = FirebirdDialect((4, 0, 0))
         sql, params = UpdateOrInsertExpression(
             dialect,
-            "users",
+            Table(dialect, "users"),
             ["name", "email"],
             ["Alice", "alice@example.com"],
             ["email"],
@@ -76,7 +77,7 @@ class TestUpdateOrInsertExpression:
         dialect = FirebirdDialect((4, 0, 0))
         sql, params = UpdateOrInsertExpression(
             dialect,
-            "users",
+            Table(dialect, "users"),
             ["name"],
             ["Bob"],
             ["name"],

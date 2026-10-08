@@ -9,6 +9,7 @@ import pytest
 
 from rhosocial.activerecord.backend.dialect import UnsupportedFeatureError
 from rhosocial.activerecord.backend.expression import DropTableExpression
+from rhosocial.activerecord.backend.expression.objects import Table
 from rhosocial.activerecord.backend.impl.firebird.dialect import FirebirdDialect
 
 
@@ -23,18 +24,27 @@ class TestFirebirdDropTableCascade:
         assert dialect.supports_drop_table_restrict() is False
 
     def test_cascade_rejected(self, dialect):
-        expr = DropTableExpression(dialect, table="users", cascade=True)
+        expr = DropTableExpression(dialect, table=Table(dialect, "users"), cascade=True)
         with pytest.raises(UnsupportedFeatureError, match="DROP TABLE ... CASCADE"):
             expr.to_sql()
 
     def test_restrict_rejected(self, dialect):
-        expr = DropTableExpression(dialect, table="users", cascade=False)
+        """RESTRICT has its own parameter; it is no longer spelled by falsy CASCADE."""
+        expr = DropTableExpression(dialect, table=Table(dialect, "users"), restrict=True)
         with pytest.raises(UnsupportedFeatureError, match="DROP TABLE ... RESTRICT"):
             expr.to_sql()
 
-    def test_cascade_none_renders_plain(self, dialect):
-        expr = DropTableExpression(dialect, table="users", cascade=None)
+    def test_neither_set_renders_plain(self, dialect):
+        expr = DropTableExpression(dialect, table=Table(dialect, "users"))
         sql, params = expr.to_sql()
         assert "CASCADE" not in sql
         assert "RESTRICT" not in sql
         assert params == ()
+
+    def test_both_set_is_refused_at_construction(self, dialect):
+        with pytest.raises(
+            ValueError, match="cascade and restrict are mutually exclusive options"
+        ):
+            DropTableExpression(
+                dialect, table=Table(dialect, "users"), cascade=True, restrict=True
+            )
