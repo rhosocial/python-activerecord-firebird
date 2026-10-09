@@ -33,8 +33,35 @@ FB_FIELD_TYPES = {
     14: "CHAR",
     16: "BIGINT",
     23: "BOOLEAN",
-    24: "DECFLOAT",
+    # Firebird 4.0's new types, per the language reference, D.11 RDB$FIELDS
+    # (RDB$FIELD_TYPE), which also documents RDB$EXTERNAL_TYPE with the same
+    # codes.
+    #
+    # DECFLOAT is **two** codes, not one: 24 is DECFLOAT(16) and 25 is DECFLOAT(34)
+    # -- there is no bare "DECFLOAT" code, because the width is what the code
+    # records (RDB$FIELD_LENGTH agrees: 8 bytes for DECFLOAT(16), 16 for
+    # DECFLOAT(34)). Both are written here *with* the precision for that reason.
+    # A single entry mapping both codes to the unqualified word "DECFLOAT" would
+    # make a 16-digit column and a 34-digit column report the same type name,
+    # and FirebirdDecFloatType carries precision in PARAMETERS -- so they would
+    # also compare equal as value objects, and the differ would report no change
+    # between them. That is the identity loss this table exists to avoid, and it
+    # is worse than having no entry at all: an unknown code at least announces
+    # itself as UNKNOWN(n).
+    24: "DECFLOAT(16)",
+    25: "DECFLOAT(34)",
+    # INT128 is Firebird 4's own 128-bit signed integer (CORE-6366). It is not
+    # BIGINT under another name -- -2**127 .. 2**127-1 against BIGINT's
+    # -2**63 .. 2**63-1 -- so it gets its own class, FirebirdInt128Type, rather
+    # than being folded into the 64-bit one.
+    26: "INT128",
     27: "DOUBLE PRECISION",
+    # Firebird 4.0 added the zoned date-time types. RDB$FIELDS.RDB$FIELD_TYPE
+    # carries 28/29 for them, per the language reference, D.11 RDB$FIELDS. The
+    # words are the ones Firebird's own grammar writes, so a name this table
+    # invents here is a name parse_type() could not recognise.
+    28: "TIME WITH TIME ZONE",
+    29: "TIMESTAMP WITH TIME ZONE",
     35: "TIMESTAMP",
     37: "VARCHAR",
     40: "CSTRING",

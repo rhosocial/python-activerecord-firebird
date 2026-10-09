@@ -67,8 +67,8 @@ jobs:
 
       - name: Install activerecord and testsuite
         run: |
-          pip install "rhosocial-activerecord @ git+https://github.com/rhosocial/python-activerecord.git@release/v1.0.0.dev30"
-          pip install "rhosocial-activerecord-testsuite @ git+https://github.com/rhosocial/python-activerecord-testsuite.git@feature/expression-schema-object-refactor"
+          pip install "rhosocial-activerecord @ git+https://github.com/rhosocial/python-activerecord.git@feature/typed-columns"
+          pip install "rhosocial-activerecord-testsuite @ git+https://github.com/rhosocial/python-activerecord-testsuite.git@test/typed-column-contracts"
 
       - name: Verify Firebird connection and create test user
         run: |
@@ -147,3 +147,4 @@ jobs:
           flags: unittests,python-${{ matrix.python-version }},firebird-${{ matrix.firebird-version }}
           name: codecov-firebird-${{ matrix.python-version }}-${{ matrix.firebird-version }}
           fail_ci_if_error: true
+

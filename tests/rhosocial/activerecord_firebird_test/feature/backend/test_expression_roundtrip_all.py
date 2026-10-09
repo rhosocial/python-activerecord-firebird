@@ -144,6 +144,7 @@ from rhosocial.activerecord.backend.expression.statements.dml import (
     MergeActionType,
 )
 from rhosocial.activerecord.backend.expression.types import IntegerType
+from rhosocial.activerecord.backend.expression.types.custom import CustomType
 from rhosocial.activerecord.testsuite.utils.expression import (
     collect_expression_classes,
     make_instance,
@@ -652,6 +653,14 @@ def register_specials():
         ),
     )
 
+    # -- core CUSTOM needs the type name its ``raw`` slot exists to carry -----
+    # ``raw`` defaults to the empty string, the filler skips it, and the class
+    # refuses that empty name while constructing -- so it builds fine once it
+    # is handed a real one, and there is nothing to skip.
+    register_special_constructor(
+        "types.custom.CustomType", lambda d: CustomType(d, "VARCHAR(10)")
+    )
+
 
 register_specials()
 
@@ -697,6 +706,21 @@ UNCONSTRUCTIBLE = {
     # LEGITIMATE_NON_RENDERS -- against the `format_xml*` methods Firebird
     # declares no name for, which was the second half of each old reason and is
     # still the reason none of them can render.
+
+    # UUIDCastExpression refuses in __init__, not in to_sql(). Firebird has no
+    # cast from text to a UUID, so the refusal is the same whatever the
+    # argument, and no registered constructor can hand it something that
+    # changes the answer.
+    "rhosocial.activerecord.backend.expression.uuid.UUIDCastExpression":
+        "refuses in __init__ -- Firebird has no cast from text to a UUID.",
+    # The nil/max constant and the generation node refuse the same way, and for
+    # the same reason: Firebird spells no UUID SQL, so each says so from
+    # __init__ whatever it is handed. Measured with valid arguments -- an
+    # invalid ``which`` raises ValueError first and would have hidden this.
+    "rhosocial.activerecord.backend.expression.uuid.UUIDConstantExpression":
+        "refuses in __init__ -- Firebird spells no UUID constants.",
+    "rhosocial.activerecord.backend.expression.uuid.UUIDGenerationExpression":
+        "refuses in __init__ -- Firebird has no server-side UUID generator.",
 }
 
 
@@ -835,7 +859,7 @@ LEGITIMATE_NON_RENDERS = {
     ),
 
     # ---- a generic type the Firebird type layer does not spell ------------
-    # `FirebirdTypeSupportMixin` declares no formatter for these four generic
+    # `FirebirdTypeSupportMixin` declares no formatter for these seven generic
     # names. An unsupported *type* is a dialect gap and is reported as one, which
     # is why these are TypeError and not UnsupportedFeatureError.
     "rhosocial.activerecord.backend.expression.types.array.ArrayType": (
@@ -844,11 +868,22 @@ LEGITIMATE_NON_RENDERS = {
     "rhosocial.activerecord.backend.expression.types.datetime_.IntervalType": (
         TypeError, "does not support the generic type 'interval'",
     ),
+    # TIME WITH TIME ZONE and TIMESTAMP WITH TIME ZONE exist in Firebird, but
+    # only under their own classes; the generic names dispatch to nothing.
+    "rhosocial.activerecord.backend.expression.types.datetime_.TimeTzType": (
+        TypeError, "does not support the generic type 'timetz'",
+    ),
+    "rhosocial.activerecord.backend.expression.types.datetime_.TimestampTzType": (
+        TypeError, "does not support the generic type 'timestamptz'",
+    ),
     "rhosocial.activerecord.backend.expression.types.json_.JsonType": (
         TypeError, "does not support the generic type 'json'",
     ),
     "rhosocial.activerecord.backend.expression.types.json_.JsonBType": (
         TypeError, "does not support the generic type 'jsonb'",
+    ),
+    "rhosocial.activerecord.backend.expression.types.xml_.XmlType": (
+        TypeError, "does not support the generic type 'xml'",
     ),
 
     # ---- type DDL: Firebird has no user-defined types ---------------------

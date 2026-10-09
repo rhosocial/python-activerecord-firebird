@@ -17,6 +17,7 @@ from .sequence import FirebirdSequenceMixin
 from .blob import FirebirdBlobMixin
 from .introspection import FirebirdIntrospectionMixin
 from .types import FirebirdTypeSupportMixin
+from .column_suggestion import FirebirdColumnSuggestionMixin
 from .partition import FirebirdPartitionMixin
 from .ddl_alter_table_modifier import FirebirdAlterTableModifierMixin
 from .domain import FirebirdDomainMixin
@@ -29,10 +30,10 @@ from .user import FirebirdUserMixin
 from .comment import FirebirdCommentMixin
 from .database import FirebirdDatabaseMixin
 from .expression import FirebirdExpressionMixin
-from .window import FirebirdWindowFunctionMixin
 from .datetime import FirebirdDateTimeMixin
 from .dql import FirebirdDQLMixin
 from .collation import FirebirdCollationMixin
+from .json import FirebirdJSONMixin
 from .identifier import FirebirdIdentifierMixin
 from .namespace import FirebirdNamespaceMixin
 from .cte import FirebirdCTEMixin
@@ -65,6 +66,7 @@ __all__ = [
     "FirebirdBlobMixin",
     "FirebirdIntrospectionMixin",
     "FirebirdTypeSupportMixin",
+    "FirebirdColumnSuggestionMixin",
     "FirebirdPartitionMixin",
     "FirebirdAlterTableModifierMixin",
     "FirebirdDomainMixin",
@@ -77,10 +79,10 @@ __all__ = [
     "FirebirdCommentMixin",
     "FirebirdDatabaseMixin",
     "FirebirdExpressionMixin",
-    "FirebirdWindowFunctionMixin",
     "FirebirdDateTimeMixin",
     "FirebirdDQLMixin",
     "FirebirdCollationMixin",
+    "FirebirdJSONMixin",
     "FirebirdIdentifierMixin",
     "FirebirdNamespaceMixin",
     "FirebirdCTEMixin",

@@ -168,6 +168,11 @@ FIREBIRD_PROTOCOLS = [
 
 # Generic protocols FirebirdDialect intentionally does NOT implement.
 FIREBIRD_NOT_IMPLEMENTED = [
+    # UUID value expressions (generation / nil-max constants / cast) are not
+    # implemented yet on this dialect. Listed here so the omission is a
+    # recorded decision rather than a gap; move it to the implemented list
+    # when the mixin lands.
+    dialect_protocols.UUIDSupport,
     # --- Intentional non-support ---
     # Firebird databases are created and dropped outside the connection, so the
     # per-statement database protocols are not composed; FirebirdDatabaseMixin

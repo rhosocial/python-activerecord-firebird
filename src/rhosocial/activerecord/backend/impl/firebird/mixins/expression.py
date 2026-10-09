@@ -3,6 +3,8 @@
 
 from typing import Any, Optional, Tuple, TYPE_CHECKING
 
+from rhosocial.activerecord.backend.expression.types import DataType
+
 if TYPE_CHECKING:
     from rhosocial.activerecord.backend.expression import bases
     from rhosocial.activerecord.backend.expression.advanced_functions import CaseExpression
@@ -19,32 +21,49 @@ class FirebirdExpressionMixin:
         bytes: "BLOB",
     }
 
-    @staticmethod
-    def _python_type_to_firebird_sql(value: Any) -> Optional[str]:
-        """Map a Python value to its Firebird SQL type for explicit CAST.
+    def _python_type_to_firebird_sql(self, value: Any) -> Optional[DataType]:
+        """Map a Python value to the Firebird type an explicit CAST should name.
 
-        Returns None for types that don't need explicit casting (e.g. None).
+        Returns a DataType rather than a type name, because cast() refuses a
+        string: the type position cannot take a bound parameter, so whatever
+        lands there is rendered into the statement and a name is code, not data.
+        The dialect renders the type, so the spelling stays Firebird's.
+
+        Returns None for values that need no explicit cast (e.g. None).
         """
         if value is None:
             return None
         import datetime
         import decimal
+
+        from rhosocial.activerecord.backend.expression.types import (
+            BlobType,
+            DateTimeType,
+            DateType,
+            DecimalType,
+            DoubleType,
+            IntegerType,
+            SmallIntType,
+            VarCharType,
+        )
+
+        # bool before int: bool is an int subclass, and Firebird has no boolean
         if isinstance(value, bool):
-            return "SMALLINT"
+            return SmallIntType(self)
         if isinstance(value, int):
-            return "INTEGER"
+            return IntegerType(self)
         if isinstance(value, float):
-            return "DOUBLE PRECISION"
+            return DoubleType(self)
         if isinstance(value, str):
-            return "VARCHAR(255)"
+            return VarCharType(self, 255)
         if isinstance(value, bytes):
-            return "BLOB"
-        if isinstance(value, datetime.date):
-            return "DATE"
+            return BlobType(self)
         if isinstance(value, datetime.datetime):
-            return "TIMESTAMP"
+            return DateTimeType(self)
+        if isinstance(value, datetime.date):
+            return DateType(self)
         if isinstance(value, decimal.Decimal):
-            return "DECIMAL(18, 4)"
+            return DecimalType(self, 18, 4)
         return None
 
     def format_case_expression(self, expr: "CaseExpression") -> Tuple[str, tuple]:

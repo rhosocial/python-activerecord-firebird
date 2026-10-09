@@ -14,6 +14,7 @@ from typing import Any, Protocol, Tuple, runtime_checkable
 from rhosocial.activerecord.backend.dialect.protocols import (
     AlterDomainSupport,
     CreateDomainSupport,
+    DataTypeSupport,
     DropDomainSupport,
 )
 
@@ -208,6 +209,119 @@ class FirebirdContextVariableSupport(Protocol):
     def supports_context_variables(self) -> bool: ...
 
 
+@runtime_checkable
+class FirebirdTypeSupport(DataTypeSupport, Protocol):
+    """Firebird's own ``firebird_*`` data-type family.
+
+    The core concepts need no protocol: they are dispatched by naming
+    convention (``format_data_type_<name>`` / ``supports_data_type_<name>``
+    derived from the type's generic ``name``), which is the point of that
+    convention. The types Firebird *owns* are not derivable that way — the only
+    way to learn that ``firebird_decfloat`` exists and needs a Firebird 4
+    version gate is to be told — so this family states its own shape instead of
+    leaving it implied by a naming pattern.
+
+    Each ``firebird_*`` name appears twice, as a formatter and as a support
+    check, and the two correspond 1:1 exactly as the core family does. The
+    formatter for a Firebird 4 type returns SQL the server will only accept from
+    4.0 on, so its ``supports_data_type_*`` counterpart carries the version gate
+    and answers ``False`` on an older dialect: asking "can you declare an
+    ``INT128`` here?" is answerable without issuing DDL and finding out.
+
+    The core-concept half of the contract — total ``format_data_type`` dispatch,
+    ``parse_type``, ``supports_data_types`` and ``suggested_data_types`` — is
+    inherited from :class:`DataTypeSupport` rather than restated here: a Protocol
+    that redeclared those members with empty bodies would shadow the concrete
+    implementations when the dialect lists it among its bases, because a
+    dialect's bases resolve left to right.
+
+    Note what is **not** here: ``timetz`` and ``timestamptz``. This dialect
+    renders neither — Firebird's ``TIME`` and ``TIMESTAMP`` are its *unzoned*
+    types (language reference §3.4), so writing them for a zoned concept would
+    declare a column that drops the zone — and it names the unzoned concept as
+    their substitute through ``suggested_data_types``. The zoned columns
+    themselves are the ``firebird_timetz`` / ``firebird_timestamptz`` formatters
+    above, under Firebird's own words.
+    """
+
+    # --- Firebird 4.0+ types: version-gated formatters ---
+
+    def format_data_type_firebird_timestamptz(self, data_type: Any) -> Tuple[str, tuple]:
+        """Render ``TIMESTAMP WITH TIME ZONE``."""
+        ...
+
+    def format_data_type_firebird_timetz(self, data_type: Any) -> Tuple[str, tuple]:
+        """Render ``TIME WITH TIME ZONE``."""
+        ...
+
+    def format_data_type_firebird_time_without_time_zone(
+        self, data_type: Any
+    ) -> Tuple[str, tuple]:
+        """Render ``TIME WITHOUT TIME ZONE``."""
+        ...
+
+    def format_data_type_firebird_decfloat(self, data_type: Any) -> Tuple[str, tuple]:
+        """Render ``DECFLOAT(16|34)``."""
+        ...
+
+    def format_data_type_firebird_int128(self, data_type: Any) -> Tuple[str, tuple]:
+        """Render ``INT128``."""
+        ...
+
+    # --- Types every Firebird version this backend supports has ---
+
+    def format_data_type_firebird_decimal(self, data_type: Any) -> Tuple[str, tuple]:
+        """Render ``DECIMAL`` under the Firebird dispatch key."""
+        ...
+
+    def format_data_type_firebird_float(self, data_type: Any) -> Tuple[str, tuple]:
+        """Render Firebird's bare ``FLOAT``."""
+        ...
+
+    def format_data_type_firebird_double(self, data_type: Any) -> Tuple[str, tuple]:
+        """Render ``DOUBLE PRECISION``."""
+        ...
+
+    def format_data_type_firebird_blob_subtype(self, data_type: Any) -> Tuple[str, tuple]:
+        """Render ``BLOB SUB_TYPE TEXT``."""
+        ...
+
+    def format_data_type_firebird_char(self, data_type: Any) -> Tuple[str, tuple]:
+        """Render ``CHAR(n) CHARACTER SET UTF8``."""
+        ...
+
+    def format_data_type_firebird_varchar(self, data_type: Any) -> Tuple[str, tuple]:
+        """Render ``VARCHAR(n) CHARACTER SET UTF8``."""
+        ...
+
+    def supports_data_type_firebird_timestamptz(self) -> bool:
+        """``TIMESTAMP WITH TIME ZONE`` arrived in Firebird 4.0."""
+        ...
+
+    def supports_data_type_firebird_timetz(self) -> bool:
+        """``TIME WITH TIME ZONE`` arrived in Firebird 4.0."""
+        ...
+
+    def supports_data_type_firebird_time_without_time_zone(self) -> bool:
+        """``TIME WITHOUT TIME ZONE`` arrived in Firebird 4.0."""
+        ...
+
+    def supports_data_type_firebird_decfloat(self) -> bool:
+        """``DECFLOAT`` arrived in Firebird 4.0."""
+        ...
+
+    def supports_data_type_firebird_int128(self) -> bool:
+        """``INT128`` arrived in Firebird 4.0."""
+        ...
+
+    def supports_data_type_firebird_decimal(self) -> bool: ...
+    def supports_data_type_firebird_float(self) -> bool: ...
+    def supports_data_type_firebird_double(self) -> bool: ...
+    def supports_data_type_firebird_blob_subtype(self) -> bool: ...
+    def supports_data_type_firebird_char(self) -> bool: ...
+    def supports_data_type_firebird_varchar(self) -> bool: ...
+
+
 __all__ = [
     "FirebirdDMLOperationSupport",
     "FirebirdGeneratorSupport",
@@ -238,4 +352,5 @@ __all__ = [
     "FirebirdCollationSupport",
     "FirebirdExceptionSupport",
     "FirebirdContextVariableSupport",
+    "FirebirdTypeSupport",
 ]

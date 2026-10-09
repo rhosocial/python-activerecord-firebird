@@ -2,9 +2,11 @@
 """Offline branch snapshots for Firebird type formatting and dialect SQL.
 
 Covers the FB4 data-type version gate on both sides (mixins/types.py), the
-RETURNING / SKIP LOCKED / SEQUENCE dialect branches, and CREATE TABLE
-rebuild-statement rendering from mixins/table.py — all via exact to_sql()
-snapshots with no database connection.
+``RDB$FIELD_TYPE`` codes the Firebird 4 types arrive under (24/25 ``DECFLOAT``,
+26 ``INT128``, 28/29 the zoned date-times), the ``FLOAT(bin_prec)`` and BLOB
+sub-type identity branches, the RETURNING / SKIP LOCKED / SEQUENCE dialect
+branches, and CREATE TABLE rebuild-statement rendering from mixins/table.py —
+all via exact to_sql() snapshots with no database connection.
 """
 import pytest
 
@@ -33,6 +35,7 @@ from rhosocial.activerecord.backend.expression.statements.ddl_sequence import (
 )
 from rhosocial.activerecord.backend.expression.types import (
     BigIntType,
+    BlobType,
     BooleanType,
     CharType,
     CustomType,
@@ -46,6 +49,7 @@ from rhosocial.activerecord.backend.expression.types import (
     TextType,
     TimeType,
     TimestampType,
+    TinyIntType,
     VarCharType,
 )
 import rhosocial.activerecord.backend.expression as E
@@ -59,10 +63,13 @@ from rhosocial.activerecord.backend.impl.firebird.expression.generator import (
     NextValueForExpression,
 )
 from rhosocial.activerecord.backend.impl.firebird.expression.types import (
+    FirebirdBlobSubType,
     FirebirdDecFloatType,
+    FirebirdFloatType,
     FirebirdInt128Type,
     FirebirdTimeStampTzType,
     FirebirdTimeTzType,
+    FirebirdTimeWithoutTimeZoneType,
 )
 from rhosocial.activerecord.backend.impl.firebird.mixins.locking import FirebirdLockingMixin
 
@@ -177,24 +184,366 @@ class TestBaseDataTypeRendering:
         assert dialect.parse_type("VARCHAR(50)") == VarCharType(length=50)
         assert dialect.parse_type("VARCHAR") == VarCharType(length=255)
         assert dialect.parse_type("CHAR(10)") == CharType(length=10)
-        assert dialect.parse_type("CHARACTER(5)") == CharType(length=5)
         assert dialect.parse_type("CHAR") == CharType(length=1)
+
+    def test_parse_type_records_the_long_character_form(self, dialect):
+        """The SQL long forms record themselves as the spelling that was read.
+
+        Both are the same *concept* as their short form — one class, one type —
+        and the recorded spelling is what Firebird's grammar wrote, not a
+        different column.
+        """
+        assert dialect.parse_type("CHARACTER(5)") == CharType(
+            length=5, spelling="character"
+        )
+        assert dialect.parse_type("CHARACTER VARYING(5)") == VarCharType(
+            length=5, spelling="character varying"
+        )
+
+    def test_parse_type_character_varying_is_variable_length(self, dialect):
+        """``CHARACTER VARYING`` is SQL's long form of ``VARCHAR``.
+
+        It used to land in the fixed-length branch because the dispatch tested
+        only for a leading ``VARCHAR``, so ``CHARACTER`` matched and the varying
+        half was thrown away — a variable-length column parsed as
+        ``CHARACTER(5)``. The class is the whole point: one concept in, one class
+        out.
+        """
+        parsed = dialect.parse_type("CHARACTER VARYING(30)")
+        assert isinstance(parsed, VarCharType)
+        assert not isinstance(parsed, CharType)
+        assert parsed.length == 30
+        # And the fixed-length long form is still fixed-length.
+        assert isinstance(dialect.parse_type("CHARACTER(30)"), CharType)
+
+    @pytest.mark.parametrize("spelling,expected_class", [
+        ("integer", IntegerType), ("int", IntegerType),
+        ("tinyint", TinyIntType), ("int1", TinyIntType),
+        ("smallint", SmallIntType), ("int2", SmallIntType),
+        ("bigint", BigIntType), ("int8", BigIntType),
+        ("char", CharType), ("character", CharType),
+        ("varchar", VarCharType), ("character varying", VarCharType),
+        ("text", TextType), ("clob", TextType),
+        ("decimal", DecimalType), ("numeric", DecimalType), ("dec", DecimalType),
+        ("double", DoubleType), ("double precision", DoubleType),
+        ("boolean", BooleanType), ("bool", BooleanType),
+        ("blob", BlobType), ("bytea", BlobType),
+    ])
+    def test_parse_type_is_canonical_over_spelling_pairs(self, dialect, spelling,
+                                                         expected_class):
+        """One concept in, one class out (D8).
+
+        Two spellings of one concept must never produce two classes: a caller
+        reading a schema and a caller declaring one would then be holding
+        different objects for the same storage, and a schema diff between them
+        would report a change that does not exist.
+        """
+        parsed = dialect.parse_type(spelling)
+        assert type(parsed) is expected_class, spelling
+        # Whatever it parsed to must render back to a column on this dialect.
+        assert dialect.format_data_type(parsed)[0], spelling
 
     def test_parse_type_misc(self, dialect):
         assert isinstance(dialect.parse_type("BLOB SUB_TYPE TEXT"), TextType)
         assert isinstance(dialect.parse_type("DATE"), DateType)
         assert isinstance(dialect.parse_type("TIME"), TimeType)
         assert isinstance(dialect.parse_type("BOOLEAN"), BooleanType)
-        assert dialect.parse_type("SOMETHING WEIRD") == CustomType(raw="SOMETHING WEIRD")
+        # An identifier-shaped name the framework has no class for is kept, so a
+        # Firebird type it does not model stays reachable.
+        assert dialect.parse_type("SOMETHING_WEIRD") == CustomType(raw="SOMETHING_WEIRD")
+
+    def test_parse_type_refuses_a_name_that_is_not_an_identifier(self, dialect):
+        """A type name lands where a bound parameter cannot go, so it is
+        validated rather than preserved. A space has no meaning there, and
+        accepting one would put arbitrary text into the statement."""
+        from rhosocial.activerecord.backend.expression.type_name import InvalidTypeNameError
+
+        with pytest.raises(InvalidTypeNameError):
+            dialect.parse_type("SOMETHING WEIRD")
 
     def test_parse_type_timestamp_takes_precedence_over_time(self, dialect):
         """F7 anchor: startswith("TIME") used to swallow TIMESTAMP strings."""
         parsed = dialect.parse_type("TIMESTAMP")
         assert isinstance(parsed, DateTimeType)
         assert not isinstance(parsed, TimeType)
-        assert isinstance(dialect.parse_type("timestamp with time zone"), DateTimeType)
         # Plain TIME must still parse as TimeType after the reorder.
         assert isinstance(dialect.parse_type("TIME"), TimeType)
+
+    def test_parse_type_reaches_the_firebird_zoned_classes(self, dialect):
+        """Firebird 4.0's zoned date-time types must not parse as unzoned ones.
+
+        The catalog reports ``RDB$FIELD_TYPE`` 28 for ``TIME WITH TIME ZONE``
+        and 29 for ``TIMESTAMP WITH TIME ZONE`` (language reference, D.11), and
+        the introspector turns each into the words Firebird writes. Before this
+        was recognised, the ``DATE``/``TIMESTAMP``/``TIME`` family matched on the
+        leading word and threw the zone clause away — so a zoned column
+        introspected as an unzoned one and, because the differ compares parsed
+        types with ``!=``, a schema diff reported no change at all between the
+        two.
+        """
+        assert dialect.parse_type("TIME WITH TIME ZONE") == FirebirdTimeTzType()
+        assert dialect.parse_type("TIMESTAMP WITH TIME ZONE") == (
+            FirebirdTimeStampTzType()
+        )
+        assert dialect.parse_type("timestamp with time zone") == (
+            FirebirdTimeStampTzType()
+        )
+        # Neither is the unzoned concept it used to collapse into.
+        assert dialect.parse_type("TIME WITH TIME ZONE") != dialect.parse_type("TIME")
+        assert dialect.parse_type(
+            "TIMESTAMP WITH TIME ZONE"
+        ) != dialect.parse_type("TIMESTAMP")
+
+    @pytest.mark.parametrize("raw", [
+        "TIMESTAMP(4) WITH TIME ZONE",
+        "TIME(2) WITH TIME ZONE",
+        "TIME(3) WITHOUT TIME ZONE",
+        "TIMESTAMP(6)",
+        "TIME(6)",
+        "DATE(4)",
+    ])
+    def test_parse_type_refuses_a_precision_the_grammar_has_no_place_for(
+        self, dialect, raw
+    ):
+        """A precision on ``TIME``/``TIMESTAMP``/``DATE`` is not Firebird DDL.
+
+        §3.4.2, §3.4.3 and the §3.12 Data Type Declaration Syntax give
+        ``TIME [{WITHOUT | WITH} TIME ZONE]`` and ``TIMESTAMP [{WITHOUT | WITH}
+        TIME ZONE]`` with no argument, in the 4.0 and 5.0 references alike.
+
+        The parser used to accept the three zoned forms and hand back a class
+        carrying the precision, whose formatter then wrote it into DDL — so
+        ``parse_type`` blessed a string that ``format_data_type`` could not
+        render back. And it silently accepted the bare forms too, discarding the
+        ``(6)`` and returning a plain ``TIMESTAMP``: a *different column* than the
+        one that was named, read as though it were the same. Both are refused now,
+        with the field and the two sections named.
+        """
+        with pytest.raises(ValueError, match="4779"):
+            dialect.parse_type(raw)
+
+    def test_parse_type_reaches_the_spelled_out_without_zone_form(self, dialect):
+        """``TIME WITHOUT TIME ZONE`` is Firebird 4.0's long form of ``TIME``.
+
+        It has its own class and its own renderer, so parsing it as the bare
+        ``TimeType`` discarded the spelling the declaration actually used.
+        """
+        assert dialect.parse_type("TIME WITHOUT TIME ZONE") == (
+            FirebirdTimeWithoutTimeZoneType()
+        )
+
+    def test_parsed_temporal_types_render_back_exactly(self, dialect):
+        """Whatever ``parse_type`` accepts must render back to those words.
+
+        The other half of refusing the precision: having stopped parsing
+        ``TIMESTAMP(4)``, nothing else may quietly widen the accepted set.
+        """
+        for raw in (
+            "TIMESTAMP WITH TIME ZONE", "TIME WITH TIME ZONE",
+            "TIME WITHOUT TIME ZONE", "TIMESTAMP", "TIME", "DATE",
+        ):
+            parsed = dialect.parse_type(raw)
+            assert dialect.format_data_type(parsed) == (raw, ())
+
+    @pytest.mark.parametrize("raw,zoned_class", [
+        ("TIME WITH TIME ZONE", "FirebirdTimeTzType"),
+        ("TIMESTAMP WITH TIME ZONE", "FirebirdTimeStampTzType"),
+        ("TIME WITHOUT TIME ZONE", "FirebirdTimeWithoutTimeZoneType"),
+    ])
+    def test_parse_type_zoned_spellings_need_firebird_4(self, raw, zoned_class):
+        """Firebird 3 has no zoned date-time type, so a 3.0 dialect must not
+        name one — but it must not quietly answer with the unzoned class either.
+
+        Handing back ``TimeType`` would render a *different* column than the one
+        that was read, with nothing to say why; ``CustomType`` keeps the
+        declaration verbatim instead.
+        """
+        parsed = FirebirdDialect((3, 0, 0)).parse_type(raw)
+        assert type(parsed) is CustomType
+        assert parsed.raw == raw
+        assert zoned_class != type(parsed).__name__
+
+
+class TestFirebird4CatalogCodesOffline:
+    """``FB_FIELD_TYPES`` → ``parse_type`` → rendered SQL, with no database.
+
+    Documentation-based, not measured: ``fbclient`` is not installed on this
+    machine, so no row was ever read from ``RDB$FIELDS``. The authority is the
+    Firebird 4.0 language reference, D.11 ``RDB$FIELDS``, whose ``RDB$FIELD_TYPE``
+    (and ``RDB$EXTERNAL_TYPE``, with the same codes) reads:
+
+        23 - BOOLEAN      24 - DECFLOAT(16)   25 - DECFLOAT(34)
+        26 - INT128       27 - DOUBLE PRECISION
+
+    Two of those codes were unmapped, or mapped to the unqualified word
+    ``DECFLOAT``, which is how a ``DECFLOAT(16)`` column and a ``DECFLOAT(34)``
+    one came to compare equal.
+    """
+
+    @staticmethod
+    def _field_types():
+        from rhosocial.activerecord.backend.impl.firebird.introspection.async_introspector import (
+            FB_FIELD_TYPES,
+        )
+        return FB_FIELD_TYPES
+
+    @pytest.mark.parametrize("code,expected", [
+        (24, "DECFLOAT(16)"),
+        (25, "DECFLOAT(34)"),
+        (26, "INT128"),
+        (28, "TIME WITH TIME ZONE"),
+        (29, "TIMESTAMP WITH TIME ZONE"),
+    ])
+    def test_code_to_name(self, code, expected):
+        assert self._field_types()[code] == expected
+
+    @pytest.mark.parametrize("code", [24, 25, 26, 28, 29])
+    def test_code_to_render_is_the_identity(self, dialect, code):
+        """Every FB4 code this table knows re-renders as the words it was read as.
+
+        The chain an introspected column actually travels: the catalog reports a
+        code, this table turns it into words, ``parse_type`` turns the words into
+        a class, and the class renders those words. A break at any link produces
+        DDL that does not match the database.
+        """
+        type_name = self._field_types()[code]
+        assert dialect.format_data_type(dialect.parse_type(type_name)) == (
+            type_name, ()
+        )
+
+    def test_the_two_decfloat_widths_are_not_one_column(self, dialect):
+        """16 significant digits and 34 are different columns, not spellings.
+
+        ``FirebirdDecFloatType.PARAMETERS`` is ``("precision",)``, so the value
+        object already called them different; the introspector is what has to keep
+        that true by writing the width into the name it reports.
+        """
+        field_types = self._field_types()
+        assert field_types[24] != field_types[25]
+        assert dialect.parse_type(field_types[24]) != dialect.parse_type(
+            field_types[25]
+        )
+        assert dialect.format_data_type(dialect.parse_type(field_types[24]))[0] != (
+            dialect.format_data_type(dialect.parse_type(field_types[25]))[0]
+        )
+
+    def test_int128_is_not_folded_into_bigint(self, dialect):
+        assert type(dialect.parse_type(self._field_types()[26])) is FirebirdInt128Type
+        assert dialect.parse_type(self._field_types()[26]) != BigIntType()
+
+    def test_decfloat_is_not_folded_into_decimal(self, dialect):
+        """``DECFLOAT`` and ``NUMERIC`` are both "decimal" and are different types.
+
+        ``DecimalType`` has a scale rule and a 1..18 precision range;
+        ``DECFLOAT`` has an exponent and 16 or 34 significant digits.
+        """
+        assert type(dialect.parse_type(self._field_types()[25])) is (
+            FirebirdDecFloatType
+        )
+        assert dialect.parse_type(self._field_types()[25]) != DecimalType(
+            precision=34
+        )
+
+    @pytest.mark.parametrize("raw", ["DECFLOAT(16)", "DECFLOAT(34)", "INT128"])
+    def test_codes_need_firebird_4(self, raw):
+        """One gate, the same one the renderers use.
+
+        A Firebird 3 server never reports 24/25/26, so this branch is about the
+        parser agreeing with the formatters rather than about a column that can
+        occur — and the agreement is what keeps a 3.0 dialect from answering with
+        a narrower *real* type, which would render a different column silently.
+        """
+        dialect = FirebirdDialect((3, 0))
+        parsed = dialect.parse_type(raw)
+        assert type(parsed) is CustomType
+        assert parsed.raw == raw
+        assert dialect.supports_data_type_firebird_decfloat() is False
+        assert dialect.supports_data_type_firebird_int128() is False
+
+    def test_a_bare_decfloat_precision_is_the_documented_default(self, dialect):
+        """``DECFLOAT`` alone is legal Firebird; ``dec_prec`` defaults to 34."""
+        parsed = dialect.parse_type("DECFLOAT")
+        assert isinstance(parsed, FirebirdDecFloatType)
+        assert parsed.precision == 34
+
+    def test_an_unlisted_decfloat_width_is_not_rounded(self, dialect):
+        """The dialect must not pick a width the declaration never named."""
+        with pytest.raises(ValueError, match="16 or 34"):
+            dialect.parse_type("DECFLOAT(20)")
+
+
+class TestFloatAndBlobSubTypeIdentityBranches:
+    """The identity fields Firebird either cannot or must not write.
+
+    Documentation-based, not measured. ``fbclient`` is not installed on this
+    machine, so no server confirmed any of these facts; the authorities are the
+    Firebird 4.0 and 5.0 language references — chapter 3, §3.1 Integer Data Types
+    ("Firebird does not support an unsigned integer data type"), §3.2.1.1 /
+    §3.12 for ``FLOAT(bin_prec)``, and §3.4.2 / §3.4.3 / §3.12 for the
+    date-time declarations that take no precision — plus Firebird 4.0 release
+    notes CORE-6109 for the ``FLOAT(p)`` meaning change.
+    """
+
+    def test_float_precision_branch(self):
+        dialect = FirebirdDialect((4, 0))
+        assert dialect.format_data_type(FloatType()) == ("FLOAT", ())
+        assert dialect.format_data_type(
+            FirebirdFloatType(precision=24)
+        ) == ("FLOAT(24)", ())
+        # 25..53 is the documented double-precision half, not an error:
+        # "1 - 24: 32-bit single precision; 25 - 53: 64-bit double precision"
+        # (§3.2.1.1, Table 3.2). The generic ``FloatType`` renderer used to
+        # reject it while this one accepted it.
+        assert dialect.format_data_type(FloatType(precision=53)) == ("FLOAT(53)", ())
+        assert dialect.format_data_type(
+            FirebirdFloatType(precision=53)
+        ) == ("FLOAT(53)", ())
+
+    def test_float_precision_branch_is_closed_below_firebird_4(self):
+        """Both renderers, because the 3.0 ``FLOAT(p)`` counted decimal digits.
+
+        CORE-6109: ``FLOAT(p)`` became binary-precision in 4.0, and the 3.0
+        reference's declaration syntax is ``FLOAT | DOUBLE PRECISION`` with no
+        argument at all — so the same text names different columns either side of
+        that boundary and neither renderer may write it without knowing which
+        server is there.
+        """
+        for data_type in (FloatType(precision=24), FirebirdFloatType(precision=24)):
+            with pytest.raises(UnsupportedFeatureError, match="FLOAT"):
+                FirebirdDialect((3, 0)).format_data_type(data_type)
+
+    @pytest.mark.parametrize("cls", [TimeType, TimestampType, DateTimeType])
+    def test_temporal_precision_branch_is_closed(self, cls):
+        """No Firebird ``TIME``/``TIMESTAMP``/``DATE`` declaration takes one.
+
+        §3.4.2, §3.4.3 and §3.12 give the productions with no argument, while
+        fractional seconds are stored to ten-thousandths of a second whatever the
+        declaration says. ``precision`` is in each concept's ``PARAMETERS``, so
+        dropping it would render two declarations the framework calls different
+        columns as the same SQL while reporting success.
+        """
+        with pytest.raises(UnsupportedFeatureError, match="precision"):
+            FirebirdDialect((4, 0)).format_data_type(cls(precision=6))
+        # precision=None is the ordinary case and renders unchanged.
+        assert FirebirdDialect((4, 0)).format_data_type(cls()) == (
+            FirebirdDialect((4, 0)).format_data_type(cls(precision=None))
+        )
+
+    def test_blob_sub_type_declares_no_identity(self):
+        assert FirebirdBlobSubType.PARAMETERS == ()
+        assert FirebirdBlobSubType().identity() == ()
+
+    def test_blob_sub_type_unsigned_branch_is_closed(self):
+        dialect = FirebirdDialect((4, 0))
+        with pytest.raises(UnsupportedFeatureError, match="UNSIGNED"):
+            dialect.format_data_type(FirebirdBlobSubType(unsigned=True))
+
+    @pytest.mark.parametrize("cls", [
+        TinyIntType, SmallIntType, IntegerType, BigIntType,
+    ])
+    def test_core_integer_unsigned_branch_is_closed(self, cls):
+        with pytest.raises(UnsupportedFeatureError, match="UNSIGNED"):
+            FirebirdDialect((4, 0)).format_data_type(cls(unsigned=True))
 
 
 class TestReturningBranches:

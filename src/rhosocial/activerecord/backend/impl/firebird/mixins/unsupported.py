@@ -13,7 +13,10 @@ if TYPE_CHECKING:  # pragma: no cover
     from rhosocial.activerecord.backend.expression import bases
     from rhosocial.activerecord.backend.expression.query_parts import QualifyClause
 
-_SUGGESTION_ARRAY = "Firebird does not support array types. Use separate tables or BLOB."
+_SUGGESTION_ARRAY = (
+    "Firebird has array column types, but not the ARRAY[...] constructor this "
+    "renderer writes: declare the column as T [n] and reach it with a subscript."
+)
 _SUGGESTION_GRAPH_MATCH = "Firebird does not support graph MATCH clause."
 _SUGGESTION_ORDERED_SET_AGG = "Firebird does not support ordered-set aggregate functions (WITHIN GROUP)."
 _SUGGESTION_QUALIFY = "Firebird does not support QUALIFY clause. Use subquery or CTE."

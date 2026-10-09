@@ -146,6 +146,7 @@ from .mixins import (
     FirebirdIntrospectionMixin,
     FirebirdPartitionMixin,
     FirebirdTypeSupportMixin,
+    FirebirdColumnSuggestionMixin,
     FirebirdDomainMixin,
     FirebirdExceptionMixin,
     FirebirdRoutineMixin,
@@ -157,10 +158,10 @@ from .mixins import (
     FirebirdDatabaseMixin,
     FirebirdTransactionMixin,
     FirebirdExpressionMixin,
-    FirebirdWindowFunctionMixin,
     FirebirdDateTimeMixin,
     FirebirdDQLMixin,
     FirebirdCollationMixin,
+    FirebirdJSONMixin,
     FirebirdIdentifierMixin,
     FirebirdNamespaceMixin,
     FirebirdCTEMixin,
@@ -206,6 +207,7 @@ from .protocols import (
     FirebirdExceptionSupport,
     FirebirdContextVariableSupport,
     FirebirdDomainSupport,
+    FirebirdTypeSupport,
 )
 
 if TYPE_CHECKING:
@@ -214,7 +216,10 @@ if TYPE_CHECKING:
         TableConstraint,
     )
 
-_SUGGESTION_ARRAY = "Firebird does not support array types. Use separate tables or BLOB."
+_SUGGESTION_ARRAY = (
+    "Firebird has array column types, but not the ARRAY[...] constructor this "
+    "renderer writes: declare the column as T [n] and reach it with a subscript."
+)
 _SUGGESTION_GRAPH_MATCH = "Firebird does not support graph MATCH clause."
 _SUGGESTION_ORDERED_SET_AGG = "Firebird does not support ordered-set aggregate functions (WITHIN GROUP)."
 _SUGGESTION_QUALIFY = "Firebird does not support QUALIFY clause. Use subquery or CTE."
@@ -239,10 +244,10 @@ class FirebirdDialect(
     # Protocol and skip the base constructor entirely.
     FirebirdTransactionMixin,    # Before TransactionControlMixin
     FirebirdExpressionMixin,     # Before ExpressionMixin
-    FirebirdWindowFunctionMixin, # Before WindowFunctionMixin
     FirebirdDateTimeMixin,       # Before DateTimeMixin
     FirebirdDQLMixin,            # Before DQLMixin
     FirebirdCollationMixin,      # Before CollationMixin
+    FirebirdJSONMixin,           # Before JSONMixin
     FirebirdIdentifierMixin,     # Before IdentifierMixin
     FirebirdNamespaceMixin,      # Before RelationSourceMixin; spells one level, refuses the rest
     FirebirdCTEMixin,            # Before CTEMixin
@@ -305,6 +310,10 @@ class FirebirdDialect(
     TemporalTableMixin,
 
     GraphMixin,
+    # Before PartitionMixin: the backend block below comes later, so
+    # format_partition_clause was never called and raised TypeError, and the
+    # nine partition probes answered for the core.
+    FirebirdPartitionMixin,
     PartitionMixin,
     TruncateMixin,
     SchemaMixin,
@@ -452,8 +461,20 @@ class FirebirdDialect(
     FirebirdCollationSupport,
     FirebirdExceptionSupport,
     FirebirdContextVariableSupport,
-    FirebirdPartitionMixin,
+    # The column side of the type protocol, listed immediately after the DDL
+    # side it is deliberately independent of: FirebirdTypeSupportMixin answers
+    # which DataType a column is declared as, FirebirdColumnSuggestionMixin
+    # answers which ColumnClass a field's value carries. They are composed
+    # adjacently because that is the only relationship between them -- neither
+    # reads the other -- and because the two Firebird UNSUPPORTED entries
+    # (dict, the container family) are the reason the split matters here.
+    FirebirdColumnSuggestionMixin,
     FirebirdTypeSupportMixin,
+    # Must come AFTER FirebirdTypeSupportMixin: a dialect's bases resolve left to
+    # right, and this Protocol restates the firebird_* formatter and support names
+    # with empty bodies. Listed first it would shadow every one of the real
+    # implementations and the dialect would answer None for all of them.
+    FirebirdTypeSupport,
 ):
     """Firebird dialect implementation that adapts to Firebird version.
 
