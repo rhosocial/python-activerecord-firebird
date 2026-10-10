@@ -17,7 +17,7 @@ from .sequence import FirebirdSequenceMixin
 from .blob import FirebirdBlobMixin
 from .introspection import FirebirdIntrospectionMixin
 from .types import FirebirdTypeSupportMixin
-from .column_suggestion import FirebirdColumnSuggestionMixin
+from .column_type import FirebirdColumnTypeMixin
 from .partition import FirebirdPartitionMixin
 from .ddl_alter_table_modifier import FirebirdAlterTableModifierMixin
 from .domain import FirebirdDomainMixin
@@ -66,7 +66,7 @@ __all__ = [
     "FirebirdBlobMixin",
     "FirebirdIntrospectionMixin",
     "FirebirdTypeSupportMixin",
-    "FirebirdColumnSuggestionMixin",
+    "FirebirdColumnTypeMixin",
     "FirebirdPartitionMixin",
     "FirebirdAlterTableModifierMixin",
     "FirebirdDomainMixin",

@@ -146,7 +146,7 @@ from .mixins import (
     FirebirdIntrospectionMixin,
     FirebirdPartitionMixin,
     FirebirdTypeSupportMixin,
-    FirebirdColumnSuggestionMixin,
+    FirebirdColumnTypeMixin,
     FirebirdDomainMixin,
     FirebirdExceptionMixin,
     FirebirdRoutineMixin,
@@ -463,12 +463,12 @@ class FirebirdDialect(
     FirebirdContextVariableSupport,
     # The column side of the type protocol, listed immediately after the DDL
     # side it is deliberately independent of: FirebirdTypeSupportMixin answers
-    # which DataType a column is declared as, FirebirdColumnSuggestionMixin
+    # which DataType a column is declared as, FirebirdColumnTypeMixin
     # answers which ColumnClass a field's value carries. They are composed
     # adjacently because that is the only relationship between them -- neither
-    # reads the other -- and because the two Firebird UNSUPPORTED entries
+    # reads the other -- and because the Firebird entries that answer None
     # (dict, the container family) are the reason the split matters here.
-    FirebirdColumnSuggestionMixin,
+    FirebirdColumnTypeMixin,
     FirebirdTypeSupportMixin,
     # Must come AFTER FirebirdTypeSupportMixin: a dialect's bases resolve left to
     # right, and this Protocol restates the firebird_* formatter and support names
