@@ -131,6 +131,17 @@ from rhosocial.activerecord.backend.dialect.mixins import (
     DDLColumnMixin,
     UserDefinedTypeMixin,
     TransactionControlMixin,
+    # TRIM/LPAD/RPAD are nodes with default formatters, and Firebird spells all
+    # three natively -- ``TRIM([where] [what] FROM str)`` where ``what`` is a
+    # whole string repeated rather than a character set, and
+    # ``LPAD``/``RPAD(str, endlen, padstr)`` (fblangref functions-string) --
+    # so the shared defaults are the answer and no override is needed. REPEAT
+    # is deliberately absent: Firebird has no such function (live-verified
+    # 2026-10-09), so ``format_repeat_expression`` stays refused on this
+    # backend rather than emitting SQL the server rejects.
+    LpadMixin,
+    RpadMixin,
+    TrimMixin,
 )
 
 from .mixins.version_boundaries import _norm_version
@@ -283,6 +294,17 @@ class FirebirdDialect(
     FirebirdSequenceMixin,      # Must be before SequenceMixin
     SequenceMixin,
     FirebirdBlobMixin,
+    # TRIM/LPAD/RPAD are nodes with default formatters, and Firebird spells all
+    # three natively -- ``TRIM([where] [what] FROM str)`` where ``what`` is a
+    # whole string repeated rather than a character set, and
+    # ``LPAD``/``RPAD(str, endlen, padstr)`` (fblangref functions-string) -- so
+    # the shared defaults are the answer here and no override is needed. REPEAT
+    # is deliberately absent: Firebird has no such function (live-verified
+    # 2026-10-09), so ``format_repeat_expression`` stays refused on this
+    # backend rather than emitting SQL the server rejects.
+    LpadMixin,
+    RpadMixin,
+    TrimMixin,
     FirebirdIntrospectionMixin, # Must be before IntrospectionMixin
     FirebirdDomainMixin,
     FirebirdExceptionMixin,
