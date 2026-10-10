@@ -11,7 +11,7 @@ INSERT. All tests are pure construction — no database connection.
 import pytest
 
 from rhosocial.activerecord.backend.dialect.exceptions import UnsupportedFeatureError
-from rhosocial.activerecord.backend.expression import Column
+from rhosocial.activerecord.backend.expression import Column, ComparisonPredicate, Literal
 from rhosocial.activerecord.backend.expression.objects import Table
 from rhosocial.activerecord.backend.expression.sources import NamedRelationRef
 from rhosocial.activerecord.backend.expression.statements import (
@@ -32,7 +32,9 @@ def _make_merge(dialect, when_matched=None, when_not_matched=None, by_source=Non
         dialect,
         target_table=Table(dialect, "tgt"),
         source=NamedRelationRef(dialect, Table(dialect, "src")),
-        on_condition=Column(dialect, "id", "tgt") == Column(dialect, "id", "src"),
+        on_condition=ComparisonPredicate(
+            dialect, "=", Column(dialect, "id", "tgt"), Column(dialect, "id", "src")
+        ),
         when_matched=when_matched or [],
         when_not_matched=when_not_matched or [],
         when_not_matched_by_source=by_source or [],
@@ -89,7 +91,9 @@ class TestMergeMatchedBranches:
     def test_matched_update_with_condition(self):
         dialect = FirebirdDialect((5, 0, 0))
         action = _update_action(dialect, name=True)
-        action.condition = Column(dialect, "active", "src") == True  # noqa: E712
+        action.condition = ComparisonPredicate(
+            dialect, "=", Column(dialect, "active", "src"), Literal(dialect, True)
+        )  # noqa: E712
         expr = _make_merge(dialect, when_matched=[action])
         sql, params = expr.to_sql()
         assert sql == (
