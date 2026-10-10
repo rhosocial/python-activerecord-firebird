@@ -29,11 +29,11 @@ from rhosocial.activerecord.backend.expression.column_types import (
     BinaryColumn,
     BooleanColumn,
     ColumnBase,
-    DateTimeColumn,
     IntegerColumn,
     JSONColumn,
     NumericColumn,
     StringColumn,
+    TimestampColumn,
     UUIDColumn,
 )
 from rhosocial.activerecord.backend.impl.firebird.dialect import FirebirdDialect
@@ -229,9 +229,9 @@ class TestBaseline:
             (str, StringColumn),
             (bytes, BinaryColumn),
             (bytearray, BinaryColumn),
-            (datetime.date, DateTimeColumn),
-            (datetime.time, DateTimeColumn),
-            (datetime.datetime, DateTimeColumn),
+            (datetime.date, TimestampColumn),
+            (datetime.time, TimestampColumn),
+            (datetime.datetime, TimestampColumn),
             (datetime.timedelta, NumericColumn),
             (uuid.UUID, UUIDColumn),
             (enum.Enum, StringColumn),
@@ -271,7 +271,7 @@ class TestBaseline:
         differ; see ``FirebirdTypeSupportMixin._LOSSY_SUBSTITUTIONS``.
         """
         aware = datetime.datetime(2026, 10, 9, 12, 0, tzinfo=datetime.timezone.utc)
-        assert resolve(dialect, type(aware)) is DateTimeColumn
+        assert resolve(dialect, type(aware)) is TimestampColumn
 
     def test_an_enum_subclass_resolves_to_the_string_class(self, dialect):
         assert resolve(dialect, Weekday) is StringColumn

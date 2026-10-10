@@ -107,10 +107,10 @@ from rhosocial.activerecord.backend.expression.column_types import (
     BinaryColumn,
     BooleanColumn,
     ColumnBase,
-    DateTimeColumn,
     IntegerColumn,
     NumericColumn,
     StringColumn,
+    TimestampColumn,
     UUIDColumn,
 )
 
@@ -152,9 +152,9 @@ FIREBIRD_COLUMN_TYPES: Dict[Any, Optional[Type[ColumnBase]]] = {
     # TIME ZONE type (see FirebirdTypeSupportMixin._LOSSY_SUBSTITUTIONS),
     # so a tz-aware field on this backend stores a local time unless the
     # author declares FirebirdTimeStampTzType, which is 4.0+ anyway.
-    datetime.date: DateTimeColumn,
-    datetime.time: DateTimeColumn,
-    datetime.datetime: DateTimeColumn,
+    datetime.date: TimestampColumn,
+    datetime.time: TimestampColumn,
+    datetime.datetime: TimestampColumn,
     # Firebird has no INTERVAL type; its own idiom for a duration is a
     # 64-bit count of 1/10000-second units, which is what the server's date
     # arithmetic uses internally. The driver also refuses a Python timedelta
