@@ -567,7 +567,7 @@ class TestReturningBranches:
     def test_update_returning_snapshot(self, dialect):
         update = UpdateExpression(
             dialect, Table(dialect, "users"), {"name": E.Literal(dialect, "Bob")},
-            where=E.Column(dialect, "id") == E.Literal(dialect, 7),
+            where=E.ComparisonPredicate(dialect, "=", E.Column(dialect, "id"), E.Literal(dialect, 7)),
             returning=ReturningClause(dialect, expressions=[E.Column(dialect, "id")]),
         )
         assert update.to_sql() == (
@@ -578,7 +578,7 @@ class TestReturningBranches:
     def test_delete_returning_wildcard_snapshot(self, dialect):
         delete = DeleteExpression(
             dialect, Table(dialect, "users"),
-            where=E.Column(dialect, "id") == E.Literal(dialect, 7),
+            where=E.ComparisonPredicate(dialect, "=", E.Column(dialect, "id"), E.Literal(dialect, 7)),
             returning=ReturningClause(dialect, expressions=[E.RawSQLExpression(dialect, "*")]),
         )
         assert delete.to_sql() == ('DELETE FROM "USERS" WHERE "ID" = ? RETURNING *', (7,))
@@ -975,7 +975,7 @@ class TestCreateTableRebuildSnapshots:
         pk = TableConstraint(dialect, TableConstraintType.PRIMARY_KEY, columns=["id"])
         check = TableConstraint(
             dialect, TableConstraintType.CHECK,
-            check_condition=E.Column(dialect, "amount") >= E.Literal(dialect, 0),
+            check_condition=E.ComparisonPredicate(dialect, ">=", E.Column(dialect, "amount"), E.Literal(dialect, 0)),
         )
         expr = CreateTableExpression(
             dialect, Table(dialect, "orders"),
