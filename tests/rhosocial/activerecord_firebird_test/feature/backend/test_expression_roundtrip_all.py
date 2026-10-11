@@ -23,14 +23,38 @@ not support. Each outcome here is named and asserted instead:
   belonging to its own tree. Each entry pins the exception type *and* a message
   fragment, so a class that starts failing for a different reason fails here
   rather than staying quietly green.
-* ``UnsupportedFeatureError`` from a class *not* named in the dict -- Firebird
-  does not model the feature. Asserted as exactly that type, so nothing else can
-  hide behind it.
+* ``UnsupportedFeatureError`` from a probe inside a formatter, for a class
+  *not* named in the dict -- Firebird does not model the feature. Asserted as
+  exactly that type, so nothing else can hide behind it.
+* ``UnsupportedFeatureError`` from the dispatch, for a class not named in the
+  dict -- the dialect declares no ``format_*`` method for it at all, which is
+  a wiring fact about this backend rather than a capability answer. The
+  method the dispatch names must be a row in :data:`UNMODELLED_FORMATTERS`,
+  so the gap is a decision with a reason rather than an omission; see
+  :func:`_dispatched_formatter`.
 * **anything else** -- a failure naming the class and the exception.
 
 The dict is read before the ``UnsupportedFeatureError`` branch, because core now
 reports a *missing formatter* through that same type; see
 :func:`assert_sql_roundtrip_classified`.
+
+Why the dispatch's refusal is no longer allowed on its type alone
+=================================================================
+
+The two ``UnsupportedFeatureError`` outcomes above were one branch until core
+turned ``trim``/``lpad``/``rpad``/``repeat`` into dedicated nodes. Firebird
+spells ``lpad``/``rpad``/``trim`` natively and has no ``REPEAT`` function, so
+``RepeatExpression`` reaches a dispatch that finds no
+``format_repeat_expression`` -- and before this split, that refusal read as
+"Firebird lacks the feature" and passed, indistinguishable from a probe
+declining something Firebird genuinely declines. The exception itself records
+who is refusing: a probe names the feature, while the dispatch frames the
+formatting method it could not find as ``the '<method>' statement`` -- see
+:func:`_dispatched_formatter`. Only the dispatch's refusal is a wiring fact
+about this backend, so only it must be accounted for:
+:meth:`TestMatrixIntegrity.test_unmodelled_formatter_list_is_exact` pins
+:data:`UNMODELLED_FORMATTERS` in both directions, and a method nobody listed
+fails the run.
 
 And when a class cannot be constructed
 ======================================
@@ -144,6 +168,7 @@ from rhosocial.activerecord.backend.expression.statements.dml import (
     MergeActionType,
 )
 from rhosocial.activerecord.backend.expression.types import IntegerType
+from rhosocial.activerecord.backend.expression.types.custom import CustomType
 from rhosocial.activerecord.testsuite.utils.expression import (
     collect_expression_classes,
     make_instance,
@@ -652,6 +677,14 @@ def register_specials():
         ),
     )
 
+    # -- core CUSTOM needs the type name its ``raw`` slot exists to carry -----
+    # ``raw`` defaults to the empty string, the filler skips it, and the class
+    # refuses that empty name while constructing -- so it builds fine once it
+    # is handed a real one, and there is nothing to skip.
+    register_special_constructor(
+        "types.custom.CustomType", lambda d: CustomType(d, "VARCHAR(10)")
+    )
+
 
 register_specials()
 
@@ -697,6 +730,21 @@ UNCONSTRUCTIBLE = {
     # LEGITIMATE_NON_RENDERS -- against the `format_xml*` methods Firebird
     # declares no name for, which was the second half of each old reason and is
     # still the reason none of them can render.
+
+    # UUIDCastExpression refuses in __init__, not in to_sql(). Firebird has no
+    # cast from text to a UUID, so the refusal is the same whatever the
+    # argument, and no registered constructor can hand it something that
+    # changes the answer.
+    "rhosocial.activerecord.backend.expression.uuid.UUIDCastExpression":
+        "refuses in __init__ -- Firebird has no cast from text to a UUID.",
+    # The nil/max constant and the generation node refuse the same way, and for
+    # the same reason: Firebird spells no UUID SQL, so each says so from
+    # __init__ whatever it is handed. Measured with valid arguments -- an
+    # invalid ``which`` raises ValueError first and would have hidden this.
+    "rhosocial.activerecord.backend.expression.uuid.UUIDConstantExpression":
+        "refuses in __init__ -- Firebird spells no UUID constants.",
+    "rhosocial.activerecord.backend.expression.uuid.UUIDGenerationExpression":
+        "refuses in __init__ -- Firebird has no server-side UUID generator.",
 }
 
 
@@ -835,7 +883,7 @@ LEGITIMATE_NON_RENDERS = {
     ),
 
     # ---- a generic type the Firebird type layer does not spell ------------
-    # `FirebirdTypeSupportMixin` declares no formatter for these four generic
+    # `FirebirdTypeSupportMixin` declares no formatter for these seven generic
     # names. An unsupported *type* is a dialect gap and is reported as one, which
     # is why these are TypeError and not UnsupportedFeatureError.
     "rhosocial.activerecord.backend.expression.types.array.ArrayType": (
@@ -844,11 +892,22 @@ LEGITIMATE_NON_RENDERS = {
     "rhosocial.activerecord.backend.expression.types.datetime_.IntervalType": (
         TypeError, "does not support the generic type 'interval'",
     ),
+    # TIME WITH TIME ZONE and TIMESTAMP WITH TIME ZONE exist in Firebird, but
+    # only under their own classes; the generic names dispatch to nothing.
+    "rhosocial.activerecord.backend.expression.types.datetime_.TimeTzType": (
+        TypeError, "does not support the generic type 'timetz'",
+    ),
+    "rhosocial.activerecord.backend.expression.types.datetime_.TimestampTzType": (
+        TypeError, "does not support the generic type 'timestamptz'",
+    ),
     "rhosocial.activerecord.backend.expression.types.json_.JsonType": (
         TypeError, "does not support the generic type 'json'",
     ),
     "rhosocial.activerecord.backend.expression.types.json_.JsonBType": (
         TypeError, "does not support the generic type 'jsonb'",
+    ),
+    "rhosocial.activerecord.backend.expression.types.xml_.XmlType": (
+        TypeError, "does not support the generic type 'xml'",
     ),
 
     # ---- type DDL: Firebird has no user-defined types ---------------------
@@ -958,6 +1017,119 @@ LEGITIMATE_NON_RENDERS = {
 
 
 # ---------------------------------------------------------------------------
+# The dispatch gap: a missing formatter is a decision, not an omission
+# ---------------------------------------------------------------------------
+#
+# ``to_sql()`` reports a dialect that names no formatter for a class through
+# the same ``UnsupportedFeatureError`` a capability probe uses, so the type
+# alone cannot say "this backend never wired the feature in". The frame the
+# dispatch puts around the method name can, and it is the only place in the
+# tree that opens it -- see :func:`_dispatched_formatter`.
+
+#: The two ends of the frame ``to_sql()`` puts around a formatting method name
+#: in the ``feature_name`` of the ``UnsupportedFeatureError`` it raises for a
+#: dialect that has no such formatter.
+_DISPATCH_FEATURE_PREFIX = "the '"
+_DISPATCH_FEATURE_SUFFIX = "' statement"
+
+
+def _dispatched_formatter(exc):
+    """The formatting method *exc* says the dialect does not have, or ``None``.
+
+    ``None`` means *exc* is not the dispatch reporting a missing formatter --
+    it is a probe inside a formatter that refused a feature, which is the
+    ``"unsupported"`` branch and needs no row anywhere.
+
+    Args:
+        exc: An :class:`UnsupportedFeatureError` raised out of ``to_sql()``.
+
+    Returns:
+        The method name out of the ``feature_name`` frame, or ``None`` when
+        *exc* came from a probe rather than from the dispatch.
+    """
+    feature = exc.feature_name
+    if not feature.startswith(_DISPATCH_FEATURE_PREFIX):
+        return None
+    if not feature.endswith(_DISPATCH_FEATURE_SUFFIX):
+        return None
+    method = feature[len(_DISPATCH_FEATURE_PREFIX) : len(feature) - len(_DISPATCH_FEATURE_SUFFIX)]
+    return method if method else None
+
+
+#: Formatters Firebird declares no implementation of, grouped by the feature
+#: that is absent, each group naming every method the matrix's classes need.
+#:
+#: A class needing one of these fails with ``UnsupportedFeatureError`` naming
+#: the method it wanted, and :func:`assert_sql_roundtrip_classified` asserts
+#: that method is a row here. :meth:`TestMatrixIntegrity.\
+#: test_unmodelled_formatter_list_is_exact` pins the table in both directions:
+#: a formatter that starts existing moves its classes out of the table and the
+#: pin fails until the entry goes, and a class that starts needing a method
+#: outside the table fails outright instead of passing as "unsupported".
+#:
+#: These are not defects: they are features Firebird does not have, which the
+#: shared renderer reports by naming the method it could not find.
+#: ``RepeatExpression`` is the one that made the accounting necessary:
+#: Firebird has no ``REPEAT`` function, the node dispatches to a formatter no
+#: base in this dialect provides, and before the table existed that refusal
+#: was allowed on its type alone.
+UNMODELLED_FORMATTERS = {
+    "SQL/PGQ property graphs (Firebird declares no property graph, so neither "
+    "the DDL nor the row source nor the graph object renders)": (
+        "format_alter_property_graph_statement",
+        "format_create_property_graph_statement",
+        "format_drop_property_graph_statement",
+        "format_graph_table_expression",
+        "format_graph_columns_clause",
+        "format_table_properties_clause",
+        "format_vertex_table",
+        "format_edge_table",
+        "format_property_graph_object",
+    ),
+    "the object kinds Firebird does not have (no materialized view, no "
+    "foreign table, no synonym)": (
+        "format_materialized_view_object",
+        "format_foreign_table_object",
+        "format_synonym_object",
+    ),
+    "ALTER DATABASE (the two database statements Firebird declares are CREATE "
+    "and DROP, which this backend overrides with its own operational option "
+    "set)": ("format_alter_database_statement",),
+    "PIVOT / UNPIVOT (Firebird has no PIVOT keyword, and no formatter for "
+    "either)": (
+        "format_pivot_expression",
+        "format_unpivot_expression",
+    ),
+    "REPEAT (Firebird has no REPEAT function; the node exists for the "
+    "backends that spell it natively, and this dialect declares no formatter "
+    "to emulate it)": ("format_repeat_expression",),
+    "the TableSource root (every concrete row source overrides its formatter; "
+    "the root carries nothing but an alias and is never rendered)": ("format_table_source",),
+    "SQL/XML (Firebird 4 has no XML query functions, so the dialect declares "
+    "no ``format_xml*`` method at all)": (
+        "format_xmlagg_expression",
+        "format_xmlattributes_expression",
+        "format_xmlcomment_expression",
+        "format_xmlconcat_expression",
+        "format_xmlelement_expression",
+        "format_xmlexists_expression",
+        "format_xmlforest_expression",
+        "format_xmlpi_expression",
+        "format_xmlparse_expression",
+        "format_xmlquery_expression",
+        "format_xmlroot_expression",
+        "format_xmlserialize_expression",
+        "format_xmltable_expression",
+    ),
+}
+
+
+def _unmodelled_methods():
+    """The flat set of formatter names in :data:`UNMODELLED_FORMATTERS`."""
+    return {method for methods in UNMODELLED_FORMATTERS.values() for method in methods}
+
+
+# ---------------------------------------------------------------------------
 # The local SQL assertion: classify the outcome instead of swallowing it
 # ---------------------------------------------------------------------------
 
@@ -974,6 +1146,10 @@ def assert_sql_roundtrip_classified(fqn, instance, dialect):
     * ``UnsupportedFeatureError`` from a class *not* named in the dict -- Firebird
       does not model the feature. Asserted as exactly that type, so a subclass
       raised for an unrelated reason is still visible rather than passing.
+    * ``UnsupportedFeatureError`` naming a formatting method, for a class not
+      named in the dict -- the dispatch found nothing, which is a wiring fact
+      about this backend rather than a capability answer. The method must be
+      in :data:`UNMODELLED_FORMATTERS`; the table entry is the reason.
     * **anything else** -- a failure naming the class and the exception.
 
     The dict is consulted before the ``UnsupportedFeatureError`` branch, not
@@ -1006,6 +1182,17 @@ def assert_sql_roundtrip_classified(fqn, instance, dialect):
             )
             return "non-render"
         if type(exc) is UnsupportedFeatureError:
+            method = _dispatched_formatter(exc)
+            if method is not None:
+                assert method in _unmodelled_methods(), (
+                    f"{fqn}: to_sql() reported that {exc.dialect_name} declares no "
+                    f"{method!r}, which is not in UNMODELLED_FORMATTERS.\n"
+                    f"  Either Firebird now needs that formatter -- in which case "
+                    f"the class should render and this entry should go -- or the "
+                    f"feature is absent and the method belongs in that table with "
+                    f"its reason."
+                )
+                return "unmodelled"
             return "unsupported"
         raise AssertionError(
             f"{fqn}: to_sql() raised {type(exc).__name__}, which is neither a "
@@ -1137,6 +1324,61 @@ class TestMatrixIntegrity:
                 f"{exc_info.value}"
             )
 
+    def test_unmodelled_formatter_list_is_exact(self, fb4_dialect):
+        """Pin the unmodelled-formatter table against what the dialect lacks.
+
+        Observed rather than assumed: for each class the matrix covers, either
+        it renders or it fails, and every dispatch refusal is attributed to the
+        method it named -- including the classes pinned in
+        :data:`LEGITIMATE_NON_RENDERS`, whose dispatch failures those pins
+        record class by class. Then the table is compared with the set
+        observed, in both directions, so:
+
+        * a method in the table that Firebird now implements fails here,
+          because its classes render and are no longer attributed to it --
+          which is the moment to delete the entry rather than leave a lie in
+          the table;
+        * a class that starts needing a method outside the table fails the
+          per-class assertion in :func:`assert_sql_roundtrip_classified`
+          instead of being absorbed into "unsupported".
+
+        This is the regression test for the pad/trim incident. Core turned
+        ``trim``/``lpad``/``rpad``/``repeat`` into dedicated nodes; Firebird
+        spells three of them natively and has no ``REPEAT`` function, so
+        ``RepeatExpression`` is exactly the shape this test exists for: a
+        class whose formatter no base in this dialect provides, which before
+        the split was allowed through as "Firebird lacks the feature" without
+        anything asking whether the feature was even claimed.
+        """
+        observed = set()
+        for fqn in sorted(REGISTERED):
+            instance, source = make_instance(REGISTERED[fqn], fb4_dialect)
+            if instance is None:
+                continue
+            try:
+                instance.to_sql()
+            except UnsupportedFeatureError as exc:
+                method = _dispatched_formatter(exc)
+                if method is not None:
+                    observed.add(method)
+                continue
+            except Exception:
+                continue
+
+        declared = _unmodelled_methods()
+        assert not (observed - declared), (
+            "classes need formatters that are not in UNMODELLED_FORMATTERS: "
+            f"{sorted(observed - declared)}. Add each with the feature that is "
+            f"absent and why -- or mix the formatter in, in which case the "
+            f"classes render and the entry is not needed."
+        )
+        assert not (declared - observed), (
+            "UNMODELLED_FORMATTERS names formatters no class actually needs: "
+            f"{sorted(declared - observed)}. Firebird may have gained one of "
+            f"these, in which case the classes needing it now render and the "
+            f"entry should go."
+        )
+
     def test_matrix_covers_both_packages(self):
         """The matrix covers every concrete class both packages define.
 
@@ -1217,6 +1459,8 @@ class TestMatrixIntegrity:
             + ", ".join(f"{count} {name}" for name, count in sorted(census.items()))
             + f" (of {len(REGISTERED)} collected)"
         )
+        for feature, methods in sorted(UNMODELLED_FORMATTERS.items()):
+            print(f"  not modelled: {feature} ({len(methods)} formatters)")
 
 
 # ---------------------------------------------------------------------------

@@ -37,6 +37,7 @@ from .features import (
     FirebirdTableSupport,
     FirebirdTransactionSupport,
     FirebirdTriggerSupport,
+    FirebirdTypeSupport,
     FirebirdUDFSupport,
     FirebirdWindowFunctionSupport,
 )
@@ -75,4 +76,5 @@ __all__ = [
     "FirebirdContextVariableSupport",
     "FirebirdNamespaceSupport",
     "FirebirdRowSourceSupport",
+    "FirebirdTypeSupport",
 ]

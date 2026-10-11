@@ -309,17 +309,16 @@ class TestAlterDomain:
     @pytest.mark.parametrize(
         ("data_type_name", "expected"),
         (
-            ("DECFLOAT", "TYPE DECFLOAT(16)"),
+            # A bare ``DECFLOAT`` resolves to ``DECFLOAT(34)``: the reference
+            # gives ``dec_prec`` as "either 16 or 34; Default is 34" (§3.2.2.1),
+            # and both the parser and the constructor now follow it. This row
+            # used to expect ``DECFLOAT(16)``, which was neither.
+            ("DECFLOAT", "TYPE DECFLOAT(34)"),
             ("DECFLOAT(16)", "TYPE DECFLOAT(16)"),
             ("INT128", "TYPE INT128"),
             ("TIME WITH TIME ZONE", "TYPE TIME WITH TIME ZONE"),
             ("TIMESTAMP WITH TIME ZONE", "TYPE TIMESTAMP WITH TIME ZONE"),
             ("TIME WITHOUT TIME ZONE", "TYPE TIME WITHOUT TIME ZONE"),
-            ("TIME(6) WITHOUT TIME ZONE", "TYPE TIME(6) WITHOUT TIME ZONE"),
-            (
-                "TIMESTAMP(6) WITH TIME ZONE",
-                "TYPE TIMESTAMP(6) WITH TIME ZONE",
-            ),
         ),
     )
     def test_firebird_4_data_type_names_are_version_gated(
@@ -355,6 +354,34 @@ class TestAlterDomain:
             FirebirdSetDomainDataTypeAction(
                 FirebirdDialect((4, 0, 0)),
                 data_type_name="DECFLOAT(17)",
+            )
+
+    @pytest.mark.parametrize("data_type_name", [
+        "TIMESTAMP(6) WITH TIME ZONE",
+        "TIME(6) WITH TIME ZONE",
+        "TIME(6) WITHOUT TIME ZONE",
+        "TIMESTAMP(6)",
+        "TIME(6)",
+        "DATE(4)",
+    ])
+    def test_a_precision_on_a_temporal_name_is_refused(self, data_type_name):
+        """``SET DOMAIN ... TYPE`` cannot declare one either.
+
+        This path has no dialect of its own — it parses the name with
+        ``_parse_firebird_data_type_name`` and hands the class to the formatter —
+        so the refusal has to be made where the name is recognised, or a
+        ``SET TYPE`` could build a domain from a declaration the column syntax
+        does not contain. Before, ``TYPE TIMESTAMP(6) WITH TIME ZONE`` was
+        emitted verbatim.
+
+        §3.4.2, §3.4.3 and §3.12 give the productions with no argument (4.0 and
+        5.0 alike); FirebirdSQL/firebird#4779 (CORE-4459) asks for the precision
+        and is still open.
+        """
+        with pytest.raises(ValueError, match="4779"):
+            FirebirdSetDomainDataTypeAction(
+                FirebirdDialect((4, 0, 0)),
+                data_type_name=data_type_name,
             )
 
     def test_multiple_actions_use_firebird_order(self):
@@ -633,9 +660,13 @@ class TestDispatchAndSerialization:
             FirebirdBlobSubType(dialect),
             FirebirdCharType(dialect, length=5),
             FirebirdVarCharType(dialect, length=40),
-            FirebirdTimeStampTzType(dialect, precision=6),
-            FirebirdTimeWithoutTimeZoneType(dialect, precision=6),
-            FirebirdTimeTzType(dialect, precision=6),
+            # No ``precision`` on the zoned date-times: Firebird's ``TIME`` /
+            # ``TIMESTAMP`` declarations take no such argument (§3.4.2, §3.4.3,
+            # §3.12), so the codecs must not be asked to carry one. See
+            # ``TestFirebirdSetDomainDataTypeAction`` for the refusal.
+            FirebirdTimeStampTzType(dialect),
+            FirebirdTimeWithoutTimeZoneType(dialect),
+            FirebirdTimeTzType(dialect),
             FirebirdDecFloatType(dialect, precision=16),
             FirebirdInt128Type(dialect),
         )

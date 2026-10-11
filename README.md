@@ -27,6 +27,11 @@ _372d042_
 - **CI-tested server versions**: 5, 6-snapshot
 - **Published**: PyPI `1.0.0.dev1`
 
+Supported Python versions run from 3.11 through 3.15 inclusive; the
+`requires-python = ">=3.11"` pin is a floor, not a cap. The dynamic `Python`
+badge is rendered from the PyPI classifiers, so it shows 3.15 only after the
+next publish.
+
 Firebird 3 or newer is required in practice: the gate table below shows a
 large block of features switching on at 3.0, including `IDENTITY`, native
 `BOOLEAN`, CTEs, window functions, `FOR UPDATE` and generators-as-sequences.

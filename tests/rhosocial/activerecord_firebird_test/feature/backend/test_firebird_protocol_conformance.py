@@ -86,6 +86,14 @@ FIREBIRD_PROTOCOLS = [
     dialect_protocols.CTESupport,
     dialect_protocols.CollationSupport,
     dialect_protocols.ColumnAttributeSupport,
+    # The column-type table: `FirebirdColumnTypeMixin` answers
+    # `suggested_column_types()` for all eighteen common Python types -- five
+    # of them deliberately `None`, a decision the partition of the protocol
+    # still classifies as "implemented" -- and `suggested_extra_column_types()`
+    # with nothing of Firebird's own. The dialect composes the mixin, so the
+    # table the model layer reads for a field's annotation is declared here
+    # rather than left for another dialect to answer.
+    dialect_protocols.ColumnTypeSupport,
     dialect_protocols.CommentSupport,
     dialect_protocols.ConstraintSupport,
     dialect_protocols.CreateDomainSupport,
@@ -105,7 +113,7 @@ FIREBIRD_PROTOCOLS = [
     dialect_protocols.CreateTypeSupport,
     dialect_protocols.CreateViewSupport,
     dialect_protocols.DataTypeSupport,
-    dialect_protocols.DateTimeSupport,
+    dialect_protocols.TimestampSupport,
     dialect_protocols.DqlOrderSupport,
     dialect_protocols.DropDomainSupport,
     dialect_protocols.DropIndexSupport,
@@ -168,6 +176,11 @@ FIREBIRD_PROTOCOLS = [
 
 # Generic protocols FirebirdDialect intentionally does NOT implement.
 FIREBIRD_NOT_IMPLEMENTED = [
+    # UUID value expressions (generation / nil-max constants / cast) are not
+    # implemented yet on this dialect. Listed here so the omission is a
+    # recorded decision rather than a gap; move it to the implemented list
+    # when the mixin lands.
+    dialect_protocols.UUIDSupport,
     # --- Intentional non-support ---
     # Firebird databases are created and dropped outside the connection, so the
     # per-statement database protocols are not composed; FirebirdDatabaseMixin
