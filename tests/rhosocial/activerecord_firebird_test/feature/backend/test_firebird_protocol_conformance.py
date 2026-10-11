@@ -113,7 +113,7 @@ FIREBIRD_PROTOCOLS = [
     dialect_protocols.CreateTypeSupport,
     dialect_protocols.CreateViewSupport,
     dialect_protocols.DataTypeSupport,
-    dialect_protocols.DateTimeSupport,
+    dialect_protocols.TimestampSupport,
     dialect_protocols.DqlOrderSupport,
     dialect_protocols.DropDomainSupport,
     dialect_protocols.DropIndexSupport,
