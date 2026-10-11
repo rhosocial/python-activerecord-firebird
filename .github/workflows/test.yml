@@ -29,6 +29,12 @@ jobs:
           - { python-version: '3.12', firebird-version: '6-snapshot', port: 3051 }
           - { python-version: '3.13', firebird-version: '5', port: 3052 }
           - { python-version: '3.14', firebird-version: '6-snapshot', port: 3053 }
+          # Python 3.15 leg. GIL only: `firebird-driver` ships a universal
+          # (py3-none-any) wheel, which runs on 3.15 without a native build, but
+          # no cp315t distribution, so a free-threaded 3.15t leg has nothing to
+          # run and is deliberately not declared. Port 3054 is the next free
+          # slot in the 3050+ run used by this matrix.
+          - { python-version: '3.15', firebird-version: '6-snapshot', port: 3054 }
 
     services:
       firebird:
@@ -132,6 +138,10 @@ jobs:
           export PYTHONPATH=src:tests
           python -m pytest tests/ --tb=short -x -n auto --dist=loadgroup
 
+      # Coverage is pinned to the 3.14 / 6-snapshot combination to keep the
+      # emulator cost bounded. The 3.15 leg added above is a compatibility
+      # gate only and is deliberately excluded here: the guard pins
+      # python-version to 3.14, so it still selects exactly one leg.
       - name: Run tests with coverage (3.14 + 6-snapshot only)
         if: matrix.python-version == '3.14' && matrix.firebird-version == '6-snapshot'
         run: |
