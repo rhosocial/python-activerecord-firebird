@@ -15,11 +15,7 @@ Usage::
 from typing import Optional
 
 from .expression.types import (
-    FirebirdBlobSubType,
-    FirebirdDecimalType,
     FirebirdDecFloatType,
-    FirebirdDoubleType,
-    FirebirdFloatType,
     FirebirdInt128Type,
     FirebirdTimeTzType,
     FirebirdTimeStampTzType,

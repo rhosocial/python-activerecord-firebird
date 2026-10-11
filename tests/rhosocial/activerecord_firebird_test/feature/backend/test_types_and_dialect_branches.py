@@ -63,9 +63,8 @@ from rhosocial.activerecord.backend.impl.firebird.expression.generator import (
     NextValueForExpression,
 )
 from rhosocial.activerecord.backend.impl.firebird.expression.types import (
-    FirebirdBlobSubType,
     FirebirdDecFloatType,
-    FirebirdFloatType,
+    FloatType,
     FirebirdInt128Type,
     FirebirdTimeStampTzType,
     FirebirdTimeTzType,
@@ -488,7 +487,7 @@ class TestFloatAndBlobSubTypeIdentityBranches:
         dialect = FirebirdDialect((4, 0))
         assert dialect.format_data_type(FloatType()) == ("FLOAT", ())
         assert dialect.format_data_type(
-            FirebirdFloatType(precision=24)
+            FloatType(precision=24)
         ) == ("FLOAT(24)", ())
         # 25..53 is the documented double-precision half, not an error:
         # "1 - 24: 32-bit single precision; 25 - 53: 64-bit double precision"
@@ -496,21 +495,20 @@ class TestFloatAndBlobSubTypeIdentityBranches:
         # reject it while this one accepted it.
         assert dialect.format_data_type(FloatType(precision=53)) == ("FLOAT(53)", ())
         assert dialect.format_data_type(
-            FirebirdFloatType(precision=53)
+            FloatType(precision=53)
         ) == ("FLOAT(53)", ())
 
     def test_float_precision_branch_is_closed_below_firebird_4(self):
-        """Both renderers, because the 3.0 ``FLOAT(p)`` counted decimal digits.
+        """The 3.0 ``FLOAT(p)`` counted decimal digits.
 
         CORE-6109: ``FLOAT(p)`` became binary-precision in 4.0, and the 3.0
         reference's declaration syntax is ``FLOAT | DOUBLE PRECISION`` with no
         argument at all — so the same text names different columns either side of
-        that boundary and neither renderer may write it without knowing which
+        that boundary, so the renderer may not write it without knowing which
         server is there.
         """
-        for data_type in (FloatType(precision=24), FirebirdFloatType(precision=24)):
-            with pytest.raises(UnsupportedFeatureError, match="FLOAT"):
-                FirebirdDialect((3, 0)).format_data_type(data_type)
+        with pytest.raises(UnsupportedFeatureError, match="FLOAT"):
+            FirebirdDialect((3, 0)).format_data_type(FloatType(precision=24))
 
     @pytest.mark.parametrize("cls", [TimeType, TimestampType, DateTimeType])
     def test_temporal_precision_branch_is_closed(self, cls):
@@ -528,15 +526,6 @@ class TestFloatAndBlobSubTypeIdentityBranches:
         assert FirebirdDialect((4, 0)).format_data_type(cls()) == (
             FirebirdDialect((4, 0)).format_data_type(cls(precision=None))
         )
-
-    def test_blob_sub_type_declares_no_identity(self):
-        assert FirebirdBlobSubType.PARAMETERS == ()
-        assert FirebirdBlobSubType().identity() == ()
-
-    def test_blob_sub_type_unsigned_branch_is_closed(self):
-        dialect = FirebirdDialect((4, 0))
-        with pytest.raises(UnsupportedFeatureError, match="UNSIGNED"):
-            dialect.format_data_type(FirebirdBlobSubType(unsigned=True))
 
     @pytest.mark.parametrize("cls", [
         TinyIntType, SmallIntType, IntegerType, BigIntType,

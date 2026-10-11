@@ -52,10 +52,6 @@ from .dml import (
 from .execute_statement import FirebirdExecuteStatementExpression
 from .generator import GenIdExpression, NextValueForExpression
 from .types import (
-    FirebirdDecimalType,
-    FirebirdFloatType,
-    FirebirdDoubleType,
-    FirebirdBlobSubType,
     FirebirdCharType,
     FirebirdVarCharType,
     FirebirdTimeStampTzType,
@@ -75,10 +71,6 @@ __all__ = [
     "SetPosition",
     "GenIdExpression",
     "NextValueForExpression",
-    "FirebirdDecimalType",
-    "FirebirdFloatType",
-    "FirebirdDoubleType",
-    "FirebirdBlobSubType",
     "FirebirdCharType",
     "FirebirdVarCharType",
     "FirebirdTimeStampTzType",

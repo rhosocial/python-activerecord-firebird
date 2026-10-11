@@ -38,7 +38,10 @@ from rhosocial.activerecord.backend.expression.statements import (
 from rhosocial.activerecord.backend.expression.types import (
     ArrayType,
     DecimalType,
+    DoubleType,
+    FloatType,
     IntegerType,
+    TextType,
     VarCharType,
 )
 from rhosocial.activerecord.backend.impl.firebird.dialect import FirebirdDialect
@@ -50,12 +53,8 @@ from rhosocial.activerecord.backend.impl.firebird.expression import (
     FirebirdSetDomainDataTypeAction,
 )
 from rhosocial.activerecord.backend.impl.firebird.expression.types import (
-    FirebirdBlobSubType,
     FirebirdCharType,
     FirebirdDecFloatType,
-    FirebirdDecimalType,
-    FirebirdDoubleType,
-    FirebirdFloatType,
     FirebirdInt128Type,
     FirebirdTimeStampTzType,
     FirebirdTimeWithoutTimeZoneType,
@@ -634,11 +633,7 @@ class TestDispatchAndSerialization:
 
     def test_firebird_data_types_are_registered(self):
         classes = (
-            FirebirdDecimalType,
-            FirebirdFloatType,
-            FirebirdDoubleType,
-            FirebirdBlobSubType,
-            FirebirdCharType,
+                                            FirebirdCharType,
             FirebirdVarCharType,
             FirebirdTimeStampTzType,
             FirebirdTimeWithoutTimeZoneType,
@@ -654,10 +649,10 @@ class TestDispatchAndSerialization:
     def test_firebird_data_types_round_trip_in_all_codecs(self):
         dialect = FirebirdDialect((4, 0, 0))
         expressions = (
-            FirebirdDecimalType(dialect, precision=10, scale=2),
-            FirebirdFloatType(dialect),
-            FirebirdDoubleType(dialect),
-            FirebirdBlobSubType(dialect),
+            DecimalType(dialect, precision=10, scale=2),
+            FloatType(dialect),
+            DoubleType(dialect),
+            TextType(dialect),
             FirebirdCharType(dialect, length=5),
             FirebirdVarCharType(dialect, length=40),
             # No ``precision`` on the zoned date-times: Firebird's ``TIME`` /
