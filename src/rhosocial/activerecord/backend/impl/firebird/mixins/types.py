@@ -253,8 +253,35 @@ class FirebirdTypeSupportMixin(DDLTypeMixin, DDLTypeSupport):
         because that is what every caller but the three float/decimal paths
         passes, and this is a pre-existing helper whose callers must not all have
         to change to accommodate a new kind.
+
+        **The shape check runs before the refusal, and it is not a duplicate of
+        it.**  The expression collects ``unsigned`` without judging it, because
+        only the formatter knows which backend has to honour it, so a
+        non-boolean arrives here rather than being rejected at construction.  The
+        refusal below is a *truth* test and cannot see that case: ``unsigned=0``,
+        ``unsigned=""`` and ``unsigned=None`` are all falsy, so they would walk
+        straight past it and render a signed ``INTEGER`` — or a signed
+        ``DECIMAL(10, 2)`` — and report success, which is exactly the silent loss
+        this gate exists to prevent.  A truthy non-boolean (``"yes"``, ``1``)
+        would reach the refusal instead, but it would be named as a *feature*
+        the grammar cannot express when the actual problem is a value of the
+        wrong shape.  ``TypeError`` for the shape, ``UnsupportedFeatureError`` for
+        the genuine request, in that order; the two do not share a base class.
+
+        ``getattr`` rather than a plain attribute, for the same reason the rest
+        of this gate is written defensively: it is called for every numeric
+        formatter, including the ones for
+        :class:`~...expression.types.FirebirdBlobSubType`, whose ``PARAMETERS``
+        is narrowed to ``()`` precisely because ``unsigned`` is not a field of
+        its concept.
         """
-        if getattr(data_type, "unsigned", False):
+        unsigned = data_type.unsigned
+        if not isinstance(unsigned, bool):
+            raise TypeError(
+                f"unsigned must be a bool, got {type(unsigned).__name__}; it "
+                f"becomes a type modifier in the rendered DDL."
+            )
+        if unsigned:
             raise UnsupportedFeatureError(
                 self.name,
                 f"the UNSIGNED modifier on an {declaration} column "
