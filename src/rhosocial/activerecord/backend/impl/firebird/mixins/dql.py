@@ -7,7 +7,7 @@ from .version_boundaries import _norm_version
 
 if TYPE_CHECKING:
     from rhosocial.activerecord.backend.expression.query_parts import LimitOffsetClause
-    from rhosocial.activerecord.backend.expression.statements.dql import QueryExpression
+    from rhosocial.activerecord.backend.expression.statements.dql import QueryStatement
 
 
 class FirebirdDQLMixin:
@@ -20,19 +20,24 @@ class FirebirdDQLMixin:
         """Firebird supports explicit NULLS FIRST / NULLS LAST ordering."""
         return True
 
-    def format_query_statement(self, expr: "QueryExpression") -> Tuple[str, tuple]:
+    def format_query_statement(self, expr: "QueryStatement") -> Tuple[str, tuple]:
         """Format a SELECT statement, qualifying a bare wildcard when mixed with columns.
 
         Firebird rejects ``SELECT *, extra_col ...`` (Token unknown, error -104) and
         requires an explicit column list or a table-qualified wildcard such as
         ``SELECT "T".*, extra_col ...`` when additional expressions are selected.
+
+        The bare ``*`` is an :class:`AllColumnsWildcard` with no relation, and
+        qualifying it means setting that node's ``relation`` to the FROM source
+        -- the same object the qualified ``rel.*`` spelling quotes through, so
+        the qualifier cannot drift from the reference the query itself uses.
         """
-        from rhosocial.activerecord.backend.expression import WildcardExpression
+        from rhosocial.activerecord.backend.expression import AllColumnsWildcard
 
         if len(expr.select) > 1:
-            table_name = None
+            relation = None
             for e in expr.select:
-                if isinstance(e, WildcardExpression) and e.table is None and e.schema_name is None:
+                if isinstance(e, AllColumnsWildcard) and e.relation is None:
                     if getattr(expr, "from_", None) is not None:
                         src = expr.from_
                         if isinstance(src, list) and len(src) == 1:
@@ -41,9 +46,10 @@ class FirebirdDQLMixin:
                         # source's own type, not the presence of an attribute:
                         # ``row_source_name`` answers for a named relation and
                         # declines for everything else.
-                        table_name = self.row_source_name(src)
-                    if table_name:
-                        e.table = table_name
+                        if self.row_source_name(src) is not None:
+                            relation = src
+                    if relation is not None:
+                        e.relation = relation
         return super().format_query_statement(expr)
 
     def format_limit_offset(self, limit: Optional[int] = None,
