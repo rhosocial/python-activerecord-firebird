@@ -834,7 +834,10 @@ class TestSequenceBranches:
 class TestCreateTableRebuildSnapshots:
     def test_basic_table(self, dialect):
         expr = CreateTableStatement(dialect, Table(dialect, "users"), [
-            _column(dialect, "id", IntegerType(dialect), ColumnConstraint(dialect, branch=ColumnPrimaryKeyConstraint(dialect))),
+            _column(
+                dialect, "id", IntegerType(dialect),
+                ColumnConstraint(dialect, branch=ColumnPrimaryKeyConstraint(dialect)),
+            ),
             _column(dialect, "name", VarCharType(length=100, dialect=dialect)),
         ])
         assert expr.to_sql() == (
