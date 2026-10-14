@@ -10,14 +10,14 @@ from rhosocial.activerecord.backend.expression.operators import RawSQLPredicate
 from rhosocial.activerecord.backend.expression.serialization import ExpressionRegistry
 from rhosocial.activerecord.backend.expression.statements.ddl_domain import (
     AddDomainCheckAction,
-    AlterDomainExpression,
-    CreateDomainExpression,
+    AlterDomainStatement,
+    CreateDomainStatement,
     DomainAlterAction,
     DomainCheckConstraint,
     DomainNullability,
     DropDomainCheckAction,
     DropDomainDefaultAction,
-    DropDomainExpression,
+    DropDomainStatement,
     DropDomainNotNullAction,
     SetDomainDefaultAction,
     SetDomainNotNullAction,
@@ -148,7 +148,7 @@ def _coalesce_checks(
     return check_items
 
 
-class FirebirdCreateDomainExpression(CreateDomainExpression):
+class FirebirdCreateDomainExpression(CreateDomainStatement):
     """Compatibility wrapper for the core CREATE DOMAIN expression."""
 
     def __init__(
@@ -192,7 +192,7 @@ class FirebirdCreateDomainExpression(CreateDomainExpression):
         self.check = check
 
 
-class FirebirdAlterDomainExpression(AlterDomainExpression):
+class FirebirdAlterDomainExpression(AlterDomainStatement):
     """Compatibility wrapper accepting either the legacy mode or core actions."""
 
     def __init__(
@@ -353,7 +353,7 @@ class FirebirdAlterDomainExpression(AlterDomainExpression):
         return True
 
 
-class FirebirdDropDomainExpression(DropDomainExpression):
+class FirebirdDropDomainExpression(DropDomainStatement):
     """Firebird-named DROP DOMAIN expression."""
 
 

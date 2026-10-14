@@ -16,7 +16,7 @@ from rhosocial.activerecord.backend.expression.objects import Sequence
 from .version_boundaries import FIREBIRD_VERSION_BOUNDARIES, _norm_version
 
 if TYPE_CHECKING:
-    from rhosocial.activerecord.backend.expression.statements.ddl_sequence import CreateSequenceExpression
+    from rhosocial.activerecord.backend.expression.statements.ddl_sequence import CreateSequenceStatement
     from ..expression.generator import GenIdExpression, NextValueForExpression
 
 
@@ -24,11 +24,11 @@ class FirebirdSequenceMixin:
 
     def format_create_sequence_statement(
         self,
-        expr: "CreateSequenceExpression",
+        expr: "CreateSequenceStatement",
     ) -> Tuple[str, tuple]:
         """Render ``CREATE SEQUENCE`` / ``CREATE GENERATOR`` for Firebird.
 
-        This is the dispatched formatter: ``CreateSequenceExpression.format_method``
+        This is the dispatched formatter: ``CreateSequenceStatement.format_method``
         returns ``"format_create_sequence_statement"``, and ``FirebirdSequenceMixin``
         precedes ``SequenceMixin`` in the dialect bases, so a ``CREATE SEQUENCE``
         reaches this method rather than the core one. An earlier spelling of this
@@ -77,7 +77,7 @@ class FirebirdSequenceMixin:
         interpretation of the values differs.
 
         Raises:
-            TypeError: ``CreateSequenceExpression.sequence`` is not a Sequence. A
+            TypeError: ``CreateSequenceStatement.sequence`` is not a Sequence. A
                 table would render as a well-formed CREATE SEQUENCE over that
                 table's name, because the object carries its own format method and
                 the dialect would reach ``format_table_object`` and get valid SQL
@@ -87,7 +87,7 @@ class FirebirdSequenceMixin:
         """
         if not isinstance(expr.sequence, Sequence):
             raise TypeError(
-                f"CreateSequenceExpression.sequence must be a Sequence, "
+                f"CreateSequenceStatement.sequence must be a Sequence, "
                 f"got {type(expr.sequence).__name__}"
             )
         if not self.supports_sequence():

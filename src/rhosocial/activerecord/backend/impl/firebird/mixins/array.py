@@ -35,7 +35,7 @@ class FirebirdArrayMixin:
 
         Note what this does **not** say: ``supports_array_constructor()`` and
         ``supports_array_access()`` stay ``False`` because this backend's
-        ``ArrayExpression`` renderer emits the cross-vendor ``ARRAY[...]``
+        ``ArrayOperation`` renderer emits the cross-vendor ``ARRAY[...]``
         spelling that Firebird's grammar does not have, and
         ``FirebirdUnsupportedFeaturesMixin.format_array_expression`` refuses
         it rather than emitting SQL the server rejects.

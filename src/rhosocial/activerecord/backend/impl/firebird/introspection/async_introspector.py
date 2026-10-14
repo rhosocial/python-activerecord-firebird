@@ -7,17 +7,17 @@ from rhosocial.activerecord.backend.introspection.base import (
     AsyncAbstractIntrospector,
 )
 from rhosocial.activerecord.backend.introspection.types import (
-    DatabaseInfo,
-    TableInfo,
+    IntrospectionDatabaseInfo,
+    IntrospectionTableInfo,
     TableType,
-    ColumnInfo,
+    IntrospectionColumnInfo,
     IndexInfo,
     IndexColumnInfo,
     IndexType,
-    ForeignKeyInfo,
+    IntrospectionForeignKeyInfo,
     ReferentialAction,
-    ViewInfo,
-    TriggerInfo,
+    IntrospectionViewInfo,
+    IntrospectionTriggerInfo,
 )
 from rhosocial.activerecord.backend.dialect.exceptions import UnsupportedFeatureError
 
@@ -251,9 +251,9 @@ class FirebirdAsyncIntrospectorMixin(IntrospectorMixin):
     # Parse methods
     # ------------------------------------------------------------------
 
-    def _parse_database_info(self, rows: List[Dict[str, Any]]) -> DatabaseInfo:
+    def _parse_database_info(self, rows: List[Dict[str, Any]]) -> IntrospectionDatabaseInfo:
         version = self._get_version()
-        return DatabaseInfo(
+        return IntrospectionDatabaseInfo(
             name=str(rows[0].get("MON$DATABASE_NAME", "")) if rows else "",
             version=".".join(str(v) for v in version),
             version_tuple=version,
@@ -261,7 +261,7 @@ class FirebirdAsyncIntrospectorMixin(IntrospectorMixin):
         )
 
     def _parse_tables(self, rows: List[Dict[str, Any]],
-                       schema: Optional[str]) -> List[TableInfo]:
+                       schema: Optional[str]) -> List[IntrospectionTableInfo]:
         tables = []
         for row in rows:
             name = str(row.get("RDB$RELATION_NAME", "")).strip()
@@ -269,7 +269,7 @@ class FirebirdAsyncIntrospectorMixin(IntrospectorMixin):
                 continue
             is_view = row.get("RDB$VIEW_BLR") is not None
             tables.append(
-                TableInfo(
+                IntrospectionTableInfo(
                     name=name,
                     schema=schema or "",
                     table_type=TableType.VIEW if is_view else TableType.BASE_TABLE,
@@ -279,7 +279,7 @@ class FirebirdAsyncIntrospectorMixin(IntrospectorMixin):
 
     def _parse_columns(self, rows: List[Dict[str, Any]],
                         table_name: str,
-                        schema: str) -> List[ColumnInfo]:
+                        schema: str) -> List[IntrospectionColumnInfo]:
         from rhosocial.activerecord.backend.expression.types._base import DataType
 
         columns = []
@@ -305,7 +305,7 @@ class FirebirdAsyncIntrospectorMixin(IntrospectorMixin):
             )
 
             columns.append(
-                ColumnInfo(
+                IntrospectionColumnInfo(
                     name=str(row.get("COLUMN_NAME", "")).strip() if row.get("COLUMN_NAME") else None,
                     table_name=table_name,
                     schema=schema,
@@ -356,7 +356,7 @@ class FirebirdAsyncIntrospectorMixin(IntrospectorMixin):
 
     def _parse_foreign_keys(self, rows: List[Dict[str, Any]],
                              table_name: str,
-                             schema: str) -> List[ForeignKeyInfo]:
+                             schema: str) -> List[IntrospectionForeignKeyInfo]:
         action_map = {
             "CASCADE": ReferentialAction.CASCADE,
             "SET NULL": ReferentialAction.SET_NULL,
@@ -364,14 +364,14 @@ class FirebirdAsyncIntrospectorMixin(IntrospectorMixin):
             "NO ACTION": ReferentialAction.NO_ACTION,
             "RESTRICT": ReferentialAction.RESTRICT,
         }
-        fk_map: Dict[str, ForeignKeyInfo] = {}
+        fk_map: Dict[str, IntrospectionForeignKeyInfo] = {}
         for row in rows:
             name = str(row.get("CONSTRAINT_NAME", "")).strip()
             if not name:
                 continue
             if name not in fk_map:
                 delete_rule = str(row.get("DELETE_RULE", "")).strip() if row.get("DELETE_RULE") else "NO ACTION"
-                fk_map[name] = ForeignKeyInfo(
+                fk_map[name] = IntrospectionForeignKeyInfo(
                     name=name,
                     table_name=table_name,
                     schema=schema,
@@ -390,9 +390,9 @@ class FirebirdAsyncIntrospectorMixin(IntrospectorMixin):
         return list(fk_map.values())
 
     def _parse_views(self, rows: List[Dict[str, Any]],
-                      schema: str) -> List[ViewInfo]:
+                      schema: str) -> List[IntrospectionViewInfo]:
         return [
-            ViewInfo(
+            IntrospectionViewInfo(
                 name=str(row.get("RDB$RELATION_NAME", "")).strip(),
                 schema=schema,
                 definition=str(row.get("RDB$VIEW_SOURCE", "")) if row.get("RDB$VIEW_SOURCE") else None,
@@ -403,7 +403,7 @@ class FirebirdAsyncIntrospectorMixin(IntrospectorMixin):
         ]
 
     def _parse_triggers(self, rows: List[Dict[str, Any]],
-                         schema: str) -> List[TriggerInfo]:
+                         schema: str) -> List[IntrospectionTriggerInfo]:
         return []
 
     # ------------------------------------------------------------------
@@ -464,7 +464,7 @@ class AsyncFirebirdIntrospector(FirebirdAsyncIntrospectorMixin, AsyncAbstractInt
 
     async def get_table_info(
         self, table_name: str, schema: Optional[str] = None
-    ) -> Optional[TableInfo]:
+    ) -> Optional[IntrospectionTableInfo]:
         from copy import copy
         tables = await self.list_tables(schema)
         table = next((t for t in tables if t.name == table_name), None)

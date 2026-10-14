@@ -11,7 +11,7 @@ from rhosocial.activerecord.backend.dialect.exceptions import UnsupportedFeature
 from rhosocial.activerecord.backend.expression.objects import Domain, Table
 from rhosocial.activerecord.backend.expression.statements import (
     ColumnDefinition,
-    CreateTableExpression,
+    CreateTableStatement,
 )
 from rhosocial.activerecord.backend.expression.types.integer import IntegerType
 from rhosocial.activerecord.backend.expression.types.numeric import DecimalType
@@ -111,7 +111,7 @@ class TestPackageDDL:
 
 class TestFirebirdTableDDLDeclarations:
     def test_table_declaration_defaults_are_absent(self, dialect):
-        expression = CreateTableExpression(
+        expression = CreateTableStatement(
             dialect,
             Table(dialect, "plain_table_defaults"),
             [ColumnDefinition(dialect, "id", IntegerType(dialect))],
@@ -124,7 +124,7 @@ class TestFirebirdTableDDLDeclarations:
         assert params == ()
 
     def test_table_inherits_is_carried_and_rejected(self, dialect):
-        expression = CreateTableExpression(
+        expression = CreateTableStatement(
             dialect,
             Table(dialect, "child"),
             [ColumnDefinition(dialect, "id", IntegerType(dialect))],
@@ -136,7 +136,7 @@ class TestFirebirdTableDDLDeclarations:
             expression.to_sql()
 
     def test_table_tablespace_is_carried_and_rejected(self, dialect):
-        expression = CreateTableExpression(
+        expression = CreateTableStatement(
             dialect,
             Table(dialect, "spaced"),
             [ColumnDefinition(dialect, "id", IntegerType(dialect))],

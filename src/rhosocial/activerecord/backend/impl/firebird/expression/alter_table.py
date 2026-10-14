@@ -2,7 +2,7 @@
 """Firebird-specific ALTER TABLE ALTER COLUMN action expressions.
 
 These action classes extend the core ``AlterTableAction`` hierarchy so the
-generic ``AlterTableExpression`` / ``format_alter_table_statement`` renderer
+generic ``AlterTableStatement`` / ``format_alter_table_statement`` renderer
 can drive Firebird-only identity and column-ordering clauses:
   - SET GENERATED {ALWAYS | BY DEFAULT}
   - RESTART [WITH value]

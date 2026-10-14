@@ -4,7 +4,7 @@
 Every object here carries its own ``format_method``, so the dialect dispatches on
 what the caller passed rather than on what the statement meant. Before these
 checks, a wrong kind was not an error at all: it rendered valid SQL naming the
-wrong thing. ``CreateSequenceExpression(d, Table(d, "users"))`` produced a
+wrong thing. ``CreateSequenceStatement(d, Table(d, "users"))`` produced a
 well-formed ``CREATE SEQUENCE`` whose name was a table, because the dialect
 reached ``format_table_object`` and got SQL it was happy with.
 
@@ -80,51 +80,51 @@ def _predicate(d):
 WRONG_KIND_CASES = [
     (
         "create_sequence",
-        lambda d, obj: ddl_sequence.CreateSequenceExpression(d, obj),
+        lambda d, obj: ddl_sequence.CreateSequenceStatement(d, obj),
         lambda d: Sequence(d, "gen"),
         lambda d: Table(d, "users"),
-        "CreateSequenceExpression.sequence",
+        "CreateSequenceStatement.sequence",
     ),
     (
         "create_table",
-        lambda d, obj: ddl_table.CreateTableExpression(d, obj, [_column(d)]),
+        lambda d, obj: ddl_table.CreateTableStatement(d, obj, [_column(d)]),
         lambda d: Table(d, "users"),
         lambda d: View(d, "users"),
-        "CreateTableExpression.table",
+        "CreateTableStatement.table",
     ),
     (
         "alter_table",
-        lambda d, obj: ddl_alter.AlterTableExpression(d, obj, []),
+        lambda d, obj: ddl_alter.AlterTableStatement(d, obj, []),
         lambda d: Table(d, "users"),
         lambda d: Sequence(d, "gen"),
-        "AlterTableExpression.table",
+        "AlterTableStatement.table",
     ),
     (
         "insert",
-        lambda d, obj: dml.InsertExpression(
+        lambda d, obj: dml.InsertStatement(
             d, into=obj, source=dml.ValuesSource(d, [[Literal(d, 1)]])
         ),
         lambda d: Table(d, "users"),
         lambda d: Sequence(d, "gen"),
-        "InsertExpression.into",
+        "InsertStatement.into",
     ),
     (
         "update",
-        lambda d, obj: dml.UpdateExpression(d, obj, {"a": Literal(d, 1)}),
+        lambda d, obj: dml.UpdateStatement(d, obj, {"a": Literal(d, 1)}),
         lambda d: Table(d, "users"),
         lambda d: Sequence(d, "gen"),
-        "UpdateExpression.table",
+        "UpdateStatement.table",
     ),
     (
         "delete",
-        lambda d, obj: dml.DeleteExpression(d, [obj]),
+        lambda d, obj: dml.DeleteStatement(d, [obj]),
         lambda d: Table(d, "users"),
         lambda d: Sequence(d, "gen"),
-        "DeleteExpression.tables",
+        "DeleteStatement.tables",
     ),
     (
         "merge",
-        lambda d, obj: dml.MergeExpression(
+        lambda d, obj: dml.MergeStatement(
             d,
             target_table=obj,
             source=NamedRelationRef(d, Table(d, "src")),
@@ -132,23 +132,23 @@ WRONG_KIND_CASES = [
         ),
         lambda d: Table(d, "users"),
         lambda d: Sequence(d, "gen"),
-        "MergeExpression.target_table",
+        "MergeStatement.target_table",
     ),
     (
         "create_domain",
-        lambda d, obj: ddl_domain.CreateDomainExpression(d, obj, IntegerType(d)),
+        lambda d, obj: ddl_domain.CreateDomainStatement(d, obj, IntegerType(d)),
         lambda d: Domain(d, "dom"),
         lambda d: Table(d, "users"),
-        "CreateDomainExpression.domain",
+        "CreateDomainStatement.domain",
     ),
     (
         "alter_domain",
-        lambda d, obj: ddl_domain.AlterDomainExpression(
+        lambda d, obj: ddl_domain.AlterDomainStatement(
             d, obj, [RenameDomainAction(d, "other")]
         ),
         lambda d: Domain(d, "dom"),
         lambda d: Table(d, "users"),
-        "AlterDomainExpression.domain",
+        "AlterDomainStatement.domain",
     ),
 ]
 
@@ -204,7 +204,7 @@ class TestWrongObjectKindIsRefused:
         assert wrong_outcome != right_sql
 
     def test_create_trigger_refuses_a_table_where_a_trigger_belongs(self, dialect):
-        expr = ddl_trigger.CreateTriggerExpression(
+        expr = ddl_trigger.CreateTriggerStatement(
             dialect,
             trigger=Table(dialect, "trg"),
             table=Table(dialect, "users"),
@@ -212,11 +212,11 @@ class TestWrongObjectKindIsRefused:
             events=[TriggerEvent.INSERT],
             function=Function(dialect, "fn"),
         )
-        with pytest.raises(TypeError, match=r"CreateTriggerExpression\.trigger"):
+        with pytest.raises(TypeError, match=r"CreateTriggerStatement\.trigger"):
             expr.to_sql()
 
     def test_create_trigger_refuses_a_trigger_where_a_relation_belongs(self, dialect):
-        expr = ddl_trigger.CreateTriggerExpression(
+        expr = ddl_trigger.CreateTriggerStatement(
             dialect,
             trigger=Trigger(dialect, "trg"),
             table=Trigger(dialect, "other"),
@@ -224,7 +224,7 @@ class TestWrongObjectKindIsRefused:
             events=[TriggerEvent.INSERT],
             function=Function(dialect, "fn"),
         )
-        with pytest.raises(TypeError, match=r"CreateTriggerExpression\.table"):
+        with pytest.raises(TypeError, match=r"CreateTriggerStatement\.table"):
             expr.to_sql()
 
     @pytest.mark.parametrize(
@@ -251,11 +251,11 @@ class TestWrongObjectKindIsRefused:
         position 0 -- and the message names the position rather than leaving the
         caller to work out which one was wrong.
         """
-        expr = dml.DeleteExpression(dialect, [Table(dialect, "ok"), Sequence(dialect, "gen")])
+        expr = dml.DeleteStatement(dialect, [Table(dialect, "ok"), Sequence(dialect, "gen")])
         with pytest.raises(TypeError) as exc_info:
             expr.to_sql()
         message = str(exc_info.value)
-        assert "DeleteExpression.tables" in message
+        assert "DeleteStatement.tables" in message
         assert "Sequence" in message
         assert "position 1" in message, (
             f"the message names the position only as {message!r}; a caller with a "
@@ -276,7 +276,7 @@ class TestRightObjectKindStillRenders:
         # ``format_create_sequence_statement``, reached because
         # ``FirebirdSequenceMixin`` precedes ``SequenceMixin`` in the bases. It
         # never emits ``NO CYCLE``: Firebird's grammar has no such words.
-        sql, params = ddl_sequence.CreateSequenceExpression(
+        sql, params = ddl_sequence.CreateSequenceStatement(
             dialect, Sequence(dialect, "gen")
         ).to_sql()
         assert sql == 'CREATE SEQUENCE "GEN"'
@@ -289,24 +289,24 @@ class TestRightObjectKindStillRenders:
         call, so a rename that put the method out of the dispatch's reach would
         show up as a ``TypeError`` from the wrong place.
         """
-        wrong = ddl_sequence.CreateSequenceExpression(dialect, Table(dialect, "users"))
-        with pytest.raises(TypeError, match=r"CreateSequenceExpression\.sequence"):
+        wrong = ddl_sequence.CreateSequenceStatement(dialect, Table(dialect, "users"))
+        with pytest.raises(TypeError, match=r"CreateSequenceStatement\.sequence"):
             wrong.to_sql()
-        with pytest.raises(TypeError, match=r"CreateSequenceExpression\.sequence"):
+        with pytest.raises(TypeError, match=r"CreateSequenceStatement\.sequence"):
             dialect.format_create_sequence_statement(wrong)
 
     def test_create_table(self, dialect):
-        sql, _ = ddl_table.CreateTableExpression(
+        sql, _ = ddl_table.CreateTableStatement(
             dialect, Table(dialect, "users"), [_column(dialect)]
         ).to_sql()
         assert sql == 'CREATE TABLE "USERS" ("ID" INTEGER)'
 
     def test_alter_table(self, dialect):
-        sql, _ = ddl_alter.AlterTableExpression(dialect, Table(dialect, "users"), []).to_sql()
+        sql, _ = ddl_alter.AlterTableStatement(dialect, Table(dialect, "users"), []).to_sql()
         assert sql == 'ALTER TABLE "USERS"'
 
     def test_insert(self, dialect):
-        sql, params = dml.InsertExpression(
+        sql, params = dml.InsertStatement(
             dialect,
             into=Table(dialect, "users"),
             source=dml.ValuesSource(dialect, [[Literal(dialect, 1)]]),
@@ -315,30 +315,30 @@ class TestRightObjectKindStillRenders:
         assert params == (1,)
 
     def test_update(self, dialect):
-        sql, params = dml.UpdateExpression(
+        sql, params = dml.UpdateStatement(
             dialect, Table(dialect, "users"), {"a": Literal(dialect, 1)}
         ).to_sql()
         assert sql == 'UPDATE "USERS" SET "A" = ?'
         assert params == (1,)
 
     def test_delete(self, dialect):
-        sql, _ = dml.DeleteExpression(dialect, [Table(dialect, "users")]).to_sql()
+        sql, _ = dml.DeleteStatement(dialect, [Table(dialect, "users")]).to_sql()
         assert sql == 'DELETE FROM "USERS"'
 
     def test_create_domain(self, dialect):
-        sql, _ = ddl_domain.CreateDomainExpression(
+        sql, _ = ddl_domain.CreateDomainStatement(
             dialect, Domain(dialect, "dom"), IntegerType(dialect)
         ).to_sql()
         assert sql == 'CREATE DOMAIN "DOM" AS INTEGER'
 
     def test_alter_domain(self, dialect):
-        sql, _ = ddl_domain.AlterDomainExpression(
+        sql, _ = ddl_domain.AlterDomainStatement(
             dialect, Domain(dialect, "dom"), [RenameDomainAction(dialect, "other")]
         ).to_sql()
         assert sql == 'ALTER DOMAIN "DOM" TO "OTHER"'
 
     def test_create_trigger(self, dialect):
-        sql, _ = ddl_trigger.CreateTriggerExpression(
+        sql, _ = ddl_trigger.CreateTriggerStatement(
             dialect,
             trigger=Trigger(dialect, "trg"),
             table=Table(dialect, "users"),

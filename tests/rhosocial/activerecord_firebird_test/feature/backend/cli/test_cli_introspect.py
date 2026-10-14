@@ -22,7 +22,7 @@ def parse_introspect_args(argv):
     return parser.parse_args(argv)
 
 
-class TableInfo:
+class IntrospectionTableInfo:
     def __init__(self, columns=None, indexes=None, foreign_keys=None):
         self.columns = columns if columns is not None else [{"name": "ID", "type": "INTEGER"}]
         self.indexes = indexes if indexes is not None else [{"name": "RDB$PRIMARY"}]
@@ -43,7 +43,7 @@ class FakeIntrospector:
 
     def get_table_info(self, name, schema=None):
         self.calls.append(("get_table_info", name, schema))
-        return TableInfo() if name == "USERS" else None
+        return IntrospectionTableInfo() if name == "USERS" else None
 
     def list_columns(self, name, schema=None):
         self.calls.append(("list_columns", name, schema))
@@ -181,7 +181,7 @@ class TestIntrospectHandleHappyPaths:
         monkeypatch.setattr(introspect_mod, "FirebirdBackend", FakeBackend)
 
         def bare_info(self, name, schema=None):
-            return TableInfo(indexes=[], foreign_keys=[])
+            return IntrospectionTableInfo(indexes=[], foreign_keys=[])
 
         monkeypatch.setattr(FakeIntrospector, "get_table_info", bare_info)
         args = parse_introspect_args(["introspect", "table", "USERS", "--database", "/tmp/x.fdb"])

@@ -39,7 +39,7 @@ that was wrong would fail that class, so a green guard cannot mean "the regex
 never matches anything".
 
 The final classes pin the nodes' parameter inventories: if core adds a
-parameter to ``CreateSequenceExpression``, ``IdentityClause`` or
+parameter to ``CreateSequenceStatement``, ``IdentityClause`` or
 ``TableConstraint`` and this backend does not consume it, the pins go red.
 """
 
@@ -58,36 +58,36 @@ from rhosocial.activerecord.backend.expression.objects import (
     View,
 )
 from rhosocial.activerecord.backend.expression.predicates import ComparisonPredicate
-from rhosocial.activerecord.backend.expression.query_sources import CTEExpression
+from rhosocial.activerecord.backend.expression.query_sources import CTEClause
 from rhosocial.activerecord.backend.expression.statements.ddl_function import (
-    DropFunctionExpression,
+    DropFunctionStatement,
 )
 from rhosocial.activerecord.backend.expression.statements.ddl_alter import (
     AlterConstraint,
 )
 from rhosocial.activerecord.backend.expression.statements.ddl_sequence import (
-    AlterSequenceExpression,
-    CreateSequenceExpression,
+    AlterSequenceStatement,
+    CreateSequenceStatement,
 )
 from rhosocial.activerecord.backend.expression.statements.ddl_table import (
-    CreateTableAsExpression,
-    DropTableExpression,
+    CreateTableAsStatement,
+    DropTableStatement,
     ForeignKeyConstraint,
     IdentityClause,
     TableConstraint,
     TableConstraintType,
 )
 from rhosocial.activerecord.backend.expression.statements.ddl_truncate import (
-    TruncateExpression,
+    TruncateStatement,
 )
 from rhosocial.activerecord.backend.expression.statements.ddl_view import (
-    CreateMaterializedViewExpression,
-    DropViewExpression,
-    RefreshMaterializedViewExpression,
+    CreateMaterializedViewStatement,
+    DropViewStatement,
+    RefreshMaterializedViewStatement,
 )
-from rhosocial.activerecord.backend.expression.statements.dql import QueryExpression
+from rhosocial.activerecord.backend.expression.statements.dql import QueryStatement
 from rhosocial.activerecord.backend.expression.transaction import (
-    BeginTransactionExpression,
+    BeginTransactionStatement,
     SetTransactionExpression,
 )
 from rhosocial.activerecord.backend.impl.dummy.dialect import DummyDialect
@@ -194,8 +194,8 @@ class PairCase:
 #: substring of the negative one ("CYCLE" inside "NO CYCLE", and friends).
 PAIR_CASES = (
     PairCase(
-        "CreateSequenceExpression.cycle",
-        lambda d, **kw: CreateSequenceExpression(d, Sequence(d, "s"), **kw),
+        "CreateSequenceStatement.cycle",
+        lambda d, **kw: CreateSequenceStatement(d, Sequence(d, "s"), **kw),
         "cycle",
         "no_cycle",
         r"(?<!NO )CYCLE\b",
@@ -204,8 +204,8 @@ PAIR_CASES = (
         a_probe="supports_sequence_cycle",
     ),
     PairCase(
-        "CreateSequenceExpression.order",
-        lambda d, **kw: CreateSequenceExpression(d, Sequence(d, "s"), **kw),
+        "CreateSequenceStatement.order",
+        lambda d, **kw: CreateSequenceStatement(d, Sequence(d, "s"), **kw),
         "order",
         "no_order",
         r"(?<!NO )ORDER\b",
@@ -214,8 +214,8 @@ PAIR_CASES = (
         a_probe="supports_sequence_order",
     ),
     PairCase(
-        "CreateSequenceExpression.cache",
-        lambda d, **kw: CreateSequenceExpression(d, Sequence(d, "s"), **kw),
+        "CreateSequenceStatement.cache",
+        lambda d, **kw: CreateSequenceStatement(d, Sequence(d, "s"), **kw),
         "cache",
         "no_cache",
         r"CACHE 10\b",
@@ -225,8 +225,8 @@ PAIR_CASES = (
         a_value=10,
     ),
     PairCase(
-        "AlterSequenceExpression.cycle",
-        lambda d, **kw: AlterSequenceExpression(d, Sequence(d, "s"), **kw),
+        "AlterSequenceStatement.cycle",
+        lambda d, **kw: AlterSequenceStatement(d, Sequence(d, "s"), **kw),
         "cycle",
         "no_cycle",
         r"(?<!NO )CYCLE\b",
@@ -235,8 +235,8 @@ PAIR_CASES = (
         a_probe="supports_sequence_cycle",
     ),
     PairCase(
-        "AlterSequenceExpression.order",
-        lambda d, **kw: AlterSequenceExpression(d, Sequence(d, "s"), **kw),
+        "AlterSequenceStatement.order",
+        lambda d, **kw: AlterSequenceStatement(d, Sequence(d, "s"), **kw),
         "order",
         "no_order",
         r"(?<!NO )ORDER\b",
@@ -245,8 +245,8 @@ PAIR_CASES = (
         a_probe="supports_sequence_order",
     ),
     PairCase(
-        "AlterSequenceExpression.cache",
-        lambda d, **kw: AlterSequenceExpression(d, Sequence(d, "s"), **kw),
+        "AlterSequenceStatement.cache",
+        lambda d, **kw: AlterSequenceStatement(d, Sequence(d, "s"), **kw),
         "cache",
         "no_cache",
         r"CACHE 10\b",
@@ -330,8 +330,8 @@ PAIR_CASES = (
         neither_error="AlterConstraint requires exactly one of",
     ),
     PairCase(
-        "BeginTransactionExpression.deferrable",
-        lambda d, **kw: BeginTransactionExpression(d, **kw),
+        "BeginTransactionStatement.deferrable",
+        lambda d, **kw: BeginTransactionStatement(d, **kw),
         "deferrable",
         "not_deferrable",
         r"(?<!NOT )DEFERRABLE\b",
@@ -355,8 +355,8 @@ PAIR_CASES = (
     # answer True -- a dialect whose formatter drops one of them collapses the
     # states this case distinguishes.
     PairCase(
-        "BeginTransactionExpression.wait",
-        lambda d, **kw: BeginTransactionExpression(d, **kw),
+        "BeginTransactionStatement.wait",
+        lambda d, **kw: BeginTransactionStatement(d, **kw),
         "wait",
         "no_wait",
         r"(?<!NO )WAIT\b",
@@ -379,8 +379,8 @@ PAIR_CASES = (
         capable=True,
     ),
     PairCase(
-        "DropTableExpression.cascade",
-        lambda d, **kw: DropTableExpression(d, _table(d), **kw),
+        "DropTableStatement.cascade",
+        lambda d, **kw: DropTableStatement(d, _table(d), **kw),
         "cascade",
         "restrict",
         r"CASCADE\b",
@@ -391,8 +391,8 @@ PAIR_CASES = (
         b_probe="supports_drop_table_restrict",
     ),
     PairCase(
-        "DropViewExpression.cascade",
-        lambda d, **kw: DropViewExpression(d, View(d, "v"), **kw),
+        "DropViewStatement.cascade",
+        lambda d, **kw: DropViewStatement(d, View(d, "v"), **kw),
         "cascade",
         "restrict",
         r"CASCADE\b",
@@ -403,8 +403,8 @@ PAIR_CASES = (
         b_probe="supports_restrict_view",
     ),
     PairCase(
-        "DropFunctionExpression.cascade",
-        lambda d, **kw: DropFunctionExpression(d, Function(d, "f"), **kw),
+        "DropFunctionStatement.cascade",
+        lambda d, **kw: DropFunctionStatement(d, Function(d, "f"), **kw),
         "cascade",
         "restrict",
         r"CASCADE\b",
@@ -541,12 +541,12 @@ class TestGuardIsNotVacuous:
     def test_every_pair_is_covered(self):
         """The pairs this backend consumes are all in the table."""
         expected = {
-            "CreateSequenceExpression.cycle",
-            "CreateSequenceExpression.order",
-            "CreateSequenceExpression.cache",
-            "AlterSequenceExpression.cycle",
-            "AlterSequenceExpression.order",
-            "AlterSequenceExpression.cache",
+            "CreateSequenceStatement.cycle",
+            "CreateSequenceStatement.order",
+            "CreateSequenceStatement.cache",
+            "AlterSequenceStatement.cycle",
+            "AlterSequenceStatement.order",
+            "AlterSequenceStatement.cache",
             "IdentityClause.cycle",
             "IdentityClause.order",
             "IdentityClause.cache",
@@ -554,13 +554,13 @@ class TestGuardIsNotVacuous:
             "TableConstraint.initially_deferred",
             "TableConstraint.enforced",
             "AlterConstraint.enforced",
-            "BeginTransactionExpression.deferrable",
+            "BeginTransactionStatement.deferrable",
             "SetTransactionExpression.deferrable",
-            "BeginTransactionExpression.wait",
+            "BeginTransactionStatement.wait",
             "SetTransactionExpression.wait",
-            "DropTableExpression.cascade",
-            "DropViewExpression.cascade",
-            "DropFunctionExpression.cascade",
+            "DropTableStatement.cascade",
+            "DropViewStatement.cascade",
+            "DropFunctionStatement.cascade",
         }
         covered = {case.case_id for case in PAIR_CASES}
         missing = expected - covered
@@ -657,9 +657,9 @@ class TestParameterInventoryIsComplete:
     """Core adding a parameter must fail here until the backend consumes it."""
 
     def test_create_sequence_signature_is_pinned(self):
-        actual = set(inspect.signature(CreateSequenceExpression.__init__).parameters)
+        actual = set(inspect.signature(CreateSequenceStatement.__init__).parameters)
         assert actual == CREATE_SEQUENCE_PARAMS, (
-            "CreateSequenceExpression's parameter list changed. The Firebird "
+            "CreateSequenceStatement's parameter list changed. The Firebird "
             "formatter is a copy of core's, so every new parameter must be "
             "consumed there and added to this pin.\n"
             f"  added:   {sorted(actual - CREATE_SEQUENCE_PARAMS)}\n"
@@ -781,7 +781,7 @@ class _FirebirdCarriersEnabled(FirebirdDialect):
 
 
 def _one_column_query(d):
-    return QueryExpression(d, select=[Column(d, "id")], from_=Table(d, "t"))
+    return QueryStatement(d, select=[Column(d, "id")], from_=Table(d, "t"))
 
 
 class TestFirebirdAnswersTheMeasuredMasterProbes:
@@ -807,10 +807,10 @@ class TestFirebirdAnswersTheMeasuredMasterProbes:
             d = FirebirdDialect(version)
             assert d.supports_materialized_cte() is False, version
             with pytest.raises(UnsupportedFeatureError, match="MATERIALIZED CTE"):
-                CTEExpression(d, "c", _one_column_query(d), materialized=True).to_sql()
+                CTEClause(d, "c", _one_column_query(d), materialized=True).to_sql()
             with pytest.raises(UnsupportedFeatureError, match="NOT MATERIALIZED CTE"):
-                CTEExpression(d, "c", _one_column_query(d), not_materialized=True).to_sql()
-            sql, _ = CTEExpression(d, "c", _one_column_query(d)).to_sql()
+                CTEClause(d, "c", _one_column_query(d), not_materialized=True).to_sql()
+            sql, _ = CTEClause(d, "c", _one_column_query(d)).to_sql()
             assert "MATERIALIZED" not in sql, sql
 
     def test_truncate_is_declined_and_refused_by_name(self):
@@ -818,7 +818,7 @@ class TestFirebirdAnswersTheMeasuredMasterProbes:
             d = FirebirdDialect(version)
             assert d.supports_truncate() is False, version
             with pytest.raises(UnsupportedFeatureError, match="TRUNCATE"):
-                TruncateExpression(d, Table(d, "t")).to_sql()
+                TruncateStatement(d, Table(d, "t")).to_sql()
 
     def test_create_table_as_is_version_gated(self):
         """Measured: 5.0.4 answers Token unknown - AS; 6.0.0 creates the table."""
@@ -827,10 +827,10 @@ class TestFirebirdAnswersTheMeasuredMasterProbes:
 
         fb5 = FirebirdDialect((5, 0, 0))
         with pytest.raises(UnsupportedFeatureError, match=re.escape("CREATE TABLE ... AS")):
-            CreateTableAsExpression(fb5, Table(fb5, "t"), _one_column_query(fb5)).to_sql()
+            CreateTableAsStatement(fb5, Table(fb5, "t"), _one_column_query(fb5)).to_sql()
 
         fb6 = FirebirdDialect((6, 0, 0))
-        sql, _ = CreateTableAsExpression(fb6, Table(fb6, "t"), _one_column_query(fb6)).to_sql()
+        sql, _ = CreateTableAsStatement(fb6, Table(fb6, "t"), _one_column_query(fb6)).to_sql()
         assert sql == 'CREATE TABLE "T" AS SELECT "ID" FROM "T"', sql
 
     def test_with_data_clause_is_version_gated_and_the_gate_is_live(self):
@@ -839,11 +839,11 @@ class TestFirebirdAnswersTheMeasuredMasterProbes:
         assert FirebirdDialect((6, 0, 0)).supports_with_data_clause() is True
 
         fb6 = FirebirdDialect((6, 0, 0))
-        with_data, _ = CreateTableAsExpression(
+        with_data, _ = CreateTableAsStatement(
             fb6, Table(fb6, "t"), _one_column_query(fb6), with_data=True
         ).to_sql()
         assert with_data.endswith("WITH DATA"), with_data
-        no_data, _ = CreateTableAsExpression(
+        no_data, _ = CreateTableAsStatement(
             fb6, Table(fb6, "t"), _one_column_query(fb6), no_data=True
         ).to_sql()
         assert no_data.endswith("WITH NO DATA"), no_data
@@ -854,37 +854,37 @@ class TestFirebirdAnswersTheMeasuredMasterProbes:
         assert carrier.supports_with_data_clause() is False
         for builder, keyword in (
             (
-                lambda **kw: CreateTableAsExpression(
+                lambda **kw: CreateTableAsStatement(
                     carrier, Table(carrier, "t"), _one_column_query(carrier), **kw
                 ),
                 "with_data",
             ),
             (
-                lambda **kw: CreateTableAsExpression(
+                lambda **kw: CreateTableAsStatement(
                     carrier, Table(carrier, "t"), _one_column_query(carrier), **kw
                 ),
                 "no_data",
             ),
             (
-                lambda **kw: CreateMaterializedViewExpression(
+                lambda **kw: CreateMaterializedViewStatement(
                     carrier, MaterializedView(carrier, "mv"), _one_column_query(carrier), **kw
                 ),
                 "with_data",
             ),
             (
-                lambda **kw: CreateMaterializedViewExpression(
+                lambda **kw: CreateMaterializedViewStatement(
                     carrier, MaterializedView(carrier, "mv"), _one_column_query(carrier), **kw
                 ),
                 "no_data",
             ),
             (
-                lambda **kw: RefreshMaterializedViewExpression(
+                lambda **kw: RefreshMaterializedViewStatement(
                     carrier, MaterializedView(carrier, "mv"), **kw
                 ),
                 "with_data",
             ),
             (
-                lambda **kw: RefreshMaterializedViewExpression(
+                lambda **kw: RefreshMaterializedViewStatement(
                     carrier, MaterializedView(carrier, "mv"), **kw
                 ),
                 "no_data",
@@ -933,9 +933,9 @@ TRANSACTION_PAIR_PARAMS = ("_wait", "_no_wait")
 
 class TestTransactionWaitPairIsWired:
     def test_begin_transaction_signature_is_pinned(self):
-        actual = set(inspect.signature(BeginTransactionExpression.__init__).parameters)
+        actual = set(inspect.signature(BeginTransactionStatement.__init__).parameters)
         assert actual == BEGIN_TRANSACTION_PARAMS, (
-            "BeginTransactionExpression's parameter list changed; the Firebird "
+            "BeginTransactionStatement's parameter list changed; the Firebird "
             "formatter must consume the new parameter before this pin is updated.\n"
             f"  added:   {sorted(actual - BEGIN_TRANSACTION_PARAMS)}\n"
             f"  removed: {sorted(BEGIN_TRANSACTION_PARAMS - actual)}"
@@ -952,7 +952,7 @@ class TestTransactionWaitPairIsWired:
 
     @pytest.mark.parametrize(
         "method_name",
-        ["format_begin_transaction", "format_set_transaction"],
+        ["format_begin_transaction_statement", "format_set_transaction"],
     )
     def test_firebird_formatter_consumes_both_wait_parameters(self, method_name):
         source = inspect.getsource(getattr(FirebirdTransactionMixin, method_name))

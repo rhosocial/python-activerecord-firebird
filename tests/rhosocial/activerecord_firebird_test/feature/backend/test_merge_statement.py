@@ -17,7 +17,7 @@ from rhosocial.activerecord.backend.expression.sources import NamedRelationRef
 from rhosocial.activerecord.backend.expression.statements import (
     MergeAction,
     MergeActionType,
-    MergeExpression,
+    MergeStatement,
 )
 from rhosocial.activerecord.backend.impl.firebird.dialect import FirebirdDialect
 from rhosocial.activerecord.backend.impl.firebird.expression.dml import (
@@ -28,7 +28,7 @@ from rhosocial.activerecord.backend.impl.firebird.mixins.dml import FirebirdDMLO
 
 def _make_merge(dialect, when_matched=None, when_not_matched=None, by_source=None):
     """Build a MERGE expression over a simple two-column target/source pair."""
-    return MergeExpression(
+    return MergeStatement(
         dialect,
         target_table=Table(dialect, "tgt"),
         source=NamedRelationRef(dialect, Table(dialect, "src")),

@@ -17,21 +17,21 @@ from rhosocial.activerecord.backend.expression.statements import (
     ColumnConstraint,
     ColumnConstraintType,
     ColumnDefinition,
-    CreateTableExpression,
-    DeleteExpression,
+    CreateTableStatement,
+    DeleteStatement,
     ForeignKeyConstraint,
-    InsertExpression,
+    InsertStatement,
     ReturningClause,
     TableConstraint,
     TableConstraintType,
-    UpdateExpression,
+    UpdateStatement,
     ValuesSource,
     ReferentialAction,
 )
 from rhosocial.activerecord.backend.expression.statements.ddl_sequence import (
-    AlterSequenceExpression,
-    CreateSequenceExpression,
-    DropSequenceExpression,
+    AlterSequenceStatement,
+    CreateSequenceStatement,
+    DropSequenceStatement,
 )
 from rhosocial.activerecord.backend.expression.types import (
     BigIntType,
@@ -537,7 +537,7 @@ class TestFloatAndBlobSubTypeIdentityBranches:
 
 class TestReturningBranches:
     def test_insert_returning_snapshot(self, dialect):
-        insert = InsertExpression(
+        insert = InsertStatement(
             dialect, Table(dialect, "users"),
             ValuesSource(dialect, [[E.RawSQLExpression(dialect, "?")]]),
             columns=["name"],
@@ -546,7 +546,7 @@ class TestReturningBranches:
         assert insert.to_sql() == ('INSERT INTO "USERS" ("NAME") VALUES (?) RETURNING "ID", "NAME"', ())
 
     def test_insert_without_returning_has_no_clause(self, dialect):
-        insert = InsertExpression(
+        insert = InsertStatement(
             dialect, Table(dialect, "users"),
             ValuesSource(dialect, [[E.Literal(dialect, "Bob")]]),
             columns=["name"],
@@ -554,7 +554,7 @@ class TestReturningBranches:
         assert insert.to_sql() == ('INSERT INTO "USERS" ("NAME") VALUES (?)', ("Bob",))
 
     def test_update_returning_snapshot(self, dialect):
-        update = UpdateExpression(
+        update = UpdateStatement(
             dialect, Table(dialect, "users"), {"name": E.Literal(dialect, "Bob")},
             where=E.ComparisonPredicate(dialect, "=", E.Column(dialect, "id"), E.Literal(dialect, 7)),
             returning=ReturningClause(dialect, expressions=[E.Column(dialect, "id")]),
@@ -565,7 +565,7 @@ class TestReturningBranches:
         )
 
     def test_delete_returning_wildcard_snapshot(self, dialect):
-        delete = DeleteExpression(
+        delete = DeleteStatement(
             dialect, Table(dialect, "users"),
             where=E.ComparisonPredicate(dialect, "=", E.Column(dialect, "id"), E.Literal(dialect, 7)),
             returning=ReturningClause(dialect, expressions=[E.RawSQLExpression(dialect, "*")]),
@@ -626,7 +626,7 @@ class TestSkipLockedBranches:
         LockingSupport protocol; now the clause renders positively.
         """
         dialect = FirebirdDialect(version)
-        query = E.QueryExpression(
+        query = E.QueryStatement(
             dialect, select=[E.Column(dialect, "id")], from_="t",
             for_update=ForUpdateClause(dialect, **kwargs),
         )
@@ -639,7 +639,7 @@ class TestSkipLockedBranches:
 
     def test_for_update_of_columns_render_through_query_path(self):
         dialect = FirebirdDialect((3, 0, 0))
-        query = E.QueryExpression(
+        query = E.QueryStatement(
             dialect, select=[E.Column(dialect, "id")], from_="t",
             for_update=ForUpdateClause(
                 dialect,
@@ -664,13 +664,13 @@ class TestSkipLockedBranches:
 
 class TestSequenceBranches:
     def test_create_sequence_defaults(self, dialect):
-        expr = CreateSequenceExpression(dialect, Sequence(dialect, "seq_a"))
+        expr = CreateSequenceStatement(dialect, Sequence(dialect, "seq_a"))
         assert dialect.format_create_sequence_statement(expr) == (
             'CREATE SEQUENCE "SEQ_A"', ()
         )
 
     def test_create_sequence_start_and_increment(self, dialect):
-        expr = CreateSequenceExpression(
+        expr = CreateSequenceStatement(
             dialect, Sequence(dialect, "seq_b"), start=100, increment=5
         )
         assert dialect.format_create_sequence_statement(expr) == (
@@ -679,7 +679,7 @@ class TestSequenceBranches:
 
     def test_create_sequence_explicit_defaults_are_omitted(self, dialect):
         """A request for the defaults is the same SQL as omitting them."""
-        expr = CreateSequenceExpression(
+        expr = CreateSequenceStatement(
             dialect, Sequence(dialect, "seq_d"), start=1, increment=1
         )
         assert dialect.format_create_sequence_statement(expr) == (
@@ -693,13 +693,13 @@ class TestSequenceBranches:
         and silently fell back to the default, which changes the sequence's
         first value.
         """
-        expr = CreateSequenceExpression(dialect, Sequence(dialect, "seq_e"), start=0)
+        expr = CreateSequenceStatement(dialect, Sequence(dialect, "seq_e"), start=0)
         assert dialect.format_create_sequence_statement(expr) == (
             'CREATE SEQUENCE "SEQ_E" START WITH 0', ()
         )
 
     def test_create_generator_form(self, dialect):
-        expr = CreateSequenceExpression(dialect, Sequence(dialect, "gen_c"))
+        expr = CreateSequenceStatement(dialect, Sequence(dialect, "gen_c"))
         expr.use_generator = True
         assert dialect.format_create_sequence_statement(expr) == (
             'CREATE GENERATOR "GEN_C"', ()
@@ -707,7 +707,7 @@ class TestSequenceBranches:
 
     def test_create_generator_accepts_start_and_increment(self, dialect):
         """The legacy spelling takes the same two clauses as the standard one."""
-        expr = CreateSequenceExpression(
+        expr = CreateSequenceStatement(
             dialect, Sequence(dialect, "gen_d"), start=7, increment=3
         )
         expr.use_generator = True
@@ -731,7 +731,7 @@ class TestSequenceBranches:
         self, dialect, kwargs, feature
     ):
         """Both spellings of every pair are refused by name, never dropped."""
-        expr = CreateSequenceExpression(
+        expr = CreateSequenceStatement(
             dialect, Sequence(dialect, "seq_f"), **kwargs
         )
         with pytest.raises(UnsupportedFeatureError) as exc_info:
@@ -782,7 +782,7 @@ class TestSequenceBranches:
 
     def test_sequence_version_gate_refuses_the_render(self):
         dialect = FirebirdDialect((2, 5, 0))
-        expr = CreateSequenceExpression(dialect, Sequence(dialect, "seq_g"))
+        expr = CreateSequenceStatement(dialect, Sequence(dialect, "seq_g"))
         with pytest.raises(UnsupportedFeatureError):
             dialect.format_create_sequence_statement(expr)
 
@@ -816,10 +816,10 @@ class TestSequenceBranches:
         SEQUENCE`` takes no options, which is why the ``IF EXISTS`` probe is
         False and a request for it raises rather than being dropped.
         """
-        assert DropSequenceExpression(dialect, Sequence(dialect, "seq_h")).to_sql() == (
+        assert DropSequenceStatement(dialect, Sequence(dialect, "seq_h")).to_sql() == (
             'DROP SEQUENCE "SEQ_H"', ()
         )
-        assert AlterSequenceExpression(
+        assert AlterSequenceStatement(
             dialect, Sequence(dialect, "seq_h"), restart=5, increment=2
         ).to_sql() == (
             'ALTER SEQUENCE "SEQ_H" RESTART WITH 5 INCREMENT BY 2', ()
@@ -828,7 +828,7 @@ class TestSequenceBranches:
 
 class TestCreateTableRebuildSnapshots:
     def test_basic_table(self, dialect):
-        expr = CreateTableExpression(dialect, Table(dialect, "users"), [
+        expr = CreateTableStatement(dialect, Table(dialect, "users"), [
             _column(dialect, "id", IntegerType(dialect), ColumnConstraint(dialect, ColumnConstraintType.PRIMARY_KEY)),
             _column(dialect, "name", VarCharType(length=100, dialect=dialect)),
         ])
@@ -841,7 +841,7 @@ class TestCreateTableRebuildSnapshots:
         (False, 'ON COMMIT PRESERVE ROWS'),
     ])
     def test_global_temporary_table(self, dialect, on_commit_delete, expected_tail):
-        expr = CreateTableExpression(dialect, Table(dialect, "tmp_t"), [_column(dialect, "id", IntegerType(dialect))], temporary=True)
+        expr = CreateTableStatement(dialect, Table(dialect, "tmp_t"), [_column(dialect, "id", IntegerType(dialect))], temporary=True)
         expr.on_commit_delete = on_commit_delete
         sql, _ = expr.to_sql()
         assert sql.startswith('CREATE GLOBAL TEMPORARY TABLE "TMP_T"')
@@ -853,7 +853,7 @@ class TestCreateTableRebuildSnapshots:
     ])
     def test_global_temporary_word_order_snapshot(self, dialect, on_commit_delete, expected):
         """F5 anchor: exact to_sql() snapshot of the corrected word order."""
-        expr = CreateTableExpression(dialect, Table(dialect, "gt_a"), [_column(dialect, "id", IntegerType(dialect))], temporary=True)
+        expr = CreateTableStatement(dialect, Table(dialect, "gt_a"), [_column(dialect, "id", IntegerType(dialect))], temporary=True)
         expr.on_commit_delete = on_commit_delete
         assert expr.to_sql() == (expected, ())
 
@@ -863,7 +863,7 @@ class TestCreateTableRebuildSnapshots:
         Previously the clause was rendered unconditionally; it must now be
         rejected through supports_if_not_exists_table().
         """
-        expr = CreateTableExpression(
+        expr = CreateTableStatement(
             dialect,
             Table(dialect, "tbl_c"),
             [_column(dialect, "id", IntegerType(dialect))],
@@ -874,7 +874,7 @@ class TestCreateTableRebuildSnapshots:
         assert "IF NOT EXISTS" in str(excinfo.value)
 
     def test_if_not_exists_renders_when_capability_present(self, dialect):
-        expr = CreateTableExpression(
+        expr = CreateTableStatement(
             dialect,
             Table(dialect, "tbl_c"),
             [_column(dialect, "id", IntegerType(dialect))],
@@ -886,14 +886,14 @@ class TestCreateTableRebuildSnapshots:
         assert sql.startswith('CREATE TABLE IF NOT EXISTS "TBL_C"')
 
     def test_external_file_clause(self, dialect):
-        expr = CreateTableExpression(dialect, Table(dialect, "ext_t"), [_column(dialect, "id", IntegerType(dialect))])
+        expr = CreateTableStatement(dialect, Table(dialect, "ext_t"), [_column(dialect, "id", IntegerType(dialect))])
         expr.external_file = "/data/ext.fdb"
         assert expr.to_sql() == ('CREATE TABLE "EXT_T" ("ID" INTEGER) EXTERNAL FILE \'/data/ext.fdb\'', ())
 
     def test_computed_by_column(self, dialect):
         col = _column(dialect, "full_name", VarCharType(length=200, dialect=dialect))
         col.computed_by = '"FIRST_NAME" || \' \' || "LAST_NAME"'
-        assert CreateTableExpression(dialect, Table(dialect, "emp"), [col]).to_sql() == (
+        assert CreateTableStatement(dialect, Table(dialect, "emp"), [col]).to_sql() == (
             'CREATE TABLE "EMP" '
             '("FULL_NAME" VARCHAR(200) COMPUTED BY ("FIRST_NAME" || \' \' || "LAST_NAME"))',
             (),
@@ -904,7 +904,7 @@ class TestCreateTableRebuildSnapshots:
 
         col = _column(dialect, "id", IntegerType(dialect))
         col.attributes = [IdentityAttribute(generation="ALWAYS", start=1000, increment=10)]
-        assert CreateTableExpression(dialect, Table(dialect, "ident_t"), [col]).to_sql() == (
+        assert CreateTableStatement(dialect, Table(dialect, "ident_t"), [col]).to_sql() == (
             'CREATE TABLE "IDENT_T" '
             '("ID" INTEGER GENERATED ALWAYS AS IDENTITY (START WITH 1000 INCREMENT BY 10))',
             (),
@@ -915,7 +915,7 @@ class TestCreateTableRebuildSnapshots:
             dialect, "id", IntegerType(dialect),
             ColumnConstraint(dialect, ColumnConstraintType.PRIMARY_KEY, is_auto_increment=True),
         )
-        assert CreateTableExpression(dialect, Table(dialect, "autoinc"), [col]).to_sql() == (
+        assert CreateTableStatement(dialect, Table(dialect, "autoinc"), [col]).to_sql() == (
             'CREATE TABLE "AUTOINC" ("ID" INTEGER GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY)', ()
         )
 
@@ -925,7 +925,7 @@ class TestCreateTableRebuildSnapshots:
             ColumnConstraint(dialect, ColumnConstraintType.DEFAULT, default_value="O'Brien"),
             ColumnConstraint(dialect, ColumnConstraintType.NOT_NULL),
         )
-        assert CreateTableExpression(dialect, Table(dialect, "t5"), [col]).to_sql() == (
+        assert CreateTableStatement(dialect, Table(dialect, "t5"), [col]).to_sql() == (
             "CREATE TABLE \"T5\" (\"STATUS\" VARCHAR(20) DEFAULT 'O''Brien' NOT NULL)", ()
         )
 
@@ -940,7 +940,7 @@ class TestCreateTableRebuildSnapshots:
                 default_value=E.Literal(dialect, "CURRENT_TIMESTAMP"),
             ),
         )
-        assert CreateTableExpression(dialect, Table(dialect, "t5b"), [col]).to_sql() == (
+        assert CreateTableStatement(dialect, Table(dialect, "t5b"), [col]).to_sql() == (
             'CREATE TABLE "T5B" ("CREATED_AT" TIMESTAMP DEFAULT ?)', ("CURRENT_TIMESTAMP",)
         )
 
@@ -950,7 +950,7 @@ class TestCreateTableRebuildSnapshots:
             ColumnConstraint(dialect, ColumnConstraintType.DEFAULT, default_value=0),
             ColumnConstraint(dialect, ColumnConstraintType.NULL),
         )
-        assert CreateTableExpression(dialect, Table(dialect, "t5c"), [col]).to_sql() == (
+        assert CreateTableStatement(dialect, Table(dialect, "t5c"), [col]).to_sql() == (
             'CREATE TABLE "T5C" ("AMOUNT" DECIMAL(18, 2) DEFAULT 0 NULL)', ()
         )
 
@@ -966,7 +966,7 @@ class TestCreateTableRebuildSnapshots:
             dialect, TableConstraintType.CHECK,
             check_condition=E.ComparisonPredicate(dialect, ">=", E.Column(dialect, "amount"), E.Literal(dialect, 0)),
         )
-        expr = CreateTableExpression(
+        expr = CreateTableStatement(
             dialect, Table(dialect, "orders"),
             [
                 _column(dialect, "id", IntegerType(dialect)),
@@ -987,7 +987,7 @@ class TestCreateTableRebuildSnapshots:
 
     def test_partition_rejected(self, dialect):
         partition = E.PartitionClause(dialect, method=E.PartitionStrategy.HASH, keys=[E.Column(dialect, "id")])
-        expr = CreateTableExpression(dialect, Table(dialect, "pt"), [_column(dialect, "id", IntegerType(dialect))], partition=partition)
+        expr = CreateTableStatement(dialect, Table(dialect, "pt"), [_column(dialect, "id", IntegerType(dialect))], partition=partition)
         with pytest.raises(UnsupportedFeatureError) as excinfo:
             expr.to_sql()
         assert "PARTITION BY clause" in str(excinfo.value)

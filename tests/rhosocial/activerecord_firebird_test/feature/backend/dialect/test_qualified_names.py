@@ -17,7 +17,7 @@ import pytest
 
 from rhosocial.activerecord.backend.dialect.exceptions import UnsupportedFeatureError
 from rhosocial.activerecord.backend.dialect.mixins import NamespaceMixin
-from rhosocial.activerecord.backend.expression import Column, QueryExpression
+from rhosocial.activerecord.backend.expression import Column, QueryStatement
 from rhosocial.activerecord.backend.expression.objects import (
     Domain,
     Function,
@@ -34,8 +34,8 @@ from rhosocial.activerecord.backend.expression.sources import (
 )
 from rhosocial.activerecord.backend.expression.statements import (
     ColumnDefinition,
-    CreateTableExpression,
-    DropTableExpression,
+    CreateTableStatement,
+    DropTableStatement,
     ForeignKeyConstraint,
     ReferentialAction,
 )
@@ -172,14 +172,14 @@ class TestStatementsGoThroughTheObjectLayer:
 
     def test_create_table_renders_the_accepted_reference(self, dialect):
         columns = [ColumnDefinition(dialect, "id", IntegerType(dialect))]
-        expr = CreateTableExpression(dialect, Table(dialect, "orders"), columns)
+        expr = CreateTableStatement(dialect, Table(dialect, "orders"), columns)
         sql, params = expr.to_sql()
         assert sql == 'CREATE TABLE "ORDERS" ("ID" INTEGER)'
         assert params == ()
 
     def test_create_table_refuses_a_qualified_reference(self, dialect, qualified):
         columns = [ColumnDefinition(dialect, "id", IntegerType(dialect))]
-        expr = CreateTableExpression(dialect, qualified, columns)
+        expr = CreateTableStatement(dialect, qualified, columns)
         with pytest.raises(UnsupportedFeatureError, match="schema-qualified"):
             expr.to_sql()
 
@@ -196,21 +196,21 @@ class TestStatementsGoThroughTheObjectLayer:
             on_delete=ReferentialAction.CASCADE,
             on_update=ReferentialAction.NO_ACTION,
         )
-        expr = CreateTableExpression(
+        expr = CreateTableStatement(
             dialect, Table(dialect, "orders"), columns, table_constraints=[fk]
         )
         sql, _ = expr.to_sql()
         assert 'REFERENCES "USERS" ("ID") ON DELETE CASCADE' in sql
 
     def test_drop_table_renders_and_refuses(self, dialect, qualified):
-        assert DropTableExpression(
+        assert DropTableStatement(
             dialect=dialect, table=Table(dialect, "orders")
         ).to_sql() == ('DROP TABLE "ORDERS"', ())
         with pytest.raises(UnsupportedFeatureError, match="schema-qualified"):
-            DropTableExpression(dialect=dialect, table=qualified).to_sql()
+            DropTableStatement(dialect=dialect, table=qualified).to_sql()
 
     def test_select_from_a_qualified_relation_is_refused(self, dialect, qualified):
-        query = QueryExpression(
+        query = QueryStatement(
             dialect, [Column(dialect, "id")], NamedRelationRef(dialect, qualified)
         )
         with pytest.raises(UnsupportedFeatureError, match="schema-qualified"):
@@ -251,7 +251,7 @@ class TestRowSourceName:
         ) == "z"
 
     def test_derived_table_is_known_only_by_its_alias(self, dialect):
-        query = QueryExpression(
+        query = QueryStatement(
             dialect, [Column(dialect, "id")], NamedRelationRef(dialect, Table(dialect, "orders"))
         )
         assert dialect.row_source_name(DerivedTableSource(dialect, query)) is None

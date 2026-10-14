@@ -7,7 +7,7 @@ from rhosocial.activerecord.backend.dialect.exceptions import UnsupportedFeature
 
 if TYPE_CHECKING:
     from rhosocial.activerecord.backend.expression.transaction import (
-        BeginTransactionExpression,
+        BeginTransactionStatement,
         SetTransactionExpression,
     )
 
@@ -41,7 +41,7 @@ class FirebirdTransactionMixin:
     def supports_savepoint(self) -> bool:
         return True
 
-    def format_begin_transaction(self, expr: "BeginTransactionExpression") -> Tuple[str, tuple]:
+    def format_begin_transaction_statement(self, expr: "BeginTransactionStatement") -> Tuple[str, tuple]:
         from rhosocial.activerecord.backend.transaction import IsolationLevel
         level_map = {
             IsolationLevel.READ_UNCOMMITTED: "READ COMMITTED",

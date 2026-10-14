@@ -13,7 +13,7 @@ from rhosocial.activerecord.backend.introspection.executor import (
     SyncIntrospectorExecutor,
 )
 from rhosocial.activerecord.backend.introspection.types import (
-    TableInfo,
+    IntrospectionTableInfo,
 )
 
 from .async_introspector import FirebirdAsyncIntrospectorMixin
@@ -37,7 +37,7 @@ class SyncFirebirdIntrospector(FirebirdAsyncIntrospectorMixin, SyncAbstractIntro
 
     async def get_table_info(
         self, table_name: str, schema: Optional[str] = None
-    ) -> Optional[TableInfo]:
+    ) -> Optional[IntrospectionTableInfo]:
         from copy import copy
         tables = self.list_tables(schema)
         table = next((t for t in tables if t.name == table_name), None)

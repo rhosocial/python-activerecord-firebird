@@ -8,13 +8,13 @@ from rhosocial.activerecord.backend.dialect.mixins import DomainMixin
 from rhosocial.activerecord.backend.expression.objects import Domain
 from rhosocial.activerecord.backend.expression.statements.ddl_domain import (
     AddDomainCheckAction,
-    AlterDomainExpression,
-    CreateDomainExpression,
+    AlterDomainStatement,
+    CreateDomainStatement,
     DomainAlterAction,
     DomainNullability,
     DropDomainCheckAction,
     DropDomainDefaultAction,
-    DropDomainExpression,
+    DropDomainStatement,
     DropDomainNotNullAction,
     RenameDomainAction,
     SetDomainDefaultAction,
@@ -112,12 +112,12 @@ class FirebirdDomainMixin(DomainMixin):
 
     def format_create_domain_statement(
         self,
-        expr: CreateDomainExpression,
+        expr: CreateDomainStatement,
     ) -> Tuple[str, tuple]:
         """Render CREATE DOMAIN <name> AS <type> [...checks].
 
         Raises:
-            TypeError: ``CreateDomainExpression.domain`` is not a Domain. A table
+            TypeError: ``CreateDomainStatement.domain`` is not a Domain. A table
                 or a sequence would have had its own name rendered as the domain.
             UnsupportedFeatureError: The clause requested is not one Firebird
                 spells, or this engine version does not have DOMAINs.
@@ -128,7 +128,7 @@ class FirebirdDomainMixin(DomainMixin):
             raise UnsupportedFeatureError(self.name, "CREATE DOMAIN")
         if not isinstance(expr.domain, Domain):
             raise TypeError(
-                f"CreateDomainExpression.domain must be a Domain, "
+                f"CreateDomainStatement.domain must be a Domain, "
                 f"got {type(expr.domain).__name__}"
             )
         data_type = _bind_data_type(self, expr.data_type)
@@ -182,12 +182,12 @@ class FirebirdDomainMixin(DomainMixin):
 
     def format_alter_domain_statement(
         self,
-        expr: AlterDomainExpression,
+        expr: AlterDomainStatement,
     ) -> Tuple[str, tuple]:
         """Render ALTER DOMAIN <name> <actions>.
 
         Raises:
-            TypeError: ``AlterDomainExpression.domain`` is not a Domain. Another
+            TypeError: ``AlterDomainStatement.domain`` is not a Domain. Another
                 object kind would have had its own name rendered as the domain
                 being altered.
             UnsupportedFeatureError: The action set is not one Firebird accepts,
@@ -197,7 +197,7 @@ class FirebirdDomainMixin(DomainMixin):
             raise UnsupportedFeatureError(self.name, "ALTER DOMAIN")
         if not isinstance(expr.domain, Domain):
             raise TypeError(
-                f"AlterDomainExpression.domain must be a Domain, "
+                f"AlterDomainStatement.domain must be a Domain, "
                 f"got {type(expr.domain).__name__}"
             )
         if len(expr.actions) > 1 and not self.supports_multiple_domain_alter_actions():
@@ -251,7 +251,7 @@ class FirebirdDomainMixin(DomainMixin):
 
     def format_drop_domain_statement(
         self,
-        expr: DropDomainExpression,
+        expr: DropDomainStatement,
     ) -> Tuple[str, tuple]:
         return super().format_drop_domain_statement(expr)
 

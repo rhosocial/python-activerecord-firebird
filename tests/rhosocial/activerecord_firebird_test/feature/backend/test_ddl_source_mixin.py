@@ -12,7 +12,7 @@ from rhosocial.activerecord.backend.expression.core import Column, Literal
 from rhosocial.activerecord.backend.expression.statements import (
     ColumnConstraintType,
     CreateTableOptions,
-    GeneratedColumnExpression,
+    ColumnGeneratedConstraint,
     GeneratedColumnType,
     IndexDefinition,
     StorageOptionsExpression,
@@ -104,7 +104,7 @@ CHARACTER_SET_ATTRIBUTE = CharacterSetAttribute(name="utf8mb4")
 ATTRIBUTES_MARKER = UseColumnAttributes(IDENTITY_ATTRIBUTE, COLLATION_ATTRIBUTE)
 SECOND_ATTRIBUTES_MARKER = UseColumnAttributes(CHARACTER_SET_ATTRIBUTE)
 COMMENT_MARKER = UseComment("value comment")
-GENERATED_EXPRESSION = GeneratedColumnExpression(
+GENERATED_EXPRESSION = ColumnGeneratedConstraint(
     None,
     Column(None, "value_col"),
     GeneratedColumnType.STORED,

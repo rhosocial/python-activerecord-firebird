@@ -31,8 +31,8 @@ from rhosocial.activerecord.backend.expression.objects import Table
 from rhosocial.activerecord.backend.expression.statements import (
     AutoIncrementClause,
     ColumnDefinition,
-    CreateTableExpression,
-    DropTableExpression,
+    CreateTableStatement,
+    DropTableStatement,
     IdentityClause,
 )
 from rhosocial.activerecord.backend.expression.types import IntegerType
@@ -223,7 +223,7 @@ class TestExecutionConfirmation:
         fb_backend.introspect_and_adapt()
         dialect = fb_backend.dialect
         table = Table(dialect, f"IDENTITY_{case.upper()}")
-        expression = CreateTableExpression(
+        expression = CreateTableStatement(
             dialect,
             table,
             [
@@ -241,7 +241,7 @@ class TestExecutionConfirmation:
         assert clause.strip() in sql, sql
 
         outcome = confirm_expression_execution(
-            fb_backend, expression, teardown=[DropTableExpression(dialect, table)]
+            fb_backend, expression, teardown=[DropTableStatement(dialect, table)]
         )
         assert outcome is ExecutionOutcome.ACCEPTED
 
