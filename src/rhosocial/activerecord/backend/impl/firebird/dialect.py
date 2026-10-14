@@ -148,6 +148,7 @@ from .mixins.version_boundaries import _norm_version
 from .reserved_words import FIREBIRD_RESERVED_WORDS
 from .mixins import (
     FirebirdAlterTableModifierMixin,
+    FirebirdConstraintMixin,
     FirebirdDMLOperationMixin,
     FirebirdLockingMixin,
     FirebirdTableMixin,
@@ -280,6 +281,7 @@ class FirebirdDialect(
     FirebirdLockingMixin,       # Before DQLMixin to override format_for_update_clause
     DQLMixin,
     FirebirdAlterTableModifierMixin,  # Before DDLColumnMixin to override format_*_action
+    FirebirdConstraintMixin,  # Before DDLColumnMixin and ConstraintMixin for the pins
     DDLColumnMixin,
     UserDefinedTypeMixin,
     TransactionControlMixin,
@@ -606,7 +608,11 @@ class FirebirdDialect(
         return FirebirdTableMixin.format_column_definition(self, col_def)
 
     def format_table_constraint(self, expr: "TableConstraint") -> Tuple[str, tuple]:
-        return FirebirdTableMixin.format_table_constraint(self, expr)
+        # FirebirdConstraintMixin is in the MRO ahead of DDLColumnMixin, so the
+        # Firebird gates on this formatter win without a bridge; this only
+        # documents that the dispatch never falls through to FirebirdTableMixin
+        # (which is listed after DDLColumnMixin and would lose).
+        return FirebirdConstraintMixin.format_table_constraint(self, expr)
 
     def supports_trigger_position(self) -> bool:
         return True
@@ -856,56 +862,13 @@ class FirebirdDialect(
     # endregion
 
     # region ConstraintSupport
-
-    def supports_primary_key_constraint(self) -> bool:
-        return True
-
-    def supports_unique_constraint(self) -> bool:
-        return True
-
-    def supports_not_null_constraint(self) -> bool:
-        return True
-
-    def supports_check_constraint(self) -> bool:
-        return True
-
-    def supports_foreign_key_constraint(self) -> bool:
-        return True
-
-    def supports_fk_on_delete(self) -> bool:
-        return True
-
-    def supports_fk_on_update(self) -> bool:
-        return True
-
-    def supports_fk_match(self) -> bool:
-        return False
-
-    def supports_deferrable_constraint(self) -> bool:
-        """Firebird has no DEFERRABLE / INITIALLY ... constraint attributes.
-
-        Measured on Firebird 5.0.4 and 6.0.0: ``DEFERRABLE``, ``NOT
-        DEFERRABLE``, ``INITIALLY DEFERRED`` and ``INITIALLY IMMEDIATE`` are
-        all answered with ``Token unknown`` on table and column constraints
-        alike. The formatter refuses a requested spelling by name.
-        """
-        return False
-
-    def supports_constraint_enforced(self) -> bool:
-        """Firebird has no ENFORCED / NOT ENFORCED constraint control.
-
-        Measured on Firebird 5.0.4 and 6.0.0: ``CHECK (...) ENFORCED`` and
-        ``CHECK (...) NOT ENFORCED`` are answered with ``Token unknown -
-        ENFORCED`` / ``Token unknown - NOT``, and so are the FOREIGN KEY and
-        column-constraint forms. The formatter refuses a requested spelling by
-        name rather than dropping it.
-        """
-        return False
-
-    def supports_add_constraint(self) -> bool:
-        return True
-
-    def supports_drop_constraint(self) -> bool:
-        return True
-
+    #
+    # Every constraint switch lives on FirebirdConstraintMixin
+    # (rhosocial.activerecord.backend.impl.firebird.mixins.constraint), not
+    # here.  It used to be declared inline in this region with bare ``return
+    # True`` bodies; the values were right but carried no evidence, so a
+    # measured correction had nowhere to live.  Each switch there states the
+    # Firebird 5.0.4 SQLCODE or message it came from, which is what keeps a
+    # moved core default from silently becoming Firebird's contract.
+    #
     # endregion

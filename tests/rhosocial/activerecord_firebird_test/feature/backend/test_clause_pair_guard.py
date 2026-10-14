@@ -74,8 +74,8 @@ from rhosocial.activerecord.backend.expression.statements.ddl_table import (
     DropTableStatement,
     ForeignKeyConstraint,
     IdentityClause,
+    TableCheckConstraint,
     TableConstraint,
-    TableConstraintType,
 )
 from rhosocial.activerecord.backend.expression.statements.ddl_truncate import (
     TruncateStatement,
@@ -132,9 +132,8 @@ def _fk(d, **kw):
 def _check(d, **kw):
     return TableConstraint(
         d,
-        TableConstraintType.CHECK,
+        branch=TableCheckConstraint(d, ComparisonPredicate(d, ">", Column(d, "a"), Column(d, "b"))),
         name="ck",
-        check_condition=ComparisonPredicate(d, ">", Column(d, "a"), Column(d, "b")),
         **kw,
     )
 
@@ -293,7 +292,8 @@ PAIR_CASES = (
         "not_deferrable",
         r"(?<!NOT )DEFERRABLE\b",
         r"NOT DEFERRABLE\b",
-        "DEFERRABLE constraint",
+        "FOREIGN KEY DEFERRABLE",
+        "FOREIGN KEY NOT DEFERRABLE",
         a_probe="supports_deferrable_constraint",
     ),
     PairCase(
@@ -303,7 +303,8 @@ PAIR_CASES = (
         "initially_immediate",
         r"INITIALLY DEFERRED\b",
         r"INITIALLY IMMEDIATE\b",
-        "INITIALLY DEFERRED/IMMEDIATE constraint",
+        "FOREIGN KEY INITIALLY DEFERRED",
+        "FOREIGN KEY INITIALLY IMMEDIATE",
         a_probe="supports_deferrable_constraint",
     ),
     PairCase(
@@ -313,13 +314,14 @@ PAIR_CASES = (
         "not_enforced",
         r"(?<!NOT )ENFORCED\b",
         r"NOT ENFORCED\b",
-        "ENFORCED/NOT ENFORCED constraint",
+        "CHECK ENFORCED",
+        "CHECK NOT ENFORCED",
         a_probe="supports_constraint_enforced",
     ),
     PairCase(
         "AlterConstraint.enforced",
         lambda d, **kw: AlterConstraint(
-            d, "c", constraint_type=TableConstraintType.CHECK, **kw
+            d, "c", constraint_kind=TableCheckConstraint, **kw
         ),
         "enforced",
         "not_enforced",
@@ -614,12 +616,8 @@ IDENTITY_CLAUSE_PARAMS = {
 TABLE_CONSTRAINT_PARAMS = {
     "self",
     "dialect",
-    "constraint_type",
+    "branch",
     "name",
-    "columns",
-    "check_condition",
-    "foreign_key_table",
-    "foreign_key_columns",
     "deferrable",
     "not_deferrable",
     "initially_deferred",
@@ -722,16 +720,19 @@ class TestParameterInventoryIsComplete:
         )
 
     def test_firebird_table_constraint_formatter_consumes_every_pair(self):
-        source = inspect.getsource(FirebirdTableMixin.format_table_constraint)
-        missing = [
-            name
-            for name in TABLE_CONSTRAINT_PAIR_PARAMS
-            if f"expr.{name}" not in source
-        ]
+        # The gate runs in FirebirdConstraintMixin now (its declaration
+        # precedes DDLColumnMixin in the MRO), and the parameters are read by
+        # the formatter and by the two ``_require_*`` helpers it calls, so the
+        # whole class body is what has to consume them.
+        from rhosocial.activerecord.backend.impl.firebird.mixins.constraint import (
+            FirebirdConstraintMixin,
+        )
+
+        source = inspect.getsource(FirebirdConstraintMixin)
+        missing = [name for name in TABLE_CONSTRAINT_PAIR_PARAMS if name not in source]
         assert not missing, (
-            "FirebirdTableMixin.format_table_constraint does not read these "
-            f"parameters: {missing}. A parameter the formatter never reads is "
-            "silently dropped."
+            "FirebirdConstraintMixin does not read these parameters: {missing}. "
+            "A parameter the formatter never reads is silently dropped."
         )
 
 

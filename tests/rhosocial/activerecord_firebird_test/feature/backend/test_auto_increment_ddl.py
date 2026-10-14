@@ -16,7 +16,8 @@ Covers bugs found in rbac cross-backend testing:
 import pytest
 
 from rhosocial.activerecord.backend.expression import (
-    CreateTableStatement, ColumnDefinition, ColumnConstraint, ColumnConstraintType,
+    CreateTableStatement, ColumnDefinition, ColumnConstraint,
+    ColumnDefaultConstraint, ColumnNotNullConstraint, ColumnPrimaryKeyConstraint,
 )
 from rhosocial.activerecord.backend.expression.objects import Table
 from rhosocial.activerecord.backend.expression.types import (
@@ -31,7 +32,7 @@ def dialect():
 
 
 def _pk(dialect):
-    return [ColumnConstraint(dialect, ColumnConstraintType.PRIMARY_KEY, is_auto_increment=True)]
+    return [ColumnConstraint(dialect, branch=ColumnPrimaryKeyConstraint(dialect, is_auto_increment=True))]
 
 
 def _build_table(dialect):
@@ -40,10 +41,10 @@ def _build_table(dialect):
         columns=[
             ColumnDefinition(dialect, "id", IntegerType(dialect), constraints=_pk(dialect)),
             ColumnDefinition(dialect, "name", TextType(dialect),
-                constraints=[ColumnConstraint(dialect, ColumnConstraintType.NOT_NULL)]),
+                constraints=[ColumnConstraint(dialect, branch=ColumnNotNullConstraint(dialect))]),
             ColumnDefinition(dialect, "flag", BooleanType(dialect),
-                constraints=[ColumnConstraint(dialect, ColumnConstraintType.NOT_NULL),
-                             ColumnConstraint(dialect, ColumnConstraintType.DEFAULT, default_value=True)]),
+                constraints=[ColumnConstraint(dialect, branch=ColumnNotNullConstraint(dialect)),
+                             ColumnConstraint(dialect, branch=ColumnDefaultConstraint(dialect, True))]),
             ColumnDefinition(dialect, "code", VarCharType(length=16, dialect=dialect)),
             ColumnDefinition(dialect, "created_at", TimestampType(dialect=dialect)),
         ],
@@ -69,8 +70,8 @@ class TestAutoIncrementDDL:
             columns=[
                 ColumnDefinition(dialect, "id", IntegerType(dialect), constraints=_pk(dialect)),
                 ColumnDefinition(dialect, "flag", BooleanType(dialect),
-                    constraints=[ColumnConstraint(dialect, ColumnConstraintType.NOT_NULL),
-                                 ColumnConstraint(dialect, ColumnConstraintType.DEFAULT, default_value=True)]),
+                    constraints=[ColumnConstraint(dialect, branch=ColumnNotNullConstraint(dialect)),
+                                 ColumnConstraint(dialect, branch=ColumnDefaultConstraint(dialect, True))]),
             ],
         )
         sql, _ = dialect.format_create_table_statement(expr)

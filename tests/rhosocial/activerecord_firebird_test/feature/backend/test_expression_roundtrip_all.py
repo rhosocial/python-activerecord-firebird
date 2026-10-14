@@ -100,7 +100,11 @@ from rhosocial.activerecord.backend.expression.objects import (
     Trigger,
     View,
 )
-from rhosocial.activerecord.backend.expression.predicates import ComparisonPredicate
+from rhosocial.activerecord.backend.expression.predicates import (
+    ComparisonPredicate,
+    ILikePredicate,
+    LikePredicate,
+)
 from rhosocial.activerecord.backend.expression.query_parts import JoinClause
 from rhosocial.activerecord.backend.expression.serialization import (
     ExpressionRegistry,
@@ -147,12 +151,13 @@ from rhosocial.activerecord.backend.expression.statements.ddl_domain import (
 )
 from rhosocial.activerecord.backend.expression.statements.ddl_table import (
     ColumnConstraint,
-    ColumnConstraintType,
+    ColumnNotNullConstraint,
     ForeignKeyConstraint,
+    TableCheckConstraint,
+    TableConstraint,
+    TablePrimaryKeyConstraint,
     IndexDefinition,
     ReferencesClause,
-    TableConstraint,
-    TableConstraintType,
 )
 from rhosocial.activerecord.backend.expression.statements.ddl_trigger import (
     TriggerEvent,
@@ -490,12 +495,12 @@ def register_specials():
     # -- constraints and column pieces --------------------------------------
     register_special_constructor(
         "statements.ddl_table.ColumnConstraint",
-        lambda d: ColumnConstraint(d, ColumnConstraintType.NOT_NULL, name="c"),
+        lambda d: ColumnConstraint(d, branch=ColumnNotNullConstraint(d), name="c"),
     )
     register_special_constructor(
         "statements.ddl_table.TableConstraint",
         lambda d: TableConstraint(
-            d, TableConstraintType.PRIMARY_KEY, name="c", columns=["a"]
+            d, branch=TablePrimaryKeyConstraint(d, ["a"]), name="c"
         ),
     )
     register_special_constructor(
@@ -525,12 +530,30 @@ def register_specials():
         lambda d: ddl_alter.AddTableConstraint(
             d,
             TableConstraint(
-                d, TableConstraintType.PRIMARY_KEY, name="c", columns=["a"]
+                d, branch=TablePrimaryKeyConstraint(d, ["a"]), name="c"
             ),
         ),
     )
 
     # -- expressions that need at least one member --------------------------
+    # -- predicates whose column slot is an expression ----------------------
+    # ``column`` is annotated ``Any`` -- it is genuinely either a column or a
+    # computed value -- so the generic guess supplies a bare string and the
+    # formatter calls ``.to_sql()`` on it. Both LIKE and ILIKE need the operand
+    # spelled as a node, and LIKE additionally carries its operator as a
+    # parameter, which the guess would fill with the operand.
+    register_special_constructor(
+        "predicates.ILikePredicate",
+        lambda d: ILikePredicate(d, Column(d, "a"), "%x%"),
+    )
+    # Firebird has no ILIKE (``-104 Token unknown - ILIKE``); the factory is
+    # still what builds the node, so the constructor table has to cover it and
+    # the round trip then classifies it as Firebird's own UnsupportedFeatureError.
+    register_special_constructor(
+        "predicates.LikePredicate",
+        lambda d: LikePredicate(d, "LIKE", Column(d, "a"), Literal(d, "%x%", inline_literals=True)),
+    )
+
     register_special_constructor(
         "advanced_functions.CaseFunction",
         lambda d: CaseFunction(
@@ -777,13 +800,27 @@ LEGITIMATE_NON_RENDERS = {
     "rhosocial.activerecord.backend.expression.bases.SQLValue": (
         NotImplementedError, _NO_FORMATTER,
     ),
-    "rhosocial.activerecord.backend.expression.datetime._TemporalValueExpression": (
+    "rhosocial.activerecord.backend.expression.datetime._TemporalValue": (
         NotImplementedError, _NO_FORMATTER,
     ),
     "rhosocial.activerecord.backend.expression.introspection.IntrospectionExpression": (
         NotImplementedError, _NO_FORMATTER,
     ),
     "rhosocial.activerecord.backend.expression.statements.ddl_alter.AlterTableAction": (
+        NotImplementedError, _NO_FORMATTER,
+    ),
+    # The two constraint-branch roots (S3). Each alternative overrides
+    # ``format_method``; the roots name only what every branch shares, so there
+    # is nothing to dispatch.
+    "rhosocial.activerecord.backend.expression.statements.ddl_table.ColumnClause": (
+        NotImplementedError, _NO_FORMATTER,
+    ),
+    "rhosocial.activerecord.backend.expression.statements.ddl_table."
+    "ColumnConstraintBranch": (
+        NotImplementedError, _NO_FORMATTER,
+    ),
+    "rhosocial.activerecord.backend.expression.statements.ddl_table."
+    "TableConstraintBranch": (
         NotImplementedError, _NO_FORMATTER,
     ),
     "rhosocial.activerecord.backend.expression.statements.dml.InsertDataSource": (
@@ -1001,6 +1038,12 @@ LEGITIMATE_NON_RENDERS = {
     "rhosocial.activerecord.backend.expression.xml.XMLParseExpression": (
         UnsupportedFeatureError, _NO_DIALECT_METHOD,
     ),
+    # S1-c's ``PassingClause`` renders through the public
+    # ``format_passing_clause``, which this dialect does not declare -- same
+    # reason as the ``format_xml*`` family above, and the same SQL/XML absence.
+    "rhosocial.activerecord.backend.expression.xml.PassingClause": (
+        UnsupportedFeatureError, _NO_DIALECT_METHOD,
+    ),
     "rhosocial.activerecord.backend.expression.xml.XMLQueryExpression": (
         UnsupportedFeatureError, _NO_DIALECT_METHOD,
     ),
@@ -1106,13 +1149,14 @@ UNMODELLED_FORMATTERS = {
     "the TableSource root (every concrete row source overrides its formatter; "
     "the root carries nothing but an alias and is never rendered)": ("format_table_source",),
     "SQL/XML (Firebird 4 has no XML query functions, so the dialect declares "
-    "no ``format_xml*`` method at all)": (
+    "no ``format_xml*`` method at all; the S1-c ``PassingClause`` rides the "
+    "same absence through its own ``format_passing_clause``)": (
         "format_xmlagg_expression",
         "format_xmlattributes_expression",
         "format_xmlcomment_expression",
         "format_xmlconcat_expression",
         "format_xmlelement_expression",
-        "format_xmlexists_expression",
+        "format_xmlexists_predicate",
         "format_xmlforest_expression",
         "format_xmlpi_expression",
         "format_xmlparse_expression",
@@ -1120,6 +1164,7 @@ UNMODELLED_FORMATTERS = {
         "format_xmlroot_expression",
         "format_xmlserialize_expression",
         "format_xmltable_expression",
+        "format_passing_clause",
     ),
 }
 
@@ -1591,13 +1636,13 @@ PAIR_BEARING_CASES = (
     (
         "TableConstraint.enforced",
         lambda d: ddl_table.TableConstraint(
-            d, TableConstraintType.CHECK,
-            check_condition=ComparisonPredicate(d, ">", Column(d, "a"), Column(d, "b")),
+            d, branch=TableCheckConstraint(
+                d, ComparisonPredicate(d, ">", Column(d, "a"), Column(d, "b"))),
             enforced=True,
         ),
         lambda d: ddl_table.TableConstraint(
-            d, TableConstraintType.CHECK,
-            check_condition=ComparisonPredicate(d, ">", Column(d, "a"), Column(d, "b")),
+            d, branch=TableCheckConstraint(
+                d, ComparisonPredicate(d, ">", Column(d, "a"), Column(d, "b"))),
             not_enforced=True,
         ),
         "enforced",

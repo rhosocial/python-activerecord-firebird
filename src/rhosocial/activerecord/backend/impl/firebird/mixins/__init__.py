@@ -20,6 +20,7 @@ from .types import FirebirdTypeSupportMixin
 from .column_type import FirebirdColumnTypeMixin
 from .partition import FirebirdPartitionMixin
 from .ddl_alter_table_modifier import FirebirdAlterTableModifierMixin
+from .constraint import FirebirdConstraintMixin
 from .domain import FirebirdDomainMixin
 from .exception import FirebirdExceptionMixin
 from .routine import FirebirdRoutineMixin
@@ -69,6 +70,7 @@ __all__ = [
     "FirebirdColumnTypeMixin",
     "FirebirdPartitionMixin",
     "FirebirdAlterTableModifierMixin",
+    "FirebirdConstraintMixin",
     "FirebirdDomainMixin",
     "FirebirdExceptionMixin",
     "FirebirdRoutineMixin",
