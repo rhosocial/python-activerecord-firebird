@@ -9,10 +9,10 @@ from rhosocial.activerecord.backend.dialect.protocols import (
     CreateDomainSupport,
     DropDomainSupport,
 )
-from rhosocial.activerecord.backend.expression import Literal
+from rhosocial.activerecord.backend.expression import DdlLiteral
 from rhosocial.activerecord.backend.expression.objects import Domain
 from rhosocial.activerecord.backend.expression.serialization import (
-    ExpressionRegistry,
+    registered_expression_classes,
     deserialize,
     deserialize_json,
     deserialize_xml,
@@ -71,7 +71,7 @@ def _check(dialect, condition, *, name=None):
 
 
 def _positive_check(dialect):
-    return _check(dialect, DomainValueExpression(dialect) > Literal(dialect, 0, inline_literals=True))
+    return _check(dialect, DomainValueExpression(dialect) > DdlLiteral(dialect, 0))
 
 
 class TestCreateDomain:
@@ -96,12 +96,12 @@ class TestCreateDomain:
 
     def test_core_expression_uses_firebird_clause_order(self):
         dialect = FirebirdDialect((5, 0, 0))
-        condition = DomainValueExpression(dialect) > Literal(dialect, 0, inline_literals=True)
+        condition = DomainValueExpression(dialect) > DdlLiteral(dialect, 0)
         expression = CreateDomainStatement(
             dialect,
             Domain(dialect, "positive_code"),
             VarCharType(length=8),
-            default=Literal(dialect, "A", inline_literals=True),
+            default=DdlLiteral(dialect, "A"),
             nullability=DomainNullability.NOT_NULL,
             checks=[_check(dialect, condition)],
             collation="UNICODE_FS",
@@ -143,7 +143,7 @@ class TestCreateDomain:
             checks=[
                 _check(
                     dialect,
-                    DomainValueExpression(dialect) > Literal(dialect, 0, inline_literals=True),
+                    DomainValueExpression(dialect) > DdlLiteral(dialect, 0),
                     name="positive_check",
                 )
             ],
@@ -416,7 +416,7 @@ class TestAlterDomain:
         dialect = FirebirdDialect((4, 0, 0))
         named_check = _check(
             dialect,
-            DomainValueExpression(dialect) > Literal(dialect, 0, inline_literals=True),
+            DomainValueExpression(dialect) > DdlLiteral(dialect, 0),
             name="positive_check",
         )
         add_expression = AlterDomainStatement(
@@ -629,7 +629,7 @@ class TestDispatchAndSerialization:
 
         for expression_class in classes:
             fqn = f"{expression_class.__module__}.{expression_class.__name__}"
-            assert ExpressionRegistry.lookup(fqn) is expression_class
+            assert registered_expression_classes()[fqn] is expression_class
 
     def test_firebird_data_types_are_registered(self):
         classes = (
@@ -644,7 +644,7 @@ class TestDispatchAndSerialization:
 
         for expression_class in classes:
             fqn = f"{expression_class.__module__}.{expression_class.__name__}"
-            assert ExpressionRegistry.lookup(fqn) is expression_class
+            assert registered_expression_classes()[fqn] is expression_class
 
     def test_firebird_data_types_round_trip_in_all_codecs(self):
         dialect = FirebirdDialect((4, 0, 0))

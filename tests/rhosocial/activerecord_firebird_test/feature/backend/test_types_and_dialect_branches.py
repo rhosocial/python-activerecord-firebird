@@ -544,7 +544,7 @@ class TestReturningBranches:
     def test_insert_returning_snapshot(self, dialect):
         insert = InsertStatement(
             dialect, Table(dialect, "users"),
-            ValuesSource(dialect, [[E.RawSQLExpression(dialect, "?")]]),
+            ValuesSource(dialect, [[E.RawSQL(dialect, "?")]]),
             columns=["name"],
             returning=ReturningClause(dialect, expressions=[E.Column(dialect, "id"), E.Column(dialect, "name")]),
         )
@@ -573,7 +573,7 @@ class TestReturningBranches:
         delete = DeleteStatement(
             dialect, Table(dialect, "users"),
             where=E.ComparisonPredicate(dialect, "=", E.Column(dialect, "id"), E.Literal(dialect, 7)),
-            returning=ReturningClause(dialect, expressions=[E.RawSQLExpression(dialect, "*")]),
+            returning=ReturningClause(dialect, expressions=[E.RawSQL(dialect, "*")]),
         )
         assert delete.to_sql() == ('DELETE FROM "USERS" WHERE "ID" = ? RETURNING *', (7,))
 

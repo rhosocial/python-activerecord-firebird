@@ -4,7 +4,7 @@
 import re
 from typing import Tuple
 
-from rhosocial.activerecord.backend.expression.serialization import ExpressionRegistry
+from rhosocial.activerecord.backend.expression.serialization import register_expression_class
 from rhosocial.activerecord.backend.expression.types import (
     BigIntType,
     BinaryType,
@@ -432,13 +432,13 @@ def _parse_firebird_data_type_name(value: str) -> DataType:
     raise ValueError("data_type_name contains unsupported Firebird type syntax")
 
 
-ExpressionRegistry.register(FirebirdCharType)
-ExpressionRegistry.register(FirebirdVarCharType)
-ExpressionRegistry.register(FirebirdTimeStampTzType)
-ExpressionRegistry.register(FirebirdTimeTzType)
-ExpressionRegistry.register(FirebirdTimeWithoutTimeZoneType)
-ExpressionRegistry.register(FirebirdDecFloatType)
-ExpressionRegistry.register(FirebirdInt128Type)
+register_expression_class(FirebirdCharType)
+register_expression_class(FirebirdVarCharType)
+register_expression_class(FirebirdTimeStampTzType)
+register_expression_class(FirebirdTimeTzType)
+register_expression_class(FirebirdTimeWithoutTimeZoneType)
+register_expression_class(FirebirdDecFloatType)
+register_expression_class(FirebirdInt128Type)
 
 
 __all__ = [

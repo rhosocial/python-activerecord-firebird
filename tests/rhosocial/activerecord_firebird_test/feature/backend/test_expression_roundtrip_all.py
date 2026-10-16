@@ -75,13 +75,15 @@ import pytest
 from rhosocial.activerecord.backend.dialect.exceptions import UnsupportedFeatureError
 from rhosocial.activerecord.backend.expression import graph as graph_mod
 from rhosocial.activerecord.backend.expression.advanced_functions import (
-    CaseFunction,
+    CaseExpression,
     WindowClause,
     WindowDefinition,
     WindowSpecification,
 )
 from rhosocial.activerecord.backend.expression.collation import CollateFunction
 from rhosocial.activerecord.backend.expression.core import Column, Literal
+from rhosocial.activerecord.backend.expression.operators import ArithmeticOperation
+from rhosocial.activerecord.backend.expression.query_sources import SetOperation
 from rhosocial.activerecord.backend.expression.datetime import (
     TemporalOptionsExpression,
 )
@@ -107,7 +109,8 @@ from rhosocial.activerecord.backend.expression.predicates import (
 )
 from rhosocial.activerecord.backend.expression.query_parts import JoinClause
 from rhosocial.activerecord.backend.expression.serialization import (
-    ExpressionRegistry,
+    auto_register_builtins,
+    registered_expression_classes,
     deserialize,
     deserialize_json,
     deserialize_xml,
@@ -204,7 +207,7 @@ def _collect_matrix_classes():
     modules re-export under a second name. They are the same objects, so the
     first name wins and the matrix does not test one class several times.
     """
-    ExpressionRegistry._auto_register_builtins()
+    auto_register_builtins()
     collected: Dict[str, type] = {}
     for package in MATRIX_PACKAGES:
         for fqn, cls in sorted(collect_expression_classes(package).items()):
@@ -272,6 +275,24 @@ def _integer_column(dialect, name="col"):
 
 def register_specials():
     """Replace every introspective guess that would cost a real assertion."""
+    # -- nodes whose ``op`` is a closed word set, not a free string ----------
+    # Both refuse an ``op`` outside their set at construction, so the
+    # introspective guess (which supplies a placeholder string) cannot build
+    # them at all. Naming one real word is what lets the matrix exercise them.
+    register_special_constructor(
+        "operators.ArithmeticOperation",
+        lambda d: ArithmeticOperation(d, "add", Column(d, "a"), Literal(d, 1)),
+    )
+    register_special_constructor(
+        "query_sources.SetOperation",
+        lambda d: SetOperation(
+            d,
+            op="union",
+            left=_one_column_query(d),
+            right=_one_column_query(d),
+        ),
+    )
+
     # -- the FROM side ------------------------------------------------------
     register_special_constructor(
         "sources.relation.NamedRelationRef",
@@ -551,12 +572,12 @@ def register_specials():
     # the round trip then classifies it as Firebird's own UnsupportedFeatureError.
     register_special_constructor(
         "predicates.LikePredicate",
-        lambda d: LikePredicate(d, "LIKE", Column(d, "a"), Literal(d, "%x%", inline_literals=True)),
+        lambda d: LikePredicate(d, "LIKE", Column(d, "a"), Literal(d, "%x%")),
     )
 
     register_special_constructor(
-        "advanced_functions.CaseFunction",
-        lambda d: CaseFunction(
+        "advanced_functions.CaseExpression",
+        lambda d: CaseExpression(
             d,
             cases=[(_column_predicate(d), Literal(d, 1))],
             else_result=Literal(d, 0),
@@ -905,10 +926,10 @@ LEGITIMATE_NON_RENDERS = {
     "rhosocial.activerecord.backend.expression.graph.GraphTableExpression": (
         UnsupportedFeatureError, _NO_DIALECT_METHOD,
     ),
-    "rhosocial.activerecord.backend.expression.pivot.PivotExpression": (
+    "rhosocial.activerecord.backend.expression.pivot.Pivot": (
         UnsupportedFeatureError, _NO_DIALECT_METHOD,
     ),
-    "rhosocial.activerecord.backend.expression.pivot.UnpivotExpression": (
+    "rhosocial.activerecord.backend.expression.pivot.Unpivot": (
         UnsupportedFeatureError, _NO_DIALECT_METHOD,
     ),
     # Firebird has no ALTER DATABASE: the two database statements it declares are
@@ -1140,8 +1161,8 @@ UNMODELLED_FORMATTERS = {
     "set)": ("format_alter_database_statement",),
     "PIVOT / UNPIVOT (Firebird has no PIVOT keyword, and no formatter for "
     "either)": (
-        "format_pivot_expression",
-        "format_unpivot_expression",
+        "format_pivot",
+        "format_unpivot",
     ),
     "REPEAT (Firebird has no REPEAT function; the node exists for the "
     "backends that spell it natively, and this dialect declares no formatter "
@@ -1310,7 +1331,7 @@ class TestMatrixIntegrity:
         a constructor and the entry is stale; a class that fails to build without
         being named would become a silent skip. Both fail here.
         """
-        ExpressionRegistry._auto_register_builtins()
+        auto_register_builtins()
         actual = {
             fqn
             for fqn in REGISTERED
@@ -1432,7 +1453,7 @@ class TestMatrixIntegrity:
         rather than the registry because the registry also holds whatever
         backends other test modules happened to import.
         """
-        ExpressionRegistry._auto_register_builtins()
+        auto_register_builtins()
         expected = set(_collect_matrix_classes())
         stray = [
             fqn
@@ -1477,8 +1498,8 @@ class TestMatrixIntegrity:
         the registry is process-global and grows as sibling modules import their
         own backends.
         """
-        ExpressionRegistry._auto_register_builtins()
-        unresolved = sorted(set(REGISTERED) - set(ExpressionRegistry._registry))
+        auto_register_builtins()
+        unresolved = sorted(set(REGISTERED) - set(registered_expression_classes()))
         assert not unresolved, (
             f"the matrix covers classes the registry cannot resolve: {unresolved}"
         )
@@ -1489,7 +1510,7 @@ class TestMatrixIntegrity:
         Counts each branch the matrix actually took, in this process, with this
         dialect -- not a number carried over from another run.
         """
-        ExpressionRegistry._auto_register_builtins()
+        auto_register_builtins()
         census: Dict[str, int] = {}
         for fqn, cls in sorted(REGISTERED.items()):
             instance, _ = make_instance(cls, fb4_dialect)

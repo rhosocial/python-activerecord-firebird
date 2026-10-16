@@ -8,7 +8,7 @@ from rhosocial.activerecord.backend.expression import (
     Column,
     LimitOffsetClause,
     OrderByClause,
-    OrderByExpression,
+    OrderByItem,
 )
 from rhosocial.activerecord.backend.impl.firebird.dialect import FirebirdDialect
 
@@ -22,7 +22,7 @@ def test_nulls_first_last_supported(dialect):
     assert dialect.supports_nulls_first_last() is True
     sql, _ = OrderByClause(
         dialect,
-        expressions=[OrderByExpression(dialect, Column(dialect, "name"), nulls_first=True)],
+        expressions=[OrderByItem(dialect, Column(dialect, "name"), nulls_first=True)],
     ).to_sql()
     assert "NULLS FIRST" in sql
 

@@ -7,8 +7,8 @@ from rhosocial.activerecord.backend.expression.types import DataType
 
 if TYPE_CHECKING:
     from rhosocial.activerecord.backend.expression import bases
-    from rhosocial.activerecord.backend.expression.advanced_functions import CaseFunction
-    from rhosocial.activerecord.backend.expression.operators import BinaryArithmeticExpression
+    from rhosocial.activerecord.backend.expression.advanced_functions import CaseExpression
+    from rhosocial.activerecord.backend.expression.operators import ArithmeticOperation
 
 
 class FirebirdExpressionMixin:
@@ -66,7 +66,7 @@ class FirebirdExpressionMixin:
             return DecimalType(self, 18, 4)
         return None
 
-    def format_case_expression(self, expr: "CaseFunction") -> Tuple[str, tuple]:
+    def format_case_expression(self, expr: "CaseExpression") -> Tuple[str, tuple]:
         """Format a CASE expression, wrapping result values in CAST for type inference.
 
         Firebird cannot infer the type of a ``?`` parameter used as a CASE
@@ -76,7 +76,7 @@ class FirebirdExpressionMixin:
         (``CASE col WHEN val THEN …``) and searched CASE
         (``CASE WHEN cond THEN …``) expressions.
         """
-        from rhosocial.activerecord.backend.expression.core import CastFunction, Literal
+        from rhosocial.activerecord.backend.expression.core import CastExpression, Literal
 
         value = getattr(expr, "value", None)
         cases = getattr(expr, "cases", [])
@@ -92,7 +92,7 @@ class FirebirdExpressionMixin:
                 fb_type = self._python_type_to_firebird_sql(res_params[0])
                 if fb_type:
                     literal = Literal(self, res_params[0])
-                    wrapped_result = CastFunction(self, literal, fb_type)
+                    wrapped_result = CastExpression(self, literal, fb_type)
             wrapped_cases.append((condition, wrapped_result))
 
         wrapped_else = else_result
@@ -103,20 +103,20 @@ class FirebirdExpressionMixin:
                 fb_type = self._python_type_to_firebird_sql(else_params[0])
                 if fb_type:
                     literal = Literal(self, else_params[0])
-                    wrapped_else = CastFunction(self, literal, fb_type)
+                    wrapped_else = CastExpression(self, literal, fb_type)
 
-        from rhosocial.activerecord.backend.expression.advanced_functions import CaseFunction
-        wrapped_expr = CaseFunction(self, value=value, cases=wrapped_cases, else_result=wrapped_else, alias=alias)
+        from rhosocial.activerecord.backend.expression.advanced_functions import CaseExpression
+        wrapped_expr = CaseExpression(self, value=value, cases=wrapped_cases, else_result=wrapped_else, alias=alias)
         return super().format_case_expression(wrapped_expr)
 
-    def format_binary_arithmetic_expression(self, expr: "BinaryArithmeticExpression") -> Tuple[str, tuple]:
+    def format_binary_arithmetic_expression(self, expr: "ArithmeticOperation") -> Tuple[str, tuple]:
         """Format a binary arithmetic expression with typed phantom parameters.
 
         Firebird cannot infer the type of a ``?`` parameter used inside an
         arithmetic expression (e.g. ``col + ?`` raises -804 Data type unknown).
         Wrap literal ``?`` operands in an explicit CAST based on the bound value.
         """
-        from rhosocial.activerecord.backend.expression.operators import BinaryArithmeticExpression
+        from rhosocial.activerecord.backend.expression.operators import ArithmeticOperation
 
         left = expr.left
         right = expr.right
@@ -127,20 +127,20 @@ class FirebirdExpressionMixin:
         right = self._maybe_cast_operand(right)
 
         # Rebuild expression with wrapped operands
-        wrapped = BinaryArithmeticExpression(self, op, left, right)
+        wrapped = ArithmeticOperation(self, op, left, right)
         wrapped.alias = getattr(expr, 'alias', None)
         return super().format_binary_arithmetic_expression(wrapped)
 
     def _maybe_cast_operand(self, operand):
-        """Wrap a Literal operand in CastFunction if Firebird needs explicit typing."""
-        from rhosocial.activerecord.backend.expression.core import Literal, CastFunction
+        """Wrap a Literal operand in CastExpression if Firebird needs explicit typing."""
+        from rhosocial.activerecord.backend.expression.core import Literal, CastExpression
 
         if not isinstance(operand, Literal):
             return operand
         value = operand.value
         fb_type = self._python_type_to_firebird_sql(value)
         if fb_type:
-            return CastFunction(self, operand, fb_type)
+            return CastExpression(self, operand, fb_type)
         return operand
 
     def _cast_sql(self, inner_sql: str, inner_params: tuple,
@@ -148,9 +148,9 @@ class FirebirdExpressionMixin:
         """Wrap already-rendered SQL in a CAST expression.
 
         Used when the inner expression (e.g. a window function or aggregate)
-        must be explicitly typed but cannot be wrapped in a CastFunction node
+        must be explicitly typed but cannot be wrapped in a CastExpression node
         before rendering (because the base formatter accesses node-specific
-        attributes that CastFunction doesn't carry).
+        attributes that CastExpression doesn't carry).
         """
         if not self._validate_data_type(target_type):
             raise ValueError(

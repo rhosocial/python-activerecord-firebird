@@ -7,7 +7,7 @@ from typing import Any, Optional, Sequence, Set, TYPE_CHECKING, Union
 from rhosocial.activerecord.backend.expression.bases import SQLPredicate
 from rhosocial.activerecord.backend.expression.objects import Domain
 from rhosocial.activerecord.backend.expression.operators import RawSQLPredicate
-from rhosocial.activerecord.backend.expression.serialization import ExpressionRegistry
+from rhosocial.activerecord.backend.expression.serialization import register_expression_class
 from rhosocial.activerecord.backend.expression.statements.ddl_domain import (
     AddDomainCheckAction,
     AlterDomainStatement,
@@ -357,10 +357,10 @@ class FirebirdDropDomainExpression(DropDomainStatement):
     """Firebird-named DROP DOMAIN expression."""
 
 
-ExpressionRegistry.register(FirebirdCreateDomainExpression)
-ExpressionRegistry.register(FirebirdAlterDomainExpression)
-ExpressionRegistry.register(FirebirdDropDomainExpression)
-ExpressionRegistry.register(FirebirdSetDomainDataTypeAction)
+register_expression_class(FirebirdCreateDomainExpression)
+register_expression_class(FirebirdAlterDomainExpression)
+register_expression_class(FirebirdDropDomainExpression)
+register_expression_class(FirebirdSetDomainDataTypeAction)
 
 
 __all__ = [
