@@ -6,6 +6,7 @@ set (PAGE_SIZE, DEFAULT CHARACTER SET, COLLATION, DIALECT, FORCE WRITE,
 SQL SECURITY).  Both statements are gated at ``(2, 5, 0)``.
 """
 
+from enum import Enum
 from typing import Tuple, TYPE_CHECKING
 
 from .version_boundaries import _norm_version
@@ -40,10 +41,15 @@ class FirebirdDatabaseMixin:
             parts.append(f"COLLATION {self._quote_literal(expr.collation)}")
         if expr.sql_dialect is not None:
             parts.append(f"DIALECT {expr.sql_dialect}")
-        if getattr(expr, "force_write", False):
+        if expr.force_write:
             parts.append("FORCE WRITE")
         if expr.sql_security is not None:
-            mode = getattr(expr.sql_security, "value", expr.sql_security)
+            # ``sql_security`` accepts the enum or its raw spelling.
+            mode = (
+                expr.sql_security.value
+                if isinstance(expr.sql_security, Enum)
+                else expr.sql_security
+            )
             parts.append(f"SQL SECURITY {mode}")
         return " ".join(parts), ()
 

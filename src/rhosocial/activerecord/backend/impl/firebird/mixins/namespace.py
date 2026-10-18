@@ -134,7 +134,7 @@ class FirebirdNamespaceMixin(RelationSourceMixin):
         """The refusal both :meth:`format_qualified_name` and the core's
         :meth:`validate_namespace` reach, in one place so the message and the
         feature named are the same whichever route the caller took."""
-        if getattr(expr, "catalog_name", None):
+        if expr.catalog_name:
             self.validate_catalog_name(expr)
         # validate_catalog_name always raises when it is reached, so anything
         # still standing here carries the inner level.

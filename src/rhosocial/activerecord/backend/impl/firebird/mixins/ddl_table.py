@@ -124,25 +124,25 @@ class FirebirdTableMixin:
                 f"CreateTableStatement.table must be a Table, "
                 f"got {type(expr.table).__name__}"
             )
-        if getattr(expr, "tablespace", None):
+        if expr.tablespace:
             raise UnsupportedFeatureError(
                 self.name,
                 "TABLESPACE",
                 "Firebird does not support table tablespaces.",
             )
-        if getattr(expr, "inherits", None):
+        if expr.inherits:
             raise UnsupportedFeatureError(
                 self.name,
                 "table INHERITS",
                 "Firebird does not support table inheritance.",
             )
-        if getattr(expr, 'partition', None) is not None:
+        if expr.partition is not None:
             raise UnsupportedFeatureError(
                 self.name,
                 "PARTITION BY clause",
                 "Firebird does not support table partitioning.",
             )
-        if getattr(getattr(expr, 'table_options', None), 'comment', None):
+        if expr.table_options is not None and expr.table_options.comment:
             # Firebird annotates comments through the standalone
             # COMMENT ON statement (no inline table option); a comment on the
             # table options is never silently dropped.
@@ -157,13 +157,13 @@ class FirebirdTableMixin:
         all_params: List[Any] = []
 
         parts = []
-        if getattr(expr, 'temporary', False):
+        if expr.temporary:
             # Legal Firebird word order is CREATE GLOBAL TEMPORARY TABLE;
             # "CREATE TABLE GLOBAL TEMPORARY" is rejected by the parser.
             parts.append("CREATE GLOBAL TEMPORARY TABLE")
         else:
             parts.append("CREATE TABLE")
-        if getattr(expr, 'if_not_exists', False):
+        if expr.if_not_exists:
             # Capability gate: Firebird has no IF NOT EXISTS on CREATE TABLE,
             # so rendering it anyway would produce broken DDL.
             if not self.supports_if_not_exists_table():
@@ -179,12 +179,20 @@ class FirebirdTableMixin:
         # object layer rather than dropped here.
         parts.append(expr.table.to_sql()[0])
 
-        if getattr(expr, 'temporary', False):
-            on_commit = getattr(expr, 'on_commit_delete', True)
-            if on_commit:
-                parts.append("ON COMMIT DELETE ROWS")
-            else:
-                parts.append("ON COMMIT PRESERVE ROWS")
+        if expr.temporary:
+            # ``on_commit_delete`` is FirebirdCreateTableExpression's field --
+            # the generic statement has no such clause, and omitting it is the
+            # server's own default (ON COMMIT DELETE ROWS). The kind decides
+            # whether the question exists, then the field is read.
+            from rhosocial.activerecord.backend.impl.firebird.expression.create_table import (
+                FirebirdCreateTableExpression,
+            )
+
+            if isinstance(expr, FirebirdCreateTableExpression):
+                if expr.on_commit_delete:
+                    parts.append("ON COMMIT DELETE ROWS")
+                else:
+                    parts.append("ON COMMIT PRESERVE ROWS")
 
         column_parts = []
         for col_def in expr.columns:
@@ -199,9 +207,15 @@ class FirebirdTableMixin:
 
         parts.append(f"({', '.join(column_parts)})")
 
-        external_file = getattr(expr, 'external_file', None)
-        if external_file:
-            parts.append(f"EXTERNAL FILE '{external_file}'")
+        # ``external_file`` is FirebirdCreateTableExpression's field; the
+        # generic statement declares no such clause, so the kind decides
+        # whether the question exists, then the field is read.
+        from rhosocial.activerecord.backend.impl.firebird.expression.create_table import (
+            FirebirdCreateTableExpression,
+        )
+
+        if isinstance(expr, FirebirdCreateTableExpression) and expr.external_file:
+            parts.append(f"EXTERNAL FILE '{expr.external_file}'")
 
         return ' '.join(parts), tuple(all_params)
 
@@ -221,12 +235,13 @@ class FirebirdTableMixin:
         from rhosocial.activerecord.backend.expression.statements import (
             ColumnDefaultConstraint,
             ColumnGeneratedConstraint,
+            ColumnPrimaryKeyConstraint,
         )
         from rhosocial.activerecord.backend.impl.firebird.expression.column import (
             FirebirdColumnDefinition,
         )
 
-        if getattr(col_def, "comment", None):
+        if col_def.comment is not None:
             # Firebird annotates column comments through the standalone
             # COMMENT ON COLUMN statement (no inline column clause); a comment
             # on a column definition is never silently dropped.
@@ -244,8 +259,12 @@ class FirebirdTableMixin:
         for constraint in col_def.constraints:
             # The flag lives on the branch now: ``is_auto_increment`` is
             # specific to PRIMARY KEY, so it is part of that alternative rather
-            # than of the production.
-            if getattr(constraint.branch, 'is_auto_increment', False):
+            # than of the production. The branch's class decides whether the
+            # question exists, then the field is read.
+            if (
+                isinstance(constraint.branch, ColumnPrimaryKeyConstraint)
+                and constraint.branch.is_auto_increment
+            ):
                 parts.append("GENERATED BY DEFAULT AS IDENTITY")
                 break
 
@@ -257,14 +276,16 @@ class FirebirdTableMixin:
         if isinstance(col_def, FirebirdColumnDefinition) and col_def.character_set:
             parts.append(f"CHARACTER SET {col_def.character_set}")
 
-        computed_by = getattr(col_def, 'computed_by', None)
-        if computed_by:
-            parts.append(f"COMPUTED BY ({computed_by})")
+        # ``computed_by`` is FirebirdColumnDefinition's field; the generic
+        # column definition declares no such clause, so the kind decides
+        # whether the question exists, then the field is read.
+        if isinstance(col_def, FirebirdColumnDefinition) and col_def.computed_by:
+            parts.append(f"COMPUTED BY ({col_def.computed_by})")
         else:
             # A generic ColumnGeneratedConstraint maps onto Firebird's
             # ``COMPUTED BY (<expr>)`` form (Firebird has no GENERATED ALWAYS
             # syntax); a declared generated column is never silently dropped.
-            generated = getattr(col_def, 'generated_expression', None)
+            generated = col_def.generated_expression
             if generated is not None:
                 gen_sql, gen_params = generated.expression.to_sql()
                 parts.append(f"COMPUTED BY ({gen_sql})")
@@ -321,9 +342,11 @@ class FirebirdTableMixin:
         if constraint_parts:
             parts.append(' '.join(constraint_parts))
 
-        collation = getattr(col_def, 'collation', None)
-        if collation:
-            parts.append(f"COLLATE {collation}")
+        # ``collation`` is FirebirdColumnDefinition's field; the generic column
+        # definition declares no such clause, so the kind decides whether the
+        # question exists, then the field is read.
+        if isinstance(col_def, FirebirdColumnDefinition) and col_def.collation:
+            parts.append(f"COLLATE {col_def.collation}")
 
         return ' '.join(parts), tuple(params)
 

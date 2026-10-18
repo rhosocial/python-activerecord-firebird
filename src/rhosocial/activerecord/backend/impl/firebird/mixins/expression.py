@@ -78,10 +78,10 @@ class FirebirdExpressionMixin:
         """
         from rhosocial.activerecord.backend.expression.core import CastExpression, Literal
 
-        value = getattr(expr, "value", None)
-        cases = getattr(expr, "cases", [])
-        else_result = getattr(expr, "else_result", None)
-        alias = getattr(expr, "alias", None)
+        value = expr.value
+        cases = expr.cases
+        else_result = expr.else_result
+        alias = expr.alias
 
         wrapped_cases = []
         for condition, result in cases:
@@ -128,7 +128,7 @@ class FirebirdExpressionMixin:
 
         # Rebuild expression with wrapped operands
         wrapped = ArithmeticOperation(self, op, left, right)
-        wrapped.alias = getattr(expr, 'alias', None)
+        wrapped.alias = expr.alias
         return super().format_binary_arithmetic_expression(wrapped)
 
     def _maybe_cast_operand(self, operand):
@@ -174,7 +174,7 @@ class FirebirdExpressionMixin:
         aggregate result is explicitly cast to ``DECIMAL(18,2)`` to pin the
         return type. This matches the precision used by the testsuite schemas.
         """
-        func_name = getattr(expr, "func_name", None)
+        func_name = expr.func_name
         if isinstance(func_name, str) and func_name.upper() == "LENGTH":
             expr.func_name = "CHAR_LENGTH"
             try:

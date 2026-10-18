@@ -837,10 +837,19 @@ class FirebirdConstraintMixin:
         including the referential actions -- is core's, reached by delegation.
         """
         from rhosocial.activerecord.backend.dialect.exceptions import UnsupportedFeatureError
+        from rhosocial.activerecord.backend.expression.statements import (
+            TableForeignKeyConstraint,
+        )
 
         self._require_no_constraint_deferral(expr)
         self._require_constraint_enforcement(expr)
-        if getattr(expr.branch, "match_type", None) is not None:
+        # ``match_type`` belongs to the foreign-key branch alone -- the other
+        # branches the production level can carry declare no such field -- so
+        # the kind decides whether the question exists, then the field is read.
+        if (
+            isinstance(expr.branch, TableForeignKeyConstraint)
+            and expr.branch.match_type is not None
+        ):
             # Measured on Firebird 5.0.4, ``MATCH FULL`` (and every other MATCH
             # spelling) answers ``-104: Token unknown - line 1, column 83
             # -MATCH``. Refused here, by name, ahead of the body so the message

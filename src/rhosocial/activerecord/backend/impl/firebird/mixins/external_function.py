@@ -34,10 +34,10 @@ class FirebirdExternalFunctionMixin:
         if expr.params:
             parts.append(f"({', '.join(expr.params)})")
         returns = expr.returns
-        if getattr(expr, "by_value", False):
+        if expr.by_value:
             returns = f"{returns} BY VALUE"
         parts.append(f"RETURNS {returns}")
-        if getattr(expr, "free_it", False):
+        if expr.free_it:
             parts.append("FREE_IT")
         parts.append(f"ENTRY_POINT {self._quote_literal(expr.entry_point)}")
         parts.append(f"MODULE_NAME {self._quote_literal(expr.module_name)}")

@@ -38,7 +38,7 @@ class FirebirdDQLMixin:
             relation = None
             for e in expr.select:
                 if isinstance(e, AllColumnsWildcard) and e.relation is None:
-                    if getattr(expr, "from_", None) is not None:
+                    if expr.from_ is not None:
                         src = expr.from_
                         if isinstance(src, list) and len(src) == 1:
                             src = src[0]
@@ -84,7 +84,7 @@ class FirebirdDQLMixin:
         if clause.limit is None and clause.offset is None:
             return "", ()
 
-        if getattr(clause, "with_ties", False):
+        if clause.with_ties:
             from rhosocial.activerecord.backend.dialect.exceptions import UnsupportedFeatureError
 
             raise UnsupportedFeatureError(

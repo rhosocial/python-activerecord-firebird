@@ -60,6 +60,15 @@ from rhosocial.activerecord.backend.expression.types import (
 import rhosocial.activerecord.backend.expression as E
 
 from rhosocial.activerecord.backend.impl.firebird.dialect import FirebirdDialect
+from rhosocial.activerecord.backend.impl.firebird.expression.column import (
+    FirebirdColumnDefinition,
+)
+from rhosocial.activerecord.backend.impl.firebird.expression.create_table import (
+    FirebirdCreateTableExpression,
+)
+from rhosocial.activerecord.backend.impl.firebird.expression.ddl.sequence import (
+    FirebirdCreateSequenceStatement,
+)
 from rhosocial.activerecord.backend.impl.firebird.expression.dml import (
     UpdateOrInsertExpression,
 )
@@ -704,18 +713,23 @@ class TestSequenceBranches:
         )
 
     def test_create_generator_form(self, dialect):
-        expr = CreateSequenceStatement(dialect, Sequence(dialect, "gen_c"))
-        expr.use_generator = True
+        expr = FirebirdCreateSequenceStatement(
+            dialect, Sequence(dialect, "gen_c"), use_generator=True
+        )
         assert dialect.format_create_sequence_statement(expr) == (
             'CREATE GENERATOR "GEN_C"', ()
         )
 
     def test_create_generator_accepts_start_and_increment(self, dialect):
-        """The legacy spelling takes the same two clauses as the standard one."""
-        expr = CreateSequenceStatement(
-            dialect, Sequence(dialect, "gen_d"), start=7, increment=3
+        """The legacy spelling takes the same two clauses as the standard one.
+
+        The spelling is a declared field of this backend's own node, not an
+        attribute mounted on the generic statement after construction.
+        """
+        expr = FirebirdCreateSequenceStatement(
+            dialect, Sequence(dialect, "gen_d"), start=7, increment=3,
+            use_generator=True
         )
-        expr.use_generator = True
         assert dialect.format_create_sequence_statement(expr) == (
             'CREATE GENERATOR "GEN_D" START WITH 7 INCREMENT BY 3', ()
         )
@@ -849,8 +863,11 @@ class TestCreateTableRebuildSnapshots:
         (False, 'ON COMMIT PRESERVE ROWS'),
     ])
     def test_global_temporary_table(self, dialect, on_commit_delete, expected_tail):
-        expr = CreateTableStatement(dialect, Table(dialect, "tmp_t"), [_column(dialect, "id", IntegerType(dialect))], temporary=True)
-        expr.on_commit_delete = on_commit_delete
+        expr = FirebirdCreateTableExpression(
+            dialect, Table(dialect, "tmp_t"),
+            [_column(dialect, "id", IntegerType(dialect))],
+            temporary=True, on_commit_delete=on_commit_delete,
+        )
         sql, _ = expr.to_sql()
         assert sql.startswith('CREATE GLOBAL TEMPORARY TABLE "TMP_T"')
         assert expected_tail in sql
@@ -860,9 +877,16 @@ class TestCreateTableRebuildSnapshots:
         (False, 'CREATE GLOBAL TEMPORARY TABLE "GT_A" ON COMMIT PRESERVE ROWS ("ID" INTEGER)'),
     ])
     def test_global_temporary_word_order_snapshot(self, dialect, on_commit_delete, expected):
-        """F5 anchor: exact to_sql() snapshot of the corrected word order."""
-        expr = CreateTableStatement(dialect, Table(dialect, "gt_a"), [_column(dialect, "id", IntegerType(dialect))], temporary=True)
-        expr.on_commit_delete = on_commit_delete
+        """F5 anchor: exact to_sql() snapshot of the corrected word order.
+
+        ``on_commit_delete`` is a declared field of this backend's own node,
+        not an attribute mounted on the generic statement after construction.
+        """
+        expr = FirebirdCreateTableExpression(
+            dialect, Table(dialect, "gt_a"),
+            [_column(dialect, "id", IntegerType(dialect))],
+            temporary=True, on_commit_delete=on_commit_delete,
+        )
         assert expr.to_sql() == (expected, ())
 
     def test_if_not_exists_raises_when_unsupported(self, dialect):
@@ -894,13 +918,23 @@ class TestCreateTableRebuildSnapshots:
         assert sql.startswith('CREATE TABLE IF NOT EXISTS "TBL_C"')
 
     def test_external_file_clause(self, dialect):
-        expr = CreateTableStatement(dialect, Table(dialect, "ext_t"), [_column(dialect, "id", IntegerType(dialect))])
-        expr.external_file = "/data/ext.fdb"
+        expr = FirebirdCreateTableExpression(
+            dialect, Table(dialect, "ext_t"),
+            [_column(dialect, "id", IntegerType(dialect))],
+            external_file="/data/ext.fdb",
+        )
         assert expr.to_sql() == ('CREATE TABLE "EXT_T" ("ID" INTEGER) EXTERNAL FILE \'/data/ext.fdb\'', ())
 
     def test_computed_by_column(self, dialect):
-        col = _column(dialect, "full_name", VarCharType(length=200, dialect=dialect))
-        col.computed_by = '"FIRST_NAME" || \' \' || "LAST_NAME"'
+        """``computed_by`` is a declared field of this backend's own column
+        definition, not an attribute to mount on the generic one after
+        construction."""
+        col = FirebirdColumnDefinition(
+            dialect,
+            "full_name",
+            VarCharType(length=200, dialect=dialect),
+            computed_by='"FIRST_NAME" || \' \' || "LAST_NAME"',
+        )
         assert CreateTableStatement(dialect, Table(dialect, "emp"), [col]).to_sql() == (
             'CREATE TABLE "EMP" '
             '("FULL_NAME" VARCHAR(200) COMPUTED BY ("FIRST_NAME" || \' \' || "LAST_NAME"))',

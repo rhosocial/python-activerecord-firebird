@@ -4,6 +4,7 @@
 from typing import Any, List, Tuple, TYPE_CHECKING
 
 from rhosocial.activerecord.backend.dialect.exceptions import UnsupportedFeatureError
+from rhosocial.activerecord.backend.expression.bases import BaseExpression
 from rhosocial.activerecord.backend.expression.objects import Table
 
 from .version_boundaries import _norm_version
@@ -107,7 +108,10 @@ class FirebirdDMLOperationMixin:
         set_parts = []
         for col, val in expr.assignments.items():
             col_str = self.format_identifier(col)
-            if hasattr(val, 'to_sql'):
+            # The question is what the slot holds, answered by the class
+            # rather than by probing -- the same judgment the core's
+            # ``format_insert_values_source`` makes for a VALUES cell.
+            if isinstance(val, BaseExpression):
                 val_sql, val_params = val.to_sql()
                 set_parts.append(f"{col_str} = {val_sql}")
                 all_params.extend(val_params)
@@ -354,8 +358,8 @@ class FirebirdDMLOperationMixin:
         all_params: List[Any] = []
         parts = ["EXECUTE STATEMENT"]
 
-        sql_text = expr._sql
-        if hasattr(sql_text, "to_sql"):
+        sql_text = expr.sql
+        if isinstance(sql_text, BaseExpression):
             sql_sql, sql_params = sql_text.to_sql()
             parts.append(sql_sql)
             all_params.extend(sql_params)
@@ -365,12 +369,12 @@ class FirebirdDMLOperationMixin:
             escaped = str(sql_text).replace("'", "''")
             parts.append(f"'{escaped}'")
 
-        if getattr(expr, "_transaction", None):
-            parts.append(f"WITH {expr._transaction.upper()} TRANSACTION")
-        if getattr(expr, "_caller_privileges", False):
+        if expr.transaction:
+            parts.append(f"WITH {expr.transaction.upper()} TRANSACTION")
+        if expr.caller_privileges:
             parts.append("WITH CALLER PRIVILEGES")
 
-        bound_params = getattr(expr, "_params", []) or []
+        bound_params = expr.params
         if bound_params:
             placeholders = ", ".join(self.get_parameter_placeholder() for _ in bound_params)
             parts.append(f"({placeholders})")

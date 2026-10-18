@@ -133,6 +133,9 @@ from rhosocial.activerecord.backend.impl.firebird.expression.ddl.routine import 
     FirebirdCreateFunctionExpression,
     FirebirdCreateProcedureExpression,
 )
+from rhosocial.activerecord.backend.impl.firebird.expression.ddl.sequence import (
+    FirebirdCreateSequenceStatement,
+)
 from rhosocial.activerecord.backend.expression.statements import (
     ddl_alter,
     ddl_comment,
@@ -719,6 +722,13 @@ def register_specials():
         lambda d: FirebirdCreateFunctionExpression(
             d, "fn", params=[("a", "INTEGER")], returns="INTEGER", body="SELECT 1"
         ),
+    )
+    # This backend's own CREATE SEQUENCE carries the legacy GENERATOR spelling
+    # as a declared field; the standard spelling renders, and the legacy one
+    # is exercised in the dialect-branch tests with a live field read.
+    register_special_constructor(
+        "impl.firebird.expression.ddl.sequence.FirebirdCreateSequenceStatement",
+        lambda d: FirebirdCreateSequenceStatement(d, Sequence(d, "s")),
     )
 
     # -- core CUSTOM needs the type name its ``raw`` slot exists to carry -----

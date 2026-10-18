@@ -63,7 +63,9 @@ class FirebirdAlterTableModifierMixin:
         Guard the modifier and delegate the plain form to the base
         implementation.
         """
-        if getattr(action, "if_not_exists", None) is True:
+        # ``if_not_exists`` is AddColumn's declared field; the guard reads it
+        # under its own name rather than probing for it.
+        if action.if_not_exists is True:
             raise UnsupportedFeatureError(
                 self.name,
                 "ADD COLUMN IF NOT EXISTS",
@@ -81,7 +83,9 @@ class FirebirdAlterTableModifierMixin:
         Guard the modifier and delegate the plain form to the base
         implementation.
         """
-        if getattr(action, "if_exists", None) is True:
+        # ``if_exists`` is DropColumn's declared field; the guard reads it
+        # under its own name rather than probing for it.
+        if action.if_exists is True:
             raise UnsupportedFeatureError(
                 self.name,
                 "DROP COLUMN IF EXISTS",
@@ -97,7 +101,9 @@ class FirebirdAlterTableModifierMixin:
         Guard the modifier and delegate the plain form to the base
         implementation.
         """
-        if getattr(action, "if_exists", None) is True:
+        # ``if_exists`` is DropTableConstraint's declared field; the guard
+        # reads it under its own name rather than probing for it.
+        if action.if_exists is True:
             raise UnsupportedFeatureError(
                 self.name,
                 "DROP CONSTRAINT IF EXISTS",
@@ -125,7 +131,9 @@ class FirebirdAlterTableModifierMixin:
         """
         self._check_identity_version("RESTART")
         col = self.format_identifier(action.column_name)
-        if getattr(action, "restart_with", None) is not None:
+        # ``restart_with`` is RestartIdentity's declared field; the renderer
+        # reads it under its own name rather than probing for it.
+        if action.restart_with is not None:
             return f"ALTER COLUMN {col} RESTART WITH {action.restart_with}", ()
         return f"ALTER COLUMN {col} RESTART", ()
 

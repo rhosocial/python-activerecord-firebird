@@ -63,8 +63,9 @@ class FirebirdSequenceMixin:
 
         ``CREATE GENERATOR`` is Firebird's documented legacy synonym for
         ``CREATE SEQUENCE``; both name the same object and accept the same
-        ``START WITH`` / ``INCREMENT BY`` clauses. It is reached through the
-        ``use_generator`` attribute, and the core formatter has no way to produce
+        ``START WITH`` / ``INCREMENT BY`` clauses. The spelling is a field of
+        this backend's own :class:`FirebirdCreateSequenceStatement`
+        (``use_generator``), and the core formatter has no way to produce
         that spelling, which is why it stays here.
 
         Version notes (language reference, 3.0 vs 4.0+): in 3.0 ``START WITH``
@@ -147,7 +148,14 @@ class FirebirdSequenceMixin:
                     f"{self.name} does not support the OWNED BY sequence option."
                 )
 
-        use_generator = getattr(expr, 'use_generator', False)
+        # ``use_generator`` belongs to this backend's own derived statement;
+        # the generic node declares no such field, so the kind decides
+        # whether the question exists, then the field is read.
+        from ..expression.ddl.sequence import FirebirdCreateSequenceStatement
+
+        use_generator = (
+            isinstance(expr, FirebirdCreateSequenceStatement) and expr.use_generator
+        )
         # The Sequence object renders itself, so the DDL form and the reference
         # forms below agree on how the name is quoted.
         sequence_sql = expr.sequence.to_sql()[0]

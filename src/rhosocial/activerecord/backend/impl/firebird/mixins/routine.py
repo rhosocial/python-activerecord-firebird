@@ -11,6 +11,7 @@ wrapped in a ``BEGIN ... END`` block (mirroring
 from typing import Any, List, Tuple, TYPE_CHECKING
 
 from rhosocial.activerecord.backend.dialect.exceptions import UnsupportedFeatureError
+from rhosocial.activerecord.backend.expression.bases import BaseExpression
 from rhosocial.activerecord.backend.expression.objects import Function, Procedure
 
 from ..expression.ddl.routine import FirebirdRoutineMode
@@ -50,7 +51,7 @@ class FirebirdRoutineMixin:
         parts = [expr.mode.value, "FUNCTION", Function(self, expr.function_name).to_sql()[0]]
         if expr.params:
             parts.append(f"({self._format_routine_params(expr.params)})")
-        if getattr(expr, "returns", None):
+        if expr.returns:
             parts.append(f"RETURNS {self._format_routine_return_type(expr.returns)}")
         parts.append("AS")
         parts.append(self._format_psql_body(expr.body))
@@ -72,7 +73,7 @@ class FirebirdRoutineMixin:
             parts = [expr.mode.value, "FUNCTION", name_renderer(expr.routine_name)]
             if expr.params:
                 parts.append(f"({self._format_routine_params(expr.params)})")
-            if getattr(expr, "returns", None):
+            if expr.returns:
                 parts.append(f"RETURNS {self._format_routine_return_type(expr.returns)}")
         else:
             parts = [expr.mode.value, "PROCEDURE", name_renderer(expr.routine_name)]
@@ -106,7 +107,10 @@ class FirebirdRoutineMixin:
 
     def _format_routine_return_type(self, returns: Any) -> str:
         """Render a single return type (str or DataType)."""
-        if hasattr(returns, "to_sql"):
+        # The question is what the slot holds, answered by the class rather
+        # than by probing: a DataType (or any other expression) renders as
+        # itself, and anything else is a type name spelled as a string.
+        if isinstance(returns, BaseExpression):
             type_sql, _ = returns.to_sql()
             return type_sql
         return str(returns)

@@ -35,6 +35,7 @@ from .role import (
     FirebirdDropRoleExpression,
     FirebirdRoleAlterClause,
 )
+from .sequence import FirebirdCreateSequenceStatement
 from .user import (
     FirebirdAlterUserExpression,
     FirebirdCreateUserExpression,
@@ -61,6 +62,7 @@ __all__ = [
     "FirebirdCreateRoleExpression",
     "FirebirdAlterRoleExpression",
     "FirebirdDropRoleExpression",
+    "FirebirdCreateSequenceStatement",
     "FirebirdCreateUserExpression",
     "FirebirdAlterUserExpression",
     "FirebirdDropUserExpression",
