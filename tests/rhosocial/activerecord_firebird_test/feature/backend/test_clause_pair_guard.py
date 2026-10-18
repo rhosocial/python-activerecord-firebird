@@ -28,7 +28,7 @@ A formatter that ignores one of the pair's parameters collapses state B into
 defect the round exists to eliminate.
 
 One pair is mandatory in its grammar rather than optional:
-``AlterConstraint.enforced`` / ``not_enforced`` -- the action *is* the
+``AlterConstraintAction.enforced`` / ``not_enforced`` -- the action *is* the
 enforcement keyword, so "neither" is refused as well. That case carries
 ``neither_error`` and is asserted accordingly.
 
@@ -63,7 +63,7 @@ from rhosocial.activerecord.backend.expression.statements.ddl_function import (
     DropFunctionStatement,
 )
 from rhosocial.activerecord.backend.expression.statements.ddl_alter import (
-    AlterConstraint,
+    AlterConstraintAction,
 )
 from rhosocial.activerecord.backend.expression.statements.ddl_sequence import (
     AlterSequenceStatement,
@@ -319,8 +319,8 @@ PAIR_CASES = (
         a_probe="supports_constraint_enforced",
     ),
     PairCase(
-        "AlterConstraint.enforced",
-        lambda d, **kw: AlterConstraint(
+        "AlterConstraintAction.enforced",
+        lambda d, **kw: AlterConstraintAction(
             d, "c", constraint_kind=TableCheckConstraint, **kw
         ),
         "enforced",
@@ -329,7 +329,7 @@ PAIR_CASES = (
         r"NOT ENFORCED\b",
         "ALTER CONSTRAINT ENFORCED/NOT ENFORCED",
         a_probe="supports_alter_constraint_enforced",
-        neither_error="AlterConstraint requires exactly one of",
+        neither_error="AlterConstraintAction requires exactly one of",
     ),
     PairCase(
         "BeginTransactionStatement.deferrable",
@@ -555,7 +555,7 @@ class TestGuardIsNotVacuous:
             "TableConstraint.deferrable",
             "TableConstraint.initially_deferred",
             "TableConstraint.enforced",
-            "AlterConstraint.enforced",
+            "AlterConstraintAction.enforced",
             "BeginTransactionStatement.deferrable",
             "SetTransactionExpression.deferrable",
             "BeginTransactionStatement.wait",

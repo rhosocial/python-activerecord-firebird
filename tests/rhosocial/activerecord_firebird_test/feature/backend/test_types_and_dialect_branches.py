@@ -971,18 +971,27 @@ class TestCreateTableRebuildSnapshots:
             "CREATE TABLE \"T5\" (\"STATUS\" VARCHAR(20) DEFAULT 'O''Brien' NOT NULL)", ()
         )
 
-    def test_expression_default_contributes_params(self, dialect):
+    def test_expression_default_renders_inline(self, dialect):
+        """A DEFAULT is a DDL position: it accepts no bind parameters, so
+        the expression value renders inline (core refuses a binding literal
+        there by name). The old name asserted the opposite -- that the
+        DEFAULT contributed a parameter -- which the current core model
+        rejects by design.
+        """
         col = _column(
             dialect,
             "created_at",
             DateTimeType(dialect=dialect),
             ColumnConstraint(
                 dialect,
-                branch=ColumnDefaultConstraint(dialect, E.Literal(dialect, "CURRENT_TIMESTAMP")),
+                branch=ColumnDefaultConstraint(
+                    dialect, E.Literal(dialect, "CURRENT_TIMESTAMP", inline=True)
+                ),
             ),
         )
         assert CreateTableStatement(dialect, Table(dialect, "t5b"), [col]).to_sql() == (
-            'CREATE TABLE "T5B" ("CREATED_AT" TIMESTAMP DEFAULT ?)', ("CURRENT_TIMESTAMP",)
+            'CREATE TABLE "T5B" ("CREATED_AT" TIMESTAMP DEFAULT \'CURRENT_TIMESTAMP\')',
+            (),
         )
 
     def test_numeric_default_with_explicit_null(self, dialect):
@@ -1007,7 +1016,9 @@ class TestCreateTableRebuildSnapshots:
             dialect,
             branch=TableCheckConstraint(
                 dialect,
-                E.ComparisonPredicate(dialect, ">=", E.Column(dialect, "amount"), E.Literal(dialect, 0)),
+                E.ComparisonPredicate(
+                    dialect, ">=", E.Column(dialect, "amount"), E.Literal(dialect, 0, inline=True)
+                ),
             ),
         )
         expr = CreateTableStatement(

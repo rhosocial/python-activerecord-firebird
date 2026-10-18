@@ -63,8 +63,8 @@ class FirebirdAlterTableModifierMixin:
         Guard the modifier and delegate the plain form to the base
         implementation.
         """
-        # ``if_not_exists`` is AddColumn's declared field; the guard reads it
-        # under its own name rather than probing for it.
+        # ``if_not_exists`` is AddColumnAction's declared field; the guard
+        # reads it under its own name rather than probing for it.
         if action.if_not_exists is True:
             raise UnsupportedFeatureError(
                 self.name,
@@ -83,8 +83,8 @@ class FirebirdAlterTableModifierMixin:
         Guard the modifier and delegate the plain form to the base
         implementation.
         """
-        # ``if_exists`` is DropColumn's declared field; the guard reads it
-        # under its own name rather than probing for it.
+        # ``if_exists`` is DropColumnAction's declared field; the guard
+        # reads it under its own name rather than probing for it.
         if action.if_exists is True:
             raise UnsupportedFeatureError(
                 self.name,
@@ -101,8 +101,8 @@ class FirebirdAlterTableModifierMixin:
         Guard the modifier and delegate the plain form to the base
         implementation.
         """
-        # ``if_exists`` is DropTableConstraint's declared field; the guard
-        # reads it under its own name rather than probing for it.
+        # ``if_exists`` is DropTableConstraintAction's declared field; the
+        # guard reads it under its own name rather than probing for it.
         if action.if_exists is True:
             raise UnsupportedFeatureError(
                 self.name,

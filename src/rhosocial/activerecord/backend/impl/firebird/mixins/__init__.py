@@ -48,7 +48,7 @@ from .generated_column import FirebirdGeneratedColumnMixin
 from .identity_column import FirebirdIdentityColumnMixin
 from .function import FirebirdFunctionMixin
 from .truncate import FirebirdTruncateMixin
-from .typed_value import FirebirdTypedValueMixin
+from .literal import FirebirdLiteralValueMixin
 from .unsupported import FirebirdUnsupportedFeaturesMixin
 
 __all__ = [
@@ -99,6 +99,6 @@ __all__ = [
     "FirebirdIdentityColumnMixin",
     "FirebirdFunctionMixin",
     "FirebirdTruncateMixin",
-    "FirebirdTypedValueMixin",
+    "FirebirdLiteralValueMixin",
     "FirebirdUnsupportedFeaturesMixin",
 ]

@@ -109,8 +109,6 @@ from rhosocial.activerecord.backend.expression.predicates import (
 )
 from rhosocial.activerecord.backend.expression.query_parts import JoinClause
 from rhosocial.activerecord.backend.expression.serialization import (
-    auto_register_builtins,
-    registered_expression_classes,
     deserialize,
     deserialize_json,
     deserialize_xml,
@@ -180,10 +178,11 @@ from rhosocial.activerecord.backend.expression.statements.dml import (
 )
 from rhosocial.activerecord.backend.expression.types import IntegerType
 from rhosocial.activerecord.backend.expression.types.custom import CustomType
-from rhosocial.activerecord.testsuite.utils.expression import (
+from expression_roundtrip_harness import (
     collect_expression_classes,
     make_instance,
     register_all,
+    register_enums_and_dataclasses,
     register_special_constructor,
     roundtrip_expression,
 )
@@ -210,12 +209,16 @@ def _collect_matrix_classes():
     modules re-export under a second name. They are the same objects, so the
     first name wins and the matrix does not test one class several times.
     """
-    auto_register_builtins()
     collected: Dict[str, type] = {}
     for package in MATRIX_PACKAGES:
         for fqn, cls in sorted(collect_expression_classes(package).items()):
             collected.setdefault(fqn, cls)
     register_all(collected)
+    # The Firebird package's enums and dataclasses ride inside artifacts
+    # under their short class names; the kind whitelist resolves those
+    # names, so the backend package's own vocabulary has to be registered
+    # beside the classes. Core's own are populated by the registry itself.
+    register_enums_and_dataclasses(FIREBIRD_EXPR_PKG)
 
     by_identity: Dict[int, str] = {}
     for fqn, cls in sorted(collected.items()):
@@ -1320,8 +1323,6 @@ class TestExpressionRoundtripAll:
     """All constructible expression classes round-trip through all encodings."""
 
     def test_get_params_roundtrip_across_encodings(self, expr_case, fb4_dialect):
-        from rhosocial.activerecord.testsuite.utils.expression import roundtrip_expression
-
         fqn, instance = expr_case
         roundtrip_expression(fqn, instance, fb4_dialect)
 
@@ -1341,7 +1342,6 @@ class TestMatrixIntegrity:
         a constructor and the entry is stale; a class that fails to build without
         being named would become a silent skip. Both fail here.
         """
-        auto_register_builtins()
         actual = {
             fqn
             for fqn in REGISTERED
@@ -1463,7 +1463,6 @@ class TestMatrixIntegrity:
         rather than the registry because the registry also holds whatever
         backends other test modules happened to import.
         """
-        auto_register_builtins()
         expected = set(_collect_matrix_classes())
         stray = [
             fqn
@@ -1498,18 +1497,29 @@ class TestMatrixIntegrity:
     def test_every_covered_class_is_registered_for_deserialization(self):
         """A class in the matrix can be found again when deserializing.
 
-        Deserialization looks the class up by name, so a class the matrix renders
-        but the registry cannot resolve would round-trip into the wrong thing or
-        nothing at all.
+        Deserialization resolves a kind to its class through the framework's
+        default registry (the kind whitelist), so a class the matrix renders
+        but the registry cannot resolve would round-trip into nothing at all.
 
-        This is the one place the registry is read, and it is a membership check
-        over an already-collected set -- never a source of tests. Discovery is
-        the package walk in :func:`_collect_matrix_classes`, precisely because
-        the registry is process-global and grows as sibling modules import their
-        own backends.
+        This is the one place the registry is read, and it is a resolution
+        check over an already-collected set -- never a source of tests.
+        Discovery is the package walk in :func:`_collect_matrix_classes`,
+        precisely because the registry is process-global and grows as
+        sibling modules import their own backends. Core and built-in
+        classes resolve because the registry populates them at first use;
+        this backend's resolve because ``register_all`` handed the
+        collected set to the same registry.
         """
-        auto_register_builtins()
-        unresolved = sorted(set(REGISTERED) - set(registered_expression_classes()))
+        from rhosocial.activerecord.backend.expression.serialization import (
+            default_registry,
+        )
+
+        registry = default_registry()
+        unresolved = sorted(
+            fqn
+            for fqn, cls in REGISTERED.items()
+            if registry.resolve_node(cls.kind()) is not cls
+        )
         assert not unresolved, (
             f"the matrix covers classes the registry cannot resolve: {unresolved}"
         )
@@ -1520,7 +1530,6 @@ class TestMatrixIntegrity:
         Counts each branch the matrix actually took, in this process, with this
         dialect -- not a number carried over from another run.
         """
-        auto_register_builtins()
         census: Dict[str, int] = {}
         for fqn, cls in sorted(REGISTERED.items()):
             instance, _ = make_instance(cls, fb4_dialect)
