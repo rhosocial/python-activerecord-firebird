@@ -929,7 +929,10 @@ SET_TRANSACTION_PARAMS = {
 }
 
 #: The parameters the transaction formatters must read from the expression.
-TRANSACTION_PAIR_PARAMS = ("_wait", "_no_wait")
+#: The names are the node's declared fields: the core renamed the private
+#: ``_wait`` / ``_no_wait`` spellings to public fields, and the formatter
+#: reads them under their own names.
+TRANSACTION_PAIR_PARAMS = ("wait", "no_wait")
 
 
 class TestTransactionWaitPairIsWired:
