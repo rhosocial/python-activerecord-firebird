@@ -11,8 +11,9 @@ from rhosocial.activerecord.backend.dialect.protocols import (
 )
 from rhosocial.activerecord.backend.expression import DdlLiteral
 from rhosocial.activerecord.backend.expression.objects import Domain
+from rhosocial.activerecord.backend.expression.registry import ExpressionRegistry
 from rhosocial.activerecord.backend.expression.serialization import (
-    registered_expression_classes,
+    default_registry,
     deserialize,
     deserialize_json,
     deserialize_xml,
@@ -64,6 +65,33 @@ from rhosocial.activerecord.backend.impl.firebird.expression.types import (
 from rhosocial.activerecord.backend.impl.firebird.mixins.domain import FirebirdDomainMixin
 from rhosocial.activerecord.backend.impl.firebird.protocols import FirebirdDomainSupport
 from rhosocial.activerecord.backend.impl.sqlite.dialect import SQLiteDialect
+
+
+#: This backend's own artifact kinds and the enum its payloads carry. The
+#: class-path index these used to be registered into was removed with the
+#: kind-based artifact format (core ``ee5f4b55``); the registry says which
+#: class a kind *is*, and a deployment that wants to read this backend's
+#: artifacts registers its kinds through the public entry point. The
+#: module-level registration below is this test process doing exactly that,
+#: so the round-trip cases below read what they write.
+_FIREBIRD_ARTIFACT_CLASSES = (
+    FirebirdCreateDomainExpression,
+    FirebirdAlterDomainExpression,
+    FirebirdDropDomainExpression,
+    FirebirdSetDomainDataTypeAction,
+    FirebirdCharType,
+    FirebirdVarCharType,
+    FirebirdTimeStampTzType,
+    FirebirdTimeTzType,
+    FirebirdTimeWithoutTimeZoneType,
+    FirebirdDecFloatType,
+    FirebirdInt128Type,
+)
+
+for _firebird_class in _FIREBIRD_ARTIFACT_CLASSES:
+    default_registry().register_node(_firebird_class)
+default_registry().register_enum(FirebirdDomainAlterMode)
+del _firebird_class
 
 
 def _check(dialect, condition, *, name=None):
@@ -239,7 +267,9 @@ class TestAlterDomain:
         sqlite = SQLiteDialect(version=(3, 45, 0))
         action = FirebirdSetDomainDataTypeAction(
             dialect,
-            ArrayType(sqlite, IntegerType(sqlite), dimensions=1),
+            # ``element_type`` is keyword-only in the core's constructor; the
+            # positional spelling this test used predates that change.
+            ArrayType(sqlite, element_type=IntegerType(sqlite), dimensions=1),
         )
 
         with pytest.raises(TypeError, match="generic type 'array'"):
@@ -620,31 +650,39 @@ class TestDispatchAndSerialization:
         assert type(dialect).format_domain_alter_action is FirebirdDomainMixin.format_domain_alter_action
 
     def test_backend_domain_classes_are_registered(self):
-        classes = (
+        """Each class resolves under the kind its name derives.
+
+        The registry is the only name authority for reading an artifact, and a
+        fresh one starts empty: registration is what makes a backend's own
+        kinds readable, which is why the test registers rather than looks
+        anything up by import path (that index is gone with the kind-based
+        artifact format).
+        """
+        registry = ExpressionRegistry()
+        for expression_class in (
             FirebirdCreateDomainExpression,
             FirebirdAlterDomainExpression,
             FirebirdDropDomainExpression,
             FirebirdSetDomainDataTypeAction,
-        )
-
-        for expression_class in classes:
-            fqn = f"{expression_class.__module__}.{expression_class.__name__}"
-            assert registered_expression_classes()[fqn] is expression_class
+        ):
+            kind = registry.register_node(expression_class)
+            assert kind == expression_class.kind()
+            assert registry.resolve_node(kind) is expression_class
 
     def test_firebird_data_types_are_registered(self):
-        classes = (
-                                            FirebirdCharType,
+        registry = ExpressionRegistry()
+        for expression_class in (
+            FirebirdCharType,
             FirebirdVarCharType,
             FirebirdTimeStampTzType,
             FirebirdTimeWithoutTimeZoneType,
             FirebirdTimeTzType,
             FirebirdDecFloatType,
             FirebirdInt128Type,
-        )
-
-        for expression_class in classes:
-            fqn = f"{expression_class.__module__}.{expression_class.__name__}"
-            assert registered_expression_classes()[fqn] is expression_class
+        ):
+            kind = registry.register_node(expression_class)
+            assert kind == expression_class.kind()
+            assert registry.resolve_node(kind) is expression_class
 
     def test_firebird_data_types_round_trip_in_all_codecs(self):
         dialect = FirebirdDialect((4, 0, 0))

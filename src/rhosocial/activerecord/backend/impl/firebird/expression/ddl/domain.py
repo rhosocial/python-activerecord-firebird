@@ -7,7 +7,6 @@ from typing import Any, Optional, Sequence, Set, TYPE_CHECKING, Union
 from rhosocial.activerecord.backend.expression.bases import SQLPredicate
 from rhosocial.activerecord.backend.expression.objects import Domain
 from rhosocial.activerecord.backend.expression.operators import RawSQLPredicate
-from rhosocial.activerecord.backend.expression.serialization import register_expression_class
 from rhosocial.activerecord.backend.expression.statements.ddl_domain import (
     AddDomainCheckAction,
     AlterDomainStatement,
@@ -357,10 +356,12 @@ class FirebirdDropDomainExpression(DropDomainStatement):
     """Firebird-named DROP DOMAIN expression."""
 
 
-register_expression_class(FirebirdCreateDomainExpression)
-register_expression_class(FirebirdAlterDomainExpression)
-register_expression_class(FirebirdDropDomainExpression)
-register_expression_class(FirebirdSetDomainDataTypeAction)
+# No registration calls: the class-path index they fed was removed with the
+# kind-based artifact format (core ``ee5f4b55``), and nothing replaces them
+# here -- a registry is assembled from the framework's packages at first
+# deserialization, and a deployment that wants to read this backend's own
+# kinds registers them into a registry of its own. Importing this module is
+# what makes the classes available to that walk.
 
 
 __all__ = [

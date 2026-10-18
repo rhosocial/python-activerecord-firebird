@@ -2,9 +2,7 @@
 """Firebird-specific DDL DataType subclasses."""
 
 import re
-from typing import Tuple
 
-from rhosocial.activerecord.backend.expression.serialization import register_expression_class
 from rhosocial.activerecord.backend.expression.types import (
     BigIntType,
     BinaryType,
@@ -432,13 +430,10 @@ def _parse_firebird_data_type_name(value: str) -> DataType:
     raise ValueError("data_type_name contains unsupported Firebird type syntax")
 
 
-register_expression_class(FirebirdCharType)
-register_expression_class(FirebirdVarCharType)
-register_expression_class(FirebirdTimeStampTzType)
-register_expression_class(FirebirdTimeTzType)
-register_expression_class(FirebirdTimeWithoutTimeZoneType)
-register_expression_class(FirebirdDecFloatType)
-register_expression_class(FirebirdInt128Type)
+# No registration calls: the class-path index they fed was removed with the
+# kind-based artifact format (core ``ee5f4b55``). A registry is assembled from
+# the framework's packages at first deserialization; a deployment that wants
+# to read this backend's own kinds registers them into a registry of its own.
 
 
 __all__ = [
