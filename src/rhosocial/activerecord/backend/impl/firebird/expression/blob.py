@@ -26,10 +26,14 @@ class BlobColumnExpression(BaseExpression):
         character_set: Optional[str] = None,
     ):
         super().__init__(dialect)
-        self._column_name = column_name
-        self._sub_type = sub_type
-        self._segment_size = segment_size
-        self._character_set = character_set
+        # Each constructor argument is stored under its own name: the
+        # artifact contract reads a parameter by the name it was declared
+        # with, so a private spelling would make the node unwritable and
+        # unreadable in the same breath.
+        self.column_name = column_name
+        self.sub_type = sub_type
+        self.segment_size = segment_size
+        self.character_set = character_set
 
     @property
     def format_method(self) -> str:
@@ -46,8 +50,8 @@ class BlobLiteralExpression(BaseExpression):
         sub_type: int = 0,
     ):
         super().__init__(dialect)
-        self._value = value
-        self._sub_type = sub_type
+        self.value = value
+        self.sub_type = sub_type
 
     @property
     def format_method(self) -> str:

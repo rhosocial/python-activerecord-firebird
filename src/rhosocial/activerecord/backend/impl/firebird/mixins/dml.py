@@ -166,11 +166,11 @@ class FirebirdDMLOperationMixin:
         return sql, tuple(all_params)
 
     def format_update_or_insert(self, expr: "UpdateOrInsertExpression") -> Tuple[str, tuple]:
-        table_name = expr.table_name
-        insert_columns = expr._insert_columns
-        insert_values = expr._insert_values
-        match_columns = expr._match_columns
-        returning_columns = expr._returning_columns
+        table_name = expr.table
+        insert_columns = expr.insert_columns
+        insert_values = expr.insert_values
+        match_columns = expr.match_columns
+        returning_columns = expr.returning_columns
 
         all_params = list(insert_values)
 
@@ -321,8 +321,8 @@ class FirebirdDMLOperationMixin:
         return " ".join(merge_sql_parts), tuple(all_params)
 
     def format_execute_block(self, expr: "ExecuteBlockExpression") -> Tuple[str, tuple]:
-        block = expr._block
-        params = expr._params
+        block = expr.block
+        params = expr.params
 
         all_params = []
         if params:
@@ -385,7 +385,7 @@ class FirebirdDMLOperationMixin:
         The block is wrapped in ``BEGIN ... END`` unless it already starts
         with ``BEGIN``, mirroring :meth:`format_execute_block`.
         """
-        block = expr._block
+        block = expr.block
 
         version = getattr(self, 'version', (3, 0, 0))
         if _norm_version(version) < (3, 0, 0):

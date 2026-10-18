@@ -36,11 +36,15 @@ class UpdateOrInsertExpression(BaseExpression):
         returning_columns: Optional[List[str]] = None,
     ):
         super().__init__(dialect)
+        # Every constructor argument is stored under its own name: the
+        # artifact contract reads a parameter by the name it was declared
+        # with, and a private spelling would make the node unwritable and
+        # unreadable in the same breath.
         self.table = table
-        self._insert_columns = insert_columns
-        self._insert_values = insert_values
-        self._match_columns = match_columns
-        self._returning_columns = returning_columns
+        self.insert_columns = insert_columns
+        self.insert_values = insert_values
+        self.match_columns = match_columns
+        self.returning_columns = returning_columns
 
     @property
     def table_name(self) -> Any:
@@ -57,7 +61,7 @@ class AutonomousTransactionDoExpression(BaseExpression):
 
     def __init__(self, dialect: "SQLDialectBase", block: str):
         super().__init__(dialect)
-        self._block = block
+        self.block = block
 
     @property
     def format_method(self) -> str:
@@ -74,8 +78,8 @@ class ExecuteBlockExpression(BaseExpression):
         params: Optional[Dict[str, Any]] = None,
     ):
         super().__init__(dialect)
-        self._block = block
-        self._params = params
+        self.block = block
+        self.params = params
 
     @property
     def format_method(self) -> str:
