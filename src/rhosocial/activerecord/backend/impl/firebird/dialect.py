@@ -142,6 +142,9 @@ from rhosocial.activerecord.backend.dialect.mixins import (
     LpadMixin,
     RpadMixin,
     TrimMixin,
+    # Value literals: tier-1 renders through the base; the tier-2 kinds
+    # Firebird spells its own reach this dialect's mixin ahead of it.
+    TypedValueMixin,
 )
 
 from .mixins.version_boundaries import _norm_version
@@ -187,6 +190,7 @@ from .mixins import (
     FirebirdIdentityColumnMixin,
     FirebirdFunctionMixin,
     FirebirdTruncateMixin,
+    FirebirdTypedValueMixin,
     FirebirdUnsupportedFeaturesMixin,
 )
 from .protocols import (
@@ -316,6 +320,12 @@ class FirebirdDialect(
     FirebirdRoleMixin,
     FirebirdUserMixin,
     FirebirdDatabaseMixin,
+    # Value literals: Firebird's spellings ahead of the base's tier-1
+    # rendering. This order is what resolves format_binary_value and
+    # format_uuid_value; the base keeps every kind the local mixin leaves
+    # alone, INTERVAL's explicit refusal included.
+    FirebirdTypedValueMixin,
+    TypedValueMixin,
     # Core feature mixins (no duplicates)
     DMLMixin,
     CollationMixin,
