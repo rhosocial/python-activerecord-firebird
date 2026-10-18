@@ -1042,3 +1042,106 @@ class TestCreateTableRebuildSnapshots:
         with pytest.raises(UnsupportedFeatureError) as excinfo:
             expr.to_sql()
         assert "PARTITION BY clause" in str(excinfo.value)
+
+
+class TestClassedFunctionEntryPoints:
+    """The core's classed functions reach this backend's own spellings.
+
+    Each entry point below follows a measured Firebird fact the generic
+    renderer could not know: the missing ``LENGTH`` function, and the
+    ``SUM``/``AVG`` result type the server refuses to infer over a
+    ``DECIMAL`` column ("Data type unknown" at prepare time, on Firebird 5
+    and the 6.0 snapshot). The old ``format_function_call`` remap carried
+    both, but the classed nodes stopped dispatching there, so the
+    spellings live on the entry points that do dispatch.
+    """
+
+    def test_char_length_honours_the_declared_unit(self, dialect):
+        name = E.Column(dialect, "name")
+        assert E.CharLengthFunction(dialect, name).to_sql() == ('CHAR_LENGTH("NAME")', ())
+        assert (
+            E.CharLengthFunction(dialect, name, unit="octet").to_sql()
+            == ('OCTET_LENGTH("NAME")', ())
+        )
+        assert (
+            E.CharLengthFunction(dialect, name, unit="bit").to_sql()
+            == ('BIT_LENGTH("NAME")', ())
+        )
+
+    def test_sum_pins_the_result_type(self, dialect):
+        amount = E.Column(dialect, "amount")
+        assert E.SumFunction(dialect, amount).to_sql() == (
+            'CAST(SUM("AMOUNT") AS DECIMAL(18,2))',
+            (),
+        )
+
+    def test_avg_keeps_distinct_inside_the_cast(self, dialect):
+        amount = E.Column(dialect, "amount")
+        assert E.AvgFunction(dialect, amount, distinct=True).to_sql() == (
+            'CAST(AVG(DISTINCT "AMOUNT") AS DECIMAL(18,2))',
+            (),
+        )
+
+    def test_aggregate_alias_sits_outside_the_cast(self, dialect):
+        # The alias is the node's declared field (``as_``), so the CAST
+        # wraps the aggregate and the alias rides outside it.
+        total = E.SumFunction(dialect, E.Column(dialect, "amount")).as_("total")
+        assert total.to_sql() == (
+            'CAST(SUM("AMOUNT") AS DECIMAL(18,2)) AS "TOTAL"',
+            (),
+        )
+
+    def test_arithmetic_literal_operands_are_cast_for_type_inference(self, dialect):
+        # Firebird answers -804 Data type unknown for a bare ``?`` inside
+        # arithmetic, so the dialect wraps literal operands in an explicit
+        # CAST. The override carrying this used to be named after the old
+        # ``format_binary_arithmetic_expression`` entry point and never
+        # dispatched; the rename is what makes the wrapping reach the SQL.
+        operation = E.ArithmeticOperation(
+            dialect, "add", E.Column(dialect, "qty"), E.Literal(dialect, 1)
+        )
+        assert operation.to_sql() == ('"QTY" + CAST(? AS INTEGER)', (1,))
+
+
+class TestInsertBareHostValues:
+    """A VALUES cell may be a bare host value, and it binds.
+
+    The base's ``format_insert_values_source`` owns the expression-vs-host
+    judgment; this backend's INSERT override used to re-implement the cell
+    loop, which called ``to_sql()`` on every cell and crashed on a bare
+    scalar. The delegation is what lets a plain Python value through as a
+    bound parameter.
+    """
+
+    def test_bare_scalars_bind_behind_placeholders(self, dialect):
+        insert = InsertStatement(
+            dialect,
+            Table(dialect, "users"),
+            ValuesSource(dialect, [["Bob", 30], ["Ann", 41]]),
+            columns=["name", "age"],
+        )
+        assert insert.to_sql() == (
+            'INSERT INTO "USERS" ("NAME", "AGE") VALUES (?, ?), (?, ?)',
+            ("Bob", 30, "Ann", 41),
+        )
+
+    def test_expression_cells_still_render_their_own_sql(self, dialect):
+        insert = InsertStatement(
+            dialect,
+            Table(dialect, "users"),
+            ValuesSource(dialect, [[E.Literal(dialect, "Bob")]]),
+            columns=["name"],
+        )
+        assert insert.to_sql() == ('INSERT INTO "USERS" ("NAME") VALUES (?)', ("Bob",))
+
+    def test_mixed_cells_split_correctly(self, dialect):
+        insert = InsertStatement(
+            dialect,
+            Table(dialect, "users"),
+            ValuesSource(dialect, [["Bob", E.Literal(dialect, 30)]]),
+            columns=["name", "age"],
+        )
+        assert insert.to_sql() == (
+            'INSERT INTO "USERS" ("NAME", "AGE") VALUES (?, ?)',
+            ("Bob", 30),
+        )

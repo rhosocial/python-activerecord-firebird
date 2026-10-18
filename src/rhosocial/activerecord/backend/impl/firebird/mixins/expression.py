@@ -6,7 +6,6 @@ from typing import Any, Optional, Tuple, TYPE_CHECKING
 from rhosocial.activerecord.backend.expression.types import DataType
 
 if TYPE_CHECKING:
-    from rhosocial.activerecord.backend.expression import bases
     from rhosocial.activerecord.backend.expression.advanced_functions import CaseExpression
     from rhosocial.activerecord.backend.expression.operators import ArithmeticOperation
 
@@ -109,27 +108,29 @@ class FirebirdExpressionMixin:
         wrapped_expr = CaseExpression(self, value=value, cases=wrapped_cases, else_result=wrapped_else, alias=alias)
         return super().format_case_expression(wrapped_expr)
 
-    def format_binary_arithmetic_expression(self, expr: "ArithmeticOperation") -> Tuple[str, tuple]:
-        """Format a binary arithmetic expression with typed phantom parameters.
+    def format_arithmetic_operation(self, expr: "ArithmeticOperation") -> Tuple[str, tuple]:
+        """Format an arithmetic operation with typed phantom parameters.
 
         Firebird cannot infer the type of a ``?`` parameter used inside an
         arithmetic expression (e.g. ``col + ?`` raises -804 Data type unknown).
         Wrap literal ``?`` operands in an explicit CAST based on the bound value.
+
+        The entry point itself is the core's current name (``cf7972d9``):
+        the node declares ``format_arithmetic_operation``, and this method
+        carried the older ``format_binary_arithmetic_expression`` spelling,
+        which nothing dispatched to -- the operand wrapping below never
+        reached the server through it.
         """
         from rhosocial.activerecord.backend.expression.operators import ArithmeticOperation
 
-        left = expr.left
-        right = expr.right
-        op = expr.op
+        left = self._maybe_cast_operand(expr.left)
+        right = self._maybe_cast_operand(expr.right)
 
-        # Cast literal operands that Firebird can't type-infer
-        left = self._maybe_cast_operand(left)
-        right = self._maybe_cast_operand(right)
-
-        # Rebuild expression with wrapped operands
-        wrapped = ArithmeticOperation(self, op, left, right)
+        # Rebuild with the wrapped operands; the alias rides along because
+        # the base renderer reads it off the node it is handed.
+        wrapped = ArithmeticOperation(self, expr.op, left, right)
         wrapped.alias = expr.alias
-        return super().format_binary_arithmetic_expression(wrapped)
+        return super().format_arithmetic_operation(wrapped)
 
     def _maybe_cast_operand(self, operand):
         """Wrap a Literal operand in CastExpression if Firebird needs explicit typing."""
@@ -162,31 +163,11 @@ class FirebirdExpressionMixin:
             sql = f"{sql} AS {self.format_identifier(alias)}"
         return sql, inner_params
 
-    def format_function_call(self, expr: "bases.BaseExpression") -> Tuple[str, tuple]:
-        """Format a function call, remapping names Firebird does not provide.
-
-        Firebird 5 does not expose a ``LENGTH`` scalar function (the name is a
-        reserved keyword); the canonical length function is ``CHAR_LENGTH`` for
-        characters and ``OCTET_LENGTH`` for bytes.
-
-        Firebird 5/6-snapshot fails to infer the result type of ``SUM``/``AVG``
-        over a ``DECIMAL`` column ("Data type unknown" at prepare time), so the
-        aggregate result is explicitly cast to ``DECIMAL(18,2)`` to pin the
-        return type. This matches the precision used by the testsuite schemas.
-        """
-        func_name = expr.func_name
-        if isinstance(func_name, str) and func_name.upper() == "LENGTH":
-            expr.func_name = "CHAR_LENGTH"
-            try:
-                return super().format_function_call(expr)
-            finally:
-                expr.func_name = func_name
-        if isinstance(func_name, str) and func_name.upper() in ("SUM", "AVG"):
-            saved_alias = expr.alias
-            expr.alias = None
-            try:
-                inner_sql, inner_params = super().format_function_call(expr)
-            finally:
-                expr.alias = saved_alias
-            return self._cast_sql(inner_sql, inner_params, "DECIMAL(18,2)", saved_alias)
-        return super().format_function_call(expr)
+    # No ``format_function_call`` override: the entry point now serves
+    # user-defined functions alone (core ``c5210245``), and the two remaps
+    # this method used to carry live on the classed entry points instead --
+    # ``format_char_length_function`` spells the length functions Firebird
+    # actually has, and ``format_sum_function`` / ``format_avg_function``
+    # pin the DECIMAL(18,2) result type. Both are on FirebirdFunctionMixin,
+    # so what reaches the core's generic call renderer is a UDF whose name
+    # is the user's own and none of this backend's business.
