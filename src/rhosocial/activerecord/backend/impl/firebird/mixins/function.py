@@ -128,3 +128,50 @@ class FirebirdFunctionMixin:
         what lets the server prepare the statement at all.
         """
         return self._format_pinned_aggregate("AVG", expr)
+
+    #: The aggregate spellings the server refuses to infer a result type
+    #: for, matched on the plain :class:`FunctionCall` path below. The
+    #: classed ``SumFunction`` / ``AvgFunction`` entry points above are the
+    #: other route to the same measured fact.
+    _PINNED_AGGREGATE_NAMES = ("SUM", "AVG")
+
+    def format_function_call(self, expr: "bases.BaseExpression") -> Tuple[str, tuple]:
+        """Pin the result type of a plain ``SUM`` / ``AVG`` call.
+
+        The measured Firebird fact behind :meth:`format_sum_function` /
+        :meth:`format_avg_function` -- the server refuses to infer the result
+        type of ``SUM`` / ``AVG`` over a ``DECIMAL`` column ("Data type
+        unknown" at prepare time, on Firebird 5 and the 6.0 snapshot) -- is a
+        fact about the aggregate, not about which node class spelled it. A
+        plain ``FunctionCall`` reaches the core's generic renderer with the
+        same grammar, and that renderer spells ``SUM(args)`` bare: the
+        testsuite's window tests build exactly that node -- ``FunctionCall(
+        dialect, "SUM", column, window_spec=...)`` -- and the prepare of the
+        rendered statement fails on the server with the same refusal.
+
+        So the pin is applied here too: the alias is stripped for the inner
+        render (the base would print it inside the call) and rides outside
+        the CAST, the same outside-alias shape the classed entry points use.
+        A window clause renders inside the CAST, which is where the engine
+        expects the aggregate expression to end.
+
+        Every other name passes through to the core unchanged: what remains
+        on this path is a user-defined function, whose name is the user's
+        own and none of this backend's business.
+        """
+        from rhosocial.activerecord.backend.expression.core import FunctionCall
+
+        if (expr.func_name or "").upper() in self._PINNED_AGGREGATE_NAMES:
+            inner = FunctionCall(
+                expr.dialect,
+                expr.func_name,
+                *expr.args,
+                is_distinct=expr.is_distinct,
+                niladic=expr.niladic,
+                filter_predicate=expr.filter_predicate,
+                window_spec=expr.window_spec,
+                is_aggregate=expr.is_aggregate,
+            )
+            sql, params = super().format_function_call(inner)
+            return self._cast_sql(sql, tuple(params), "DECIMAL(18,2)", expr.alias)
+        return super().format_function_call(expr)

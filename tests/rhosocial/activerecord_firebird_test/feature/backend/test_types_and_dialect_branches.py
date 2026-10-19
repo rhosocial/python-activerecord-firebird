@@ -1102,6 +1102,38 @@ class TestClassedFunctionEntryPoints:
             (),
         )
 
+    def test_plain_sum_call_pins_the_result_type(self, dialect):
+        # The same pin on the plain FunctionCall path: the refusal is a
+        # fact about the aggregate, not about the node class that spelled
+        # it, and this is the node the testsuite's window tests build.
+        call = E.FunctionCall(dialect, "SUM", E.Column(dialect, "amount"))
+        assert call.to_sql() == ('CAST(SUM("AMOUNT") AS DECIMAL(18,2))', ())
+
+    def test_plain_sum_over_pins_the_result_type(self, dialect):
+        # A window clause renders inside the CAST (the aggregate expression
+        # ends there), the alias outside it.
+        from rhosocial.activerecord.backend.expression.advanced_functions import (
+            WindowSpecification,
+        )
+        from rhosocial.activerecord.backend.expression.query_parts import OrderByClause
+
+        order_by = OrderByClause(dialect, [(E.Column(dialect, "amount"), "DESC")])
+        window_spec = WindowSpecification(dialect, order_by=order_by)
+        call = E.FunctionCall(
+            dialect, "SUM", E.Column(dialect, "amount"),
+            window_spec=window_spec, alias="total",
+        )
+        assert call.to_sql() == (
+            'CAST(SUM("AMOUNT") OVER (ORDER BY "AMOUNT" DESC) AS DECIMAL(18,2)) AS "TOTAL"',
+            (),
+        )
+
+    def test_plain_unpinned_call_passes_through(self, dialect):
+        # A user-defined function reaches the core renderer unmodified:
+        # its name is the user's own and none of this backend's business.
+        call = E.FunctionCall(dialect, "MY_UDF", E.Column(dialect, "amount"))
+        assert call.to_sql() == ('MY_UDF("AMOUNT")', ())
+
     def test_arithmetic_literal_operands_are_cast_for_type_inference(self, dialect):
         # Firebird answers -804 Data type unknown for a bare ``?`` inside
         # arithmetic, so the dialect wraps literal operands in an explicit

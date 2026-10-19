@@ -163,11 +163,15 @@ class FirebirdExpressionMixin:
             sql = f"{sql} AS {self.format_identifier(alias)}"
         return sql, inner_params
 
-    # No ``format_function_call`` override: the entry point now serves
-    # user-defined functions alone (core ``c5210245``), and the two remaps
-    # this method used to carry live on the classed entry points instead --
-    # ``format_char_length_function`` spells the length functions Firebird
-    # actually has, and ``format_sum_function`` / ``format_avg_function``
-    # pin the DECIMAL(18,2) result type. Both are on FirebirdFunctionMixin,
-    # so what reaches the core's generic call renderer is a UDF whose name
-    # is the user's own and none of this backend's business.
+    # ``format_function_call`` is overridden on FirebirdFunctionMixin: the
+    # generic entry point does not serve user-defined functions alone, and
+    # the SUM/AVG pin lives there -- a plain ``FunctionCall`` naming those
+    # aggregates reaches this renderer with the same grammar the classed
+    # entry points take, and the server's "Data type unknown" refusal is a
+    # fact about the aggregate, not about the node class that spelled it
+    # (the window tests' ``FunctionCall(dialect, "SUM", ..., window_spec=...)``
+    # is the counter-example that motivated it). ``format_char_length_function``
+    # and ``format_sum_function`` / ``format_avg_function`` stay on
+    # FirebirdFunctionMixin beside it; what still reaches the core's generic
+    # renderer unmodified is a UDF, whose name is the user's own and none of
+    # this backend's business.
