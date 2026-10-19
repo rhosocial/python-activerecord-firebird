@@ -183,7 +183,10 @@ oldest release carry no gate and are omitted.
   `if_exists_table`, `if_not_exists_table`, `drop_index_on_table` and
   `trigger_if_not_exists` are unsupported.
 - Also unsupported: `on_conflict_clause`, `returning_alias`,
-  `fetch_with_ties`, `fk_match`, `stored_generated_columns`, `explain_plan`.
+  `fetch_with_ties`, `fk_match`, `intersect`, `except`,
+  `stored_generated_columns`, `explain_plan`. Firebird has no `INTERSECT`
+  or `EXCEPT` operator (tracker CORE808 still open); `UNION` / `UNION ALL`
+  are supported.
 
 ## Testing
 

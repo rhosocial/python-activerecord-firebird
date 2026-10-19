@@ -11,6 +11,8 @@ Firebird SQL dialect features and version support:
     - SKIP LOCKED (FB 4.0+)
   - OFFSET/FETCH (FB 3.0+)
   - DECFLOAT (FB 4.0+)
+  - UNION / UNION ALL (every Firebird release -- the operators predate
+    Firebird); INTERSECT / EXCEPT do not exist (tracker CORE808 open)
 """
 
 from typing import Optional, Tuple
@@ -665,6 +667,38 @@ class FirebirdDialect(
 
     def supports_cte(self) -> bool:
         return _norm_version(self.version) >= (3, 0, 0)
+
+    # Set operations (SetOperationSupport). Firebird spells UNION / UNION ALL
+    # with the SQL-standard keywords, and both operators predate Firebird --
+    # they were supported in the InterBase lineage Firebird forked from, so
+    # they exist in every Firebird release this backend can target and carry
+    # no version gate. The inherited ``format_set_operation`` renders those
+    # spellings as-is, so no formatter override is needed either.
+    # INTERSECT / EXCEPT do not exist in Firebird: the request is still open
+    # as tracker CORE808 (checked 2026-10-20), so both stay refused by name
+    # (the core renders them only after the probe says yes). The testsuite
+    # gates its intersect/except cases behind these probes, so answering
+    # False also skips those cases instead of failing them.
+    def supports_union(self) -> bool:
+        """``UNION`` is available since the InterBase lineage Firebird forked
+        from, hence in every Firebird version: no gate applies."""
+        return True
+
+    def supports_union_all(self) -> bool:
+        """``UNION ALL`` arrived with ``UNION`` in the same lineage; Firebird
+        keeps duplicate rows, which is what the keyword means."""
+        return True
+
+    def supports_intersect(self) -> bool:
+        """Firebird has no ``INTERSECT`` operator -- tracker CORE808 was still
+        open on 2026-10-20 -- so rendering one would only produce SQL the
+        server rejects; the core refuses it by name instead."""
+        return False
+
+    def supports_except(self) -> bool:
+        """Firebird has no ``EXCEPT`` operator -- tracker CORE808 was still
+        open on 2026-10-20, same reasoning as ``supports_intersect``."""
+        return False
 
     def supports_udf(self) -> bool:
         return True
