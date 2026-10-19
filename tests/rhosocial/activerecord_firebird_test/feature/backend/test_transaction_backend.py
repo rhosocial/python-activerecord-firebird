@@ -1,4 +1,10 @@
+import pytest
 from decimal import Decimal
+
+# These cases open a real connection and create and drop real tables against
+# the one scenario database this run points at. See the reason, once, in this
+# directory's conftest.
+pytestmark = pytest.mark.xdist_group("live_db")
 
 
 class TestTransactionBackend:

@@ -75,6 +75,12 @@ REFUSED_OPTIONS = (
 )
 
 
+# The execution-confirmation classes below open a real connection and create
+# and drop real tables against the one scenario database this run points at.
+# See the reason, once, in this directory's conftest.
+pytestmark = pytest.mark.xdist_group("live_db")
+
+
 class _OptionsDeclaredDialect(FirebirdDialect):
     """The real dialect with the measured-``False`` options answered ``True``.
 

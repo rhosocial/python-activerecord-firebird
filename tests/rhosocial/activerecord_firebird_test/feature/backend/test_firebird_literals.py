@@ -11,11 +11,12 @@ class each, so the offline classes below assert the two paths directly.
 The literal forms asserted by the offline classes are from the Firebird
 language reference, not from a live server: the machine this wave was
 written on has no Firebird client library at all (the driver answers "The
-location of Firebird Client Library could not be determined"), so the
-live-server class at the bottom -- the piece that re-measures the answers
-end to end -- has never executed in this run and is skipped here. It runs
-wherever the scenarios (192.168.1.3:19582 / 19583) are reachable, and
-that run is what the tier-2 spellings still owe.
+location of Firebird Client Library could not be determined"). What only a
+server can say -- that the spelling is accepted and means the same value
+coming back -- is not here: expression-dialect 12 keeps a connected check out
+of the expression tests, so the live re-measurement moved to
+``feature/basic/ddl/test_firebird_literal_defaults.py`` in the integration
+area, and the tier-2 spellings below still owe that run.
 
 * binary -- ``X'0102FF'``, the hexadecimal binary string literal; the
   server reads it as bytes, which the live class measures through
@@ -181,116 +182,3 @@ class TestMROOrder:
         )
 
 
-# -- the live re-measurement ---------------------------------------------
-#
-# The offline classes above pin what this dialect renders. What only a
-# server can say is that the spelling is accepted and means the same value
-# coming back. This machine has no Firebird client library (see the module
-# docstring), so the fixture skips rather than erroring -- the connected
-# environments this suite runs in (scenarios firebird_5 / firebird_6) are
-# where these cases actually execute.
-
-
-@pytest.fixture
-def live_backend(fb_config):
-    from rhosocial.activerecord.backend.impl.firebird.backend import FirebirdBackend
-
-    backend = FirebirdBackend(connection_config=fb_config)
-    try:
-        backend.connect()
-    except Exception as exc:
-        pytest.skip(f"no reachable Firebird server: {exc}")
-    yield backend
-    try:
-        backend.disconnect()
-    except Exception:
-        pass
-
-
-class TestLiveServerReadsTheLiteralsBack:
-    """The tier-2 answers re-measured end to end against a running server.
-
-    The read-back goes over raw SQL on purpose: the literal forms are this
-    dialect's own product. The binary case measures through
-    ``OCTET_LENGTH`` so the verdict does not depend on how the driver
-    types an octets column on the way back -- three bytes is the answer
-    only if the server read ``X'0102FF'`` as binary, where the text
-    spelling would be eight characters long.
-    """
-
-    def _drop(self, backend, table):
-        try:
-            backend.execute(f"DROP TABLE {table}", fetch=False)
-        except Exception:
-            pass
-
-    def test_binary_default_is_read_back_as_bytes(self, live_backend):
-        self._drop(live_backend, "ar_fb_typed_bin")
-        try:
-            live_backend.execute(
-                "CREATE TABLE ar_fb_typed_bin ("
-                "id INT, v VARCHAR(8) CHARACTER SET OCTETS DEFAULT X'0102FF')",
-                fetch=False,
-            )
-            live_backend.execute(
-                "INSERT INTO ar_fb_typed_bin (id) VALUES (1)", fetch=False
-            )
-            rows = live_backend.execute(
-                "SELECT OCTET_LENGTH(v) FROM ar_fb_typed_bin", fetch=True
-            ).data
-            assert rows[0]["octet_length"] == 3
-        finally:
-            self._drop(live_backend, "ar_fb_typed_bin")
-
-    def test_uuid_default_roundtrips_as_the_canonical_text(self, live_backend):
-        canonical = "550e8400-e29b-41d4-a716-446655440000"
-        self._drop(live_backend, "ar_fb_typed_uuid")
-        try:
-            live_backend.execute(
-                f"CREATE TABLE ar_fb_typed_uuid ("
-                f"id INT, v CHAR(36) DEFAULT '{canonical}')",
-                fetch=False,
-            )
-            live_backend.execute(
-                "INSERT INTO ar_fb_typed_uuid (id) VALUES (1)", fetch=False
-            )
-            rows = live_backend.execute(
-                "SELECT v FROM ar_fb_typed_uuid", fetch=True
-            ).data
-            assert rows[0]["v"] == canonical
-        finally:
-            self._drop(live_backend, "ar_fb_typed_uuid")
-
-    def test_interval_default_is_refused(self, live_backend):
-        self._drop(live_backend, "ar_fb_typed_iv")
-        try:
-            with pytest.raises(Exception):  # noqa: B017 - the refusal is the point
-                live_backend.execute(
-                    "CREATE TABLE ar_fb_typed_iv (v INT DEFAULT INTERVAL 1 DAY)"
-                )
-        finally:
-            self._drop(live_backend, "ar_fb_typed_iv")
-
-    def test_tier_one_defaults_are_accepted(self, live_backend):
-        self._drop(live_backend, "ar_fb_typed_t1")
-        try:
-            live_backend.execute(
-                "CREATE TABLE ar_fb_typed_t1 ("
-                " b BOOLEAN DEFAULT TRUE,"
-                " n INT DEFAULT 42,"
-                " f DOUBLE PRECISION DEFAULT 1.5,"
-                " s VARCHAR(16) DEFAULT 'x''y',"
-                " d DATE DEFAULT '2026-10-17',"
-                " ts TIMESTAMP DEFAULT '2026-10-17 10:00:00'"
-                ")",
-                fetch=False,
-            )
-            live_backend.execute(
-                "INSERT INTO ar_fb_typed_t1 DEFAULT VALUES", fetch=False
-            )
-            rows = live_backend.execute(
-                "SELECT COUNT(*) FROM ar_fb_typed_t1", fetch=True
-            ).data
-            assert rows[0]["count"] == 1
-        finally:
-            self._drop(live_backend, "ar_fb_typed_t1")

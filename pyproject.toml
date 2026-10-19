@@ -96,7 +96,7 @@ markers = [
     "requires_capability: marks tests requiring specific backend capabilities",
     "feature: category label for feature-area tests; changes collection grouping only, not ordering",
     "benchmark_relation: marks relation benchmarks; changes collection grouping only, not ordering",
-
+    "xdist_group(name): schedules the marked tests onto one xdist worker; the expression tests run with --dist=loadgroup, so this is the only marker that actually serialises anything",
 ]
 
 [tool.coverage.run]

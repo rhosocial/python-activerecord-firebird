@@ -15,6 +15,10 @@ import pytest
 
 from rhosocial.activerecord.backend import errors as exc
 
+# These cases open a real connection against the one scenario database this
+# run points at. See the reason, once, in this directory's conftest.
+pytestmark = pytest.mark.xdist_group("live_db")
+
 
 class TestIsConnected:
     def test_is_connected_when_connected(self, fb_backend):

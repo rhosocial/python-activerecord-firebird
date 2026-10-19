@@ -10,7 +10,13 @@ removed in Firebird 5+, so the hint falls back to the configured pool size or
 ``None`` (unlimited) when no limit is discoverable.
 """
 
+import pytest
+
 from rhosocial.activerecord.backend.protocols import ConcurrencyAware, ConcurrencyHint
+
+# These cases open a real connection against the one scenario database this
+# run points at. See the reason, once, in this directory's conftest.
+pytestmark = pytest.mark.xdist_group("live_db")
 
 
 class TestFirebirdConcurrencyAware:
