@@ -20,9 +20,12 @@ def dialect():
 
 def test_nulls_first_last_supported(dialect):
     assert dialect.supports_nulls_first_last() is True
+    # One enum-style ``nulls`` slot, not the former nulls_first / nulls_last
+    # boolean pair: the pair said the same thing twice, and the wire had to
+    # guess which half the caller meant.
     sql, _ = OrderByClause(
         dialect,
-        expressions=[OrderByItem(dialect, Column(dialect, "name"), nulls_first=True)],
+        expressions=[OrderByItem(dialect, Column(dialect, "name"), nulls="first")],
     ).to_sql()
     assert "NULLS FIRST" in sql
 

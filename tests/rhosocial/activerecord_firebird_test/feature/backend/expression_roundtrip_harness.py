@@ -32,7 +32,7 @@ import inspect
 import re
 import typing
 import warnings
-from typing import Any, Callable, Dict, Type
+from typing import Any, Callable, Dict, Optional, Type
 
 from rhosocial.activerecord.backend.expression.bases import BaseExpression
 
@@ -1126,10 +1126,119 @@ def sql_consistent(fqn: str, instance: BaseExpression, dialect: Any) -> None:
         assert restored.to_sql() == expected, fqn
 
 
+def parse_roundtrip_failures(
+    dialect: Any,
+    registry: Dict[str, Any],
+    *,
+    widening: Optional[Dict[str, Any]] = None,
+    skip: Any = (),
+) -> Any:
+    """Sweep *registry* and return the parse round-trip failures as text.
+
+    Vendored from the shared testsuite's ``utils/parse_contract.py``, which is
+    unusable since ``e05edb0`` deleted the ``utils/expression.py`` it imports
+    :func:`make_instance` from -- the same move that made this module the
+    repository's own. The sweep's two invariants are unchanged:
+
+    * **String stability** -- parsing a rendering and re-rendering the answer
+      must produce the identical string, or the schema differ would report a
+      change no one made.
+    * **Class honesty** -- the answer is either the declared instance itself or
+      the *documented* answer class, recorded per backend in ``widening`` rather
+      than re-derived here. A ``(class name, string)`` tuple pins an answer
+      whose re-render deliberately differs (an alias, or a bare word the server
+      completes with its default).
+
+    A class the registry cannot construct or cannot render is left to the
+    matrix's own ``UNCONSTRUCTIBLE`` / pinned non-render lists, and
+    ``CustomType`` is skipped: its raw is caller-supplied text that may happen
+    to be a word this dialect knows.
+    """
+    from rhosocial.activerecord.backend.expression.types import CustomType, DataType
+
+    widening = dict(widening or {})
+    skipped = set(skip) | {"CustomType"}
+    failures = []
+    for fqn in sorted(registry):
+        cls = registry[fqn]
+        if not (isinstance(cls, type) and issubclass(cls, DataType)):
+            continue
+        if cls is DataType or cls is CustomType:
+            continue
+        if cls.__name__ in skipped:
+            continue
+        instance, _source = make_instance(cls, dialect)
+        if instance is None:
+            continue  # the matrix's UNCONSTRUCTIBLE list owns this class
+        try:
+            rendered, _params = instance.to_sql()
+        except Exception:
+            continue  # the matrix's pinned non-renders own this class
+        try:
+            parsed = dialect.parse_type(rendered)
+        except Exception as exc:
+            failures.append(
+                "%s renders %r but parse_type raises %s: %s"
+                % (cls.__name__, rendered, type(exc).__name__, exc)
+            )
+            continue
+        if isinstance(parsed, CustomType):
+            failures.append(
+                "%s renders %r but parse_type answers CustomType -- a "
+                "dialect must recognise its own renderings" % (cls.__name__, rendered)
+            )
+            continue
+        expected_entry = widening.get(cls.__name__)
+        if expected_entry is None:
+            if parsed != instance:
+                failures.append(
+                    "%s renders %r but parse_type answers %r -- neither "
+                    "the declaration nor a documented widening"
+                    % (cls.__name__, rendered, parsed)
+                )
+            continue
+        if isinstance(expected_entry, tuple):
+            expected, expected_restring = expected_entry
+        else:
+            expected, expected_restring = expected_entry, None
+        if type(parsed).__name__ != expected:
+            failures.append(
+                "%s renders %r; the documented answer is %s but "
+                "parse_type answers %s"
+                % (cls.__name__, rendered, expected, type(parsed).__name__)
+            )
+            continue
+        try:
+            re_rendered, _ = parsed.to_sql()
+        except Exception as exc:
+            failures.append(
+                "%s renders %r; the documented answer %s re-renders with "
+                "%s: %s" % (cls.__name__, rendered, expected, type(exc).__name__, exc)
+            )
+            continue
+        if expected_restring is not None:
+            if re_rendered != expected_restring:
+                failures.append(
+                    "%s renders %r; the documented answer %s re-renders "
+                    "%r but the table says %r"
+                    % (cls.__name__, rendered, expected, re_rendered, expected_restring)
+                )
+        elif re_rendered != rendered:
+            failures.append(
+                "%s renders %r but the documented answer %s re-renders "
+                "%r -- the strings must name the same storage, or the "
+                "table entry must record the documented re-render as a "
+                "(class, string) tuple"
+                % (cls.__name__, rendered, expected, re_rendered)
+            )
+    return failures
+
+
 __all__ = [
     "assert_params_equal",
     "collect_expression_classes",
     "make_instance",
+    "parse_roundtrip_failures",
     "register_all",
     "register_special_constructor",
     "roundtrip_expression",

@@ -70,6 +70,7 @@ the failure mode this matrix exists to prevent.
 import datetime
 import decimal
 import inspect
+import math
 import uuid
 from typing import Dict
 
@@ -830,6 +831,17 @@ def register_specials():
         "collation.CollateFunction",
         lambda d: CollateFunction(d, Column(d, "a"), "UNICODE_CI"),
     )
+    # ``ComparisonPredicate.op`` is typed ``Any`` and normalised in the
+    # constructor (core 9659c483): a member, a wire word or a SQL character all
+    # resolve, and anything else raises rather than passing through. The
+    # heuristic's "x" is none of those, so the guess no longer builds this
+    # node. Naming a real operation is the fix rather than a pin -- the class
+    # is constructible and renders, so it belongs in the matrix, not in
+    # UNCONSTRUCTIBLE.
+    register_special_constructor(
+        "predicates.ComparisonPredicate",
+        lambda d: ComparisonPredicate(d, "gte", Column(d, "a"), Literal(d, 1)),
+    )
     # This backend's own CREATE PROCEDURE / CREATE FUNCTION carry a PSQL ``mode``
     # and render through the same formatter names as the core statements.
     register_special_constructor(
@@ -1011,9 +1023,13 @@ LEGITIMATE_NON_RENDERS = {
     # The root of the type tree. Every concrete type declares its own generic
     # `name`, which is what `format_data_type` dispatches on; the root declares
     # none. TypeError, not UnsupportedFeatureError, because the class is
-    # incomplete rather than the dialect being unable.
+    # incomplete rather than the dialect being unable. The message now names
+    # the name it dispatched on and the formatter it looked for: core moved a
+    # concrete type's name validation to class-definition time
+    # (``DataType.__init_subclass__``), so the root's own ``None`` reaches the
+    # dispatch and is reported as the unspelled generic type it is.
     "rhosocial.activerecord.backend.expression.types._base.DataType": (
-        TypeError, "does not declare a valid generic type name",
+        TypeError, "does not support the generic type",
     ),
 
     # ---- object kinds Firebird does not have ------------------------------
@@ -2242,6 +2258,14 @@ VALUE_KIND_SPELLINGS = (
     ("boolean_value", True, True),
     ("integer_value", 7, 7),
     ("float_value", 1.5, 1.5),
+    # The two members of the float type JSON's number grammar leaves out
+    # (RFC 8259), carried as text under kinds of their own so the payload is
+    # never a number the kind does not promise. ``nan_value`` spells the value
+    # without a sign -- there is no other NaN -- and ``infinity_value`` spells
+    # which way it points, because ``+inf`` is no more a JSON number than
+    # ``-inf`` is.
+    ("nan_value", float("nan"), "nan"),
+    ("infinity_value", float("inf"), "+inf"),
     ("decimal_value", decimal.Decimal("1.25"), "1.25"),
     ("string_value", "hi", "hi"),
     ("binary_value", b"\x01\x02", "AQI="),
@@ -2253,6 +2277,19 @@ VALUE_KIND_SPELLINGS = (
     ("tuple_value", (1, "a"), [1, "a"]),
     ("uuid_value", uuid.UUID(int=7), "00000000-0000-0000-0000-000000000007"),
 )
+
+
+def _same_value(left, right):
+    """``==`` that knows NaN is the value it says it is.
+
+    ``float("nan") == float("nan")`` is False, which is right for IEEE 754 and
+    wrong for asking "did this come back as what I put in". Everything else is
+    ordinary equality.
+    """
+    if isinstance(left, float) and isinstance(right, float):
+        if math.isnan(left) and math.isnan(right):
+            return True
+    return left == right
 
 
 class TestValueKindSpellings:
@@ -2279,8 +2316,17 @@ class TestValueKindSpellings:
         assert type(restored.value) is type(host), (
             f"{wire}: rebuilt as {type(restored.value).__name__}"
         )
-        assert restored.value == host, wire
-        assert restored.get_params() == {"value": host, "inline": False}, wire
+        assert _same_value(restored.value, host), wire
+        params = restored.get_params()
+        assert _same_value(params["value"], host), wire
+        assert params["inline"] is False, wire
+
+    def test_a_negative_infinity_spells_its_own_sign(self, fb4_dialect):
+        """``infinity_value`` carries which way it points, not just that it is one."""
+        artifact = serialize(Literal(fb4_dialect, float("-inf")))
+        assert artifact == {"kind": "infinity_value", "params": {"value": "-inf", "inline": False}}
+        restored = deserialize_json(serialize_json(Literal(fb4_dialect, float("-inf"))), fb4_dialect)
+        assert restored.value == float("-inf")
 
     def test_the_inline_switch_rides_in_the_artifact(self, fb4_dialect):
         """``inline`` is a constructor parameter like any other (§4.1)."""
@@ -2289,7 +2335,7 @@ class TestValueKindSpellings:
         restored = deserialize(artifact, fb4_dialect)
         assert restored.inline is True
 
-    def test_the_value_kind_set_is_exactly_these_fourteen(self):
+    def test_the_value_kind_set_is_exactly_these_sixteen(self):
         """The vocabulary is closed; the spellings above cover all of it."""
         assert {member.wire for member in LiteralKind} == {
             case[0] for case in VALUE_KIND_SPELLINGS

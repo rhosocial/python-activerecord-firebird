@@ -90,7 +90,11 @@ _FIREBIRD_ARTIFACT_CLASSES = (
 
 for _firebird_class in _FIREBIRD_ARTIFACT_CLASSES:
     default_registry().register_node(_firebird_class)
-default_registry().register_enum(FirebirdDomainAlterMode)
+# No ``register_enum`` beside it: core ``679d9817`` took the enum and dataclass
+# whitelists off the registry along with the ``__enum__`` / ``__dataclass__``
+# markers they existed to key. ``FirebirdDomainAlterMode`` is a ``(str, Enum)``
+# with ``__str__ = str.__str__``, so a member travels as its own bare word and
+# the constructor normalizes it back -- there is nothing left to whitelist.
 del _firebird_class
 
 

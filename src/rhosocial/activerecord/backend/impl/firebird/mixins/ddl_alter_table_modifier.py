@@ -131,8 +131,8 @@ class FirebirdAlterTableModifierMixin:
         """
         self._check_identity_version("RESTART")
         col = self.format_identifier(action.column_name)
-        # ``restart_with`` is RestartIdentity's declared field; the renderer
-        # reads it under its own name rather than probing for it.
+        # ``restart_with`` is RestartIdentityAction's declared field; the
+        # renderer reads it under its own name rather than probing for it.
         if action.restart_with is not None:
             return f"ALTER COLUMN {col} RESTART WITH {action.restart_with}", ()
         return f"ALTER COLUMN {col} RESTART", ()

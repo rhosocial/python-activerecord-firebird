@@ -4,11 +4,11 @@
 from .column import FirebirdColumnDefinition, FirebirdColumnOptions
 from .create_table import FirebirdCreateTableExpression
 from .alter_table import (
-    SetGenerated,
-    RestartIdentity,
-    SetIncrement,
-    DropIdentity,
-    SetPosition,
+    SetGeneratedAction,
+    RestartIdentityAction,
+    SetIncrementAction,
+    DropIdentityAction,
+    SetPositionAction,
 )
 from .comment import FirebirdCommentExpression, FirebirdCommentObjectType
 from .database import (
@@ -64,11 +64,11 @@ from .types import (
 __all__ = [
     'FirebirdColumnDefinition', 'FirebirdColumnOptions',
     "FirebirdCreateTableExpression",
-    "SetGenerated",
-    "RestartIdentity",
-    "SetIncrement",
-    "DropIdentity",
-    "SetPosition",
+    "SetGeneratedAction",
+    "RestartIdentityAction",
+    "SetIncrementAction",
+    "DropIdentityAction",
+    "SetPositionAction",
     "GenIdExpression",
     "NextValueForExpression",
     "FirebirdCharType",

@@ -498,10 +498,10 @@ class TestLifecycleIsAddAndDropOnly:
         """
         from rhosocial.activerecord.backend.dialect.exceptions import UnsupportedFeatureError
         from rhosocial.activerecord.backend.expression.statements import (
-            DropTableConstraint,
+            DropTableConstraintAction,
         )
 
-        action = DropTableConstraint(_dialect(), "CK", if_exists=True)
+        action = DropTableConstraintAction(_dialect(), "CK", if_exists=True)
         with pytest.raises(UnsupportedFeatureError) as excinfo:
             action.to_sql()
         assert "IF EXISTS" in str(excinfo.value)

@@ -11,7 +11,12 @@ can drive Firebird-only identity and column-ordering clauses:
   - POSITION n
 
 Each action delegates SQL generation to the dialect's ``format_*_action``
-method, following the Expression-Dialect separation pattern.
+method, following the Expression-Dialect separation pattern.  The class names
+carry the ``Action`` suffix so the kind derived from the class name is the same
+word the formatter is named after -- the same repair core made to its own
+``AddColumn`` / ``DropColumn`` family (kind is always computed from the class
+name, never stored, so a suffix that only lives in ``format_method`` is a kind
+the three identity sources disagree about).
 """
 
 from typing import TYPE_CHECKING, Any
@@ -22,7 +27,7 @@ if TYPE_CHECKING:  # pragma: no cover
     from rhosocial.activerecord.backend.dialect import SQLDialectBase
 
 
-class SetGenerated(AlterTableAction):
+class SetGeneratedAction(AlterTableAction):
     """ALTER TABLE ... ALTER COLUMN ... SET GENERATED {ALWAYS | BY DEFAULT}."""
 
     action_type = "SET GENERATED"
@@ -37,7 +42,7 @@ class SetGenerated(AlterTableAction):
         return "format_set_generated_action"
 
 
-class RestartIdentity(AlterTableAction):
+class RestartIdentityAction(AlterTableAction):
     """ALTER TABLE ... ALTER COLUMN ... RESTART [WITH value]."""
 
     action_type = "RESTART IDENTITY"
@@ -54,7 +59,7 @@ class RestartIdentity(AlterTableAction):
         return "format_restart_identity_action"
 
 
-class SetIncrement(AlterTableAction):
+class SetIncrementAction(AlterTableAction):
     """ALTER TABLE ... ALTER COLUMN ... SET INCREMENT [BY] n."""
 
     action_type = "SET INCREMENT"
@@ -69,7 +74,7 @@ class SetIncrement(AlterTableAction):
         return "format_set_increment_action"
 
 
-class DropIdentity(AlterTableAction):
+class DropIdentityAction(AlterTableAction):
     """ALTER TABLE ... ALTER COLUMN ... DROP IDENTITY."""
 
     action_type = "DROP IDENTITY"
@@ -83,7 +88,7 @@ class DropIdentity(AlterTableAction):
         return "format_drop_identity_action"
 
 
-class SetPosition(AlterTableAction):
+class SetPositionAction(AlterTableAction):
     """ALTER TABLE ... ALTER COLUMN ... POSITION n."""
 
     action_type = "SET POSITION"
@@ -99,9 +104,9 @@ class SetPosition(AlterTableAction):
 
 
 __all__ = [
-    "SetGenerated",
-    "RestartIdentity",
-    "SetIncrement",
-    "DropIdentity",
-    "SetPosition",
+    "SetGeneratedAction",
+    "RestartIdentityAction",
+    "SetIncrementAction",
+    "DropIdentityAction",
+    "SetPositionAction",
 ]

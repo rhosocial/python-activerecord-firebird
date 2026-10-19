@@ -1681,9 +1681,11 @@ class TestParseRoundTripSweep:
         return registry
 
     def test_every_rendered_type_parses_back_coherently(self, dialect, registry):
-        from rhosocial.activerecord.testsuite.utils.parse_contract import (
-            parse_roundtrip_failures,
-        )
+        # This repository's own harness, not the suite's ``parse_contract``:
+        # that module imported ``make_instance`` from the ``utils/expression``
+        # the suite deleted in ``e05edb0``, so importing it raises rather than
+        # answering. The sweep itself moved here with the rest of the harness.
+        from expression_roundtrip_harness import parse_roundtrip_failures
 
         failures = parse_roundtrip_failures(
             dialect,
