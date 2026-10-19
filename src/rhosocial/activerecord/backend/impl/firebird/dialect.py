@@ -13,7 +13,7 @@ Firebird SQL dialect features and version support:
   - DECFLOAT (FB 4.0+)
 """
 
-from typing import Optional, Tuple, TYPE_CHECKING
+from typing import Optional, Tuple
 
 from rhosocial.activerecord.backend.dialect.base import SQLDialectBase
 from rhosocial.activerecord.backend.dialect.protocols import (
@@ -223,12 +223,6 @@ from .protocols import (
     FirebirdTypeSupport,
 )
 
-if TYPE_CHECKING:
-    from rhosocial.activerecord.backend.expression.statements import (
-        ColumnDefinition,
-        TableConstraint,
-    )
-
 _SUGGESTION_ARRAY = (
     "Firebird has array column types, but not the ARRAY[...] constructor this "
     "renderer writes: declare the column as T [n] and reach it with a subscript."
@@ -283,13 +277,18 @@ class FirebirdDialect(
     DQLMixin,
     FirebirdAlterTableModifierMixin,  # Before DDLColumnMixin to override format_*_action
     FirebirdConstraintMixin,  # Before DDLColumnMixin and ConstraintMixin for the pins
+    # Firebird-specific overrides (before generic mixins to take precedence).
+    # The three that answer a DDL *entry point* sit above DDLColumnMixin, which
+    # defines format_column_definition of its own: listed below it, that core
+    # method is reached first and Firebird's column rendering is never asked.
+    # Position is the fix (expression-dialect 11.1) -- a bridge on this class
+    # that forwards to the mixin would make the same answer reachable twice.
+    FirebirdDMLOperationMixin,  # Must be before DMLMixin
+    FirebirdTableMixin,         # Before DDLColumnMixin and before TableMixin
+    FirebirdCommentMixin,       # Must be before TableMixin (supports_comment_on/format_comment_statement)
     DDLColumnMixin,
     UserDefinedTypeMixin,
     TransactionControlMixin,
-    # Firebird-specific overrides (before generic mixins to take precedence)
-    FirebirdDMLOperationMixin,  # Must be before DMLMixin
-    FirebirdTableMixin,         # Must be before TableMixin
-    FirebirdCommentMixin,       # Must be before TableMixin (supports_comment_on/format_comment_statement)
     TableMixin,
     ConstraintMixin,
     FirebirdTriggerMixin,       # Must be before TriggerMixin
@@ -611,16 +610,6 @@ class FirebirdDialect(
     # DDLColumnMixin precedes FirebirdTableMixin in the MRO, so the column and
     # constraint formatters need a bridge; the Firebird versions carry
     # IDENTITY auto-increment and the Firebird-only constraint refusals.
-    def format_column_definition(self, col_def: "ColumnDefinition") -> Tuple[str, tuple]:
-        return FirebirdTableMixin.format_column_definition(self, col_def)
-
-    def format_table_constraint(self, expr: "TableConstraint") -> Tuple[str, tuple]:
-        # FirebirdConstraintMixin is in the MRO ahead of DDLColumnMixin, so the
-        # Firebird gates on this formatter win without a bridge; this only
-        # documents that the dispatch never falls through to FirebirdTableMixin
-        # (which is listed after DDLColumnMixin and would lose).
-        return FirebirdConstraintMixin.format_table_constraint(self, expr)
-
     def supports_trigger_position(self) -> bool:
         return True
 
