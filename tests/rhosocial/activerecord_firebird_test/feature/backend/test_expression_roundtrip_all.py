@@ -182,7 +182,6 @@ from expression_roundtrip_harness import (
     collect_expression_classes,
     make_instance,
     register_all,
-    register_enums_and_dataclasses,
     register_special_constructor,
     roundtrip_expression,
 )
@@ -214,11 +213,6 @@ def _collect_matrix_classes():
         for fqn, cls in sorted(collect_expression_classes(package).items()):
             collected.setdefault(fqn, cls)
     register_all(collected)
-    # The Firebird package's enums and dataclasses ride inside artifacts
-    # under their short class names; the kind whitelist resolves those
-    # names, so the backend package's own vocabulary has to be registered
-    # beside the classes. Core's own are populated by the registry itself.
-    register_enums_and_dataclasses(FIREBIRD_EXPR_PKG)
 
     by_identity: Dict[int, str] = {}
     for fqn, cls in sorted(collected.items()):

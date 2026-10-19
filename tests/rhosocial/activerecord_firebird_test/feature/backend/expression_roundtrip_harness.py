@@ -1001,57 +1001,6 @@ def register_all(classes: Dict[str, Type[BaseExpression]]) -> None:
         registry.register_node(cls)
 
 
-def register_enums_and_dataclasses(package_path: str) -> None:
-    """Register a package's enums and dataclasses into the same whitelist.
-
-    An artifact encodes an enum member as ``[short class name, member]`` and
-    the reader resolves that name through the registry's enum table -- no
-    ``importlib`` by name (untrusted input, §4.11.4), so a backend enum that
-    was never registered refuses to read back. Core populates its own enums
-    and dataclasses; a backend package's are exactly as privileged as a
-    third-party plugin's, which is to say they are registered, not discovered.
-    Same ownership filters as core's own populator: the class must be defined
-    in the module being walked.
-    """
-    import dataclasses
-    import enum as _enum
-    import importlib
-    import pkgutil
-
-    from rhosocial.activerecord.backend.expression.registry import RegistryError
-    from rhosocial.activerecord.backend.expression.serialization import default_registry
-
-    registry = default_registry()
-    pkg = importlib.import_module(package_path)
-    if hasattr(pkg, "__path__"):
-        modnames = [
-            m for _, m, _ in pkgutil.walk_packages(
-                path=pkg.__path__, prefix=package_path + ".", onerror=lambda x: None
-            )
-        ]
-    else:
-        modnames = [package_path]
-    for modname in modnames:
-        try:
-            mod = importlib.import_module(modname)
-        except Exception:
-            continue
-        for name in dir(mod):
-            obj = getattr(mod, name, None)
-            if not isinstance(obj, type) or obj.__module__ != modname:
-                continue
-            if issubclass(obj, _enum.Enum):
-                try:
-                    registry.register_enum(obj)
-                except RegistryError:
-                    pass
-            elif dataclasses.is_dataclass(obj):
-                try:
-                    registry.register_dataclass(obj)
-                except RegistryError:
-                    pass
-
-
 def assert_params_equal(a: Any, b: Any, path: str = "params") -> None:
     """Deep-compare two get_params() outputs, treating nested BaseExpression
     instances as structurally equal and nested dataclasses as recursively compared.
@@ -1128,7 +1077,6 @@ __all__ = [
     "collect_expression_classes",
     "make_instance",
     "register_all",
-    "register_enums_and_dataclasses",
     "register_special_constructor",
     "roundtrip_expression",
     "sql_consistent",

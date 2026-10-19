@@ -184,11 +184,11 @@ class FirebirdSequenceMixin:
         return ' '.join(parts), ()
 
     def format_gen_id(self, expr: "GenIdExpression") -> Tuple[str, tuple]:
-        generator_sql = Sequence(self, expr._generator_name).to_sql()[0]
-        return f"GEN_ID({generator_sql}, {expr._step})", ()
+        generator_sql = Sequence(self, expr.generator_name).to_sql()[0]
+        return f"GEN_ID({generator_sql}, {expr.step})", ()
 
     def format_next_value_for(self, expr: "NextValueForExpression") -> Tuple[str, tuple]:
-        sequence_sql = Sequence(self, expr._sequence_name).to_sql()[0]
+        sequence_sql = Sequence(self, expr.sequence_name).to_sql()[0]
         return f"NEXT VALUE FOR {sequence_sql}", ()
 
     def supports_sequence(self) -> bool:
