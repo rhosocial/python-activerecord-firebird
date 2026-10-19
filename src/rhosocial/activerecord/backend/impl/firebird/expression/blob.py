@@ -6,6 +6,7 @@ suitable for DDL.  ``BlobLiteralExpression`` renders an inline hex literal
 for DML (``X'…'``).
 """
 
+import base64
 from typing import TYPE_CHECKING, Optional
 
 from rhosocial.activerecord.backend.expression.bases import BaseExpression
@@ -50,6 +51,27 @@ class BlobLiteralExpression(BaseExpression):
         sub_type: int = 0,
     ):
         super().__init__(dialect)
+        # The artifact writes bytes as base64 text -- the binary_value
+        # spelling -- so the constructor accepts that spelling back and
+        # normalizes it: wide at the entry, one host type in storage.  A str
+        # that is not valid base64 fails here, by name, instead of at render
+        # time inside the formatter.
+        if isinstance(value, str):
+            # binascii.Error is a ValueError, so one except covers both.
+            try:
+                value = base64.b64decode(value, validate=True)
+            except ValueError as exc:
+                raise ValueError(
+                    f"blob value arrives as base64 text in an artifact; "
+                    f"{value[:8]!r}... is not decodable base64"
+                ) from exc
+        elif isinstance(value, (bytearray, memoryview)):
+            value = bytes(value)
+        if not isinstance(value, bytes):
+            raise TypeError(
+                f"blob value must be bytes (or the base64 spelling an "
+                f"artifact carries), got {type(value).__name__}"
+            )
         self.value = value
         self.sub_type = sub_type
 

@@ -27,6 +27,7 @@ must satisfy:
 
 import collections.abc
 import dataclasses
+import enum
 import inspect
 import re
 import typing
@@ -1004,11 +1005,31 @@ def register_all(classes: Dict[str, Type[BaseExpression]]) -> None:
 def assert_params_equal(a: Any, b: Any, path: str = "params") -> None:
     """Deep-compare two get_params() outputs, treating nested BaseExpression
     instances as structurally equal and nested dataclasses as recursively compared.
+
+    A ``(str, Enum)`` member and the plain word it carries count as equal: the
+    artifact writes the word (a string enum *is* a JSON string, §11.3), and the
+    rebuilt node holds whatever its constructor stored -- the member or the
+    word.  The two render and bind identically, so a round-trip that trades one
+    for the other has lost nothing; what this still catches is a *different*
+    word, a lost member, or a type that was neither.
     """
     if a is b:
         return
     if isinstance(a, BaseExpression) and isinstance(b, BaseExpression):
         assert_params_equal(a.get_params(), b.get_params(), path + ".<expr>")
+        return
+    if (isinstance(a, enum.Enum) or isinstance(b, enum.Enum)) and isinstance(a, str) and isinstance(b, str):
+        # Same word by value, whichever side carries the member: the artifact
+        # writes the member's own value, and a node may hold the member or
+        # the word it came back as.  A word the enum does not name still
+        # fails here, as does a member whose value changed.
+        same = (a.value if isinstance(a, enum.Enum) else a) == (
+            b.value if isinstance(b, enum.Enum) else b
+        )
+        assert same, (
+            f"{path}: a string enum came back as {b!r}, which is not the "
+            f"word it carries ({a!r})"
+        )
         return
     if dataclasses.is_dataclass(a) and not isinstance(a, type):
         assert dataclasses.is_dataclass(b) and not isinstance(b, type), (
@@ -1033,15 +1054,48 @@ def assert_params_equal(a: Any, b: Any, path: str = "params") -> None:
     assert a == b, f"{path}: {a!r} != {b!r}"
 
 
-def roundtrip_expression(fqn: str, instance: BaseExpression, dialect: Any) -> None:
-    """Assert an instance round-trips losslessly through dict / JSON / XML."""
+def roundtrip_expression(
+    fqn: str,
+    instance: BaseExpression,
+    dialect: Any,
+    channel_refusals: Dict[str, Any] = None,
+) -> None:
+    """Assert an instance round-trips losslessly through dict / JSON / XML.
+
+    ``channel_refusals`` pins the channels an artifact of *this class* cannot
+    be asserted clean on: ``{"xml": (ValueError, "unsupported datetime field")}``
+    says that channel must fail -- while encoding, decoding, or comparing the
+    parameters -- with exactly that type and message fragment, while the
+    channels the mapping does not name must round-trip clean.  The pin keeps a
+    known refusal named and asserted instead of failing as a bare exception.
+    """
     original = instance.get_params()
-    for restored in (
-        _rt_dict(instance, dialect),
-        _rt_json(instance, dialect),
-        _rt_xml(instance, dialect),
+    refusals = channel_refusals or {}
+    for channel, build in (
+        ("dict", _rt_dict),
+        ("json", _rt_json),
+        ("xml", _rt_xml),
     ):
-        assert_params_equal(restored.get_params(), original, fqn)
+        pin = refusals.get(channel)
+        if pin is not None:
+            expected_type, fragment = pin
+            try:
+                restored = build(instance, dialect)
+                assert_params_equal(restored.get_params(), original, f"{fqn}/{channel}")
+            except expected_type as exc:
+                assert fragment in str(exc), (
+                    f"{fqn}/{channel}: pinned as refusing with "
+                    f"{expected_type.__name__} saying {fragment!r}, but it said: {exc}"
+                )
+            else:
+                raise AssertionError(
+                    f"{fqn}/{channel}: pinned as a refusal "
+                    f"({expected_type.__name__}, {fragment!r}) but the channel "
+                    f"round-tripped -- the pin is stale and must go"
+                )
+            continue
+        restored = build(instance, dialect)
+        assert_params_equal(restored.get_params(), original, f"{fqn}/{channel}")
 
 
 def _rt_dict(instance, dialect):

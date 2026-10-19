@@ -32,7 +32,12 @@ if TYPE_CHECKING:
     from rhosocial.activerecord.backend.dialect import SQLDialectBase
 
 
-class FirebirdDomainAlterMode(Enum):
+class FirebirdDomainAlterMode(str, Enum):
+    #: A member *is* the word it carries: ``__str__ = str.__str__`` keeps the
+    #: artifact's spelling the bare word, because the Enum ``__str__`` that
+    #: would otherwise win writes ``ClassName.MEMBER`` (§11.3).
+    __str__ = str.__str__
+
     """Legacy ALTER DOMAIN clause selector."""
 
     SET_DEFAULT = "SET DEFAULT"
@@ -214,6 +219,17 @@ class FirebirdAlterDomainExpression(AlterDomainStatement):
             "constraint_sql": constraint_sql,
             "data_type_name": data_type_name,
         }
+        # The artifact carries the plain word (a string enum *is* a JSON
+        # string), so the legacy mode is normalized to its member here --
+        # before the spelling reaches the isinstance gate below, which would
+        # otherwise refuse the word the enum itself puts on the wire.
+        if isinstance(mode, str) and not isinstance(mode, FirebirdDomainAlterMode):
+            try:
+                mode = FirebirdDomainAlterMode(mode)
+            except ValueError as exc:
+                raise ValueError(
+                    f"unsupported ALTER DOMAIN mode: {mode!r}"
+                ) from exc
         if mode is None:
             if any(field is not None for field in legacy_fields.values()):
                 raise ValueError("legacy ALTER DOMAIN fields require mode")

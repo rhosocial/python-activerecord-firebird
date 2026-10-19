@@ -67,7 +67,10 @@ entry is removed; a class that starts failing to build fails CI too. There is no
 the failure mode this matrix exists to prevent.
 """
 
+import datetime
+import decimal
 import inspect
+import uuid
 from typing import Dict
 
 import pytest
@@ -76,16 +79,37 @@ from rhosocial.activerecord.backend.dialect.exceptions import UnsupportedFeature
 from rhosocial.activerecord.backend.expression import graph as graph_mod
 from rhosocial.activerecord.backend.expression.advanced_functions import (
     CaseExpression,
+    ExistsPredicate,
     WindowClause,
     WindowDefinition,
     WindowSpecification,
 )
 from rhosocial.activerecord.backend.expression.collation import CollateFunction
-from rhosocial.activerecord.backend.expression.core import Column, Literal
+from rhosocial.activerecord.backend.expression.core import Column, Literal, Subquery
 from rhosocial.activerecord.backend.expression.operators import ArithmeticOperation
 from rhosocial.activerecord.backend.expression.query_sources import SetOperation
 from rhosocial.activerecord.backend.expression.datetime import (
+    _ExtractBase,
+    ExtractFieldExpression,
     TemporalOptionsExpression,
+)
+from rhosocial.activerecord.backend.expression.declared import (
+    _Annotation,
+    ArrayAnnotation,
+    BinaryAnnotation,
+    BooleanAnnotation,
+    IntegerAnnotation,
+    JSONAnnotation,
+    NumberAnnotation,
+    TemporalAnnotation,
+    TextAnnotation,
+    UUIDAnnotation,
+    XMLAnnotation,
+)
+from rhosocial.activerecord.backend.expression.functions.string import (
+    LeftFunction,
+    RightFunction,
+    SubstringExpression,
 )
 from rhosocial.activerecord.backend.expression.objects import (
     Database,
@@ -119,6 +143,10 @@ from rhosocial.activerecord.backend.expression.serialization import (
 from rhosocial.activerecord.backend.expression.sources import NamedRelationRef
 from rhosocial.activerecord.backend.impl.firebird.expression.blob import (
     BlobLiteralExpression,
+)
+from rhosocial.activerecord.backend.impl.firebird.expression.comment import (
+    FirebirdCommentExpression,
+    FirebirdCommentObjectType,
 )
 from rhosocial.activerecord.backend.impl.firebird.expression.column import (
     FirebirdColumnDefinition,
@@ -178,7 +206,9 @@ from rhosocial.activerecord.backend.expression.statements.dml import (
 )
 from rhosocial.activerecord.backend.expression.types import IntegerType
 from rhosocial.activerecord.backend.expression.types.custom import CustomType
+from rhosocial.activerecord.backend.expression.values import LiteralKind
 from expression_roundtrip_harness import (
+    assert_params_equal,
     collect_expression_classes,
     make_instance,
     register_all,
@@ -371,9 +401,12 @@ def register_specials():
             d, index=Index(d, "i"), table=_table_obj(d)
         ),
     )
+    # The ALTER index actions carry the *Action suffix now (core settled the
+    # renames); the old ``AddIndex`` / ``DropIndex`` keys matched nothing at
+    # all -- a renamed key is a factory that silently stopped firing.
     register_special_constructor(
-        "statements.ddl_alter.DropIndex",
-        lambda d: ddl_alter.DropIndex(d, Index(d, "i")),
+        "statements.ddl_alter.DropIndexAction",
+        lambda d: ddl_alter.DropIndexAction(d, Index(d, "i")),
     )
 
     # -- schemas, sequences, databases, domains, types ---------------------
@@ -538,23 +571,104 @@ def register_specials():
         "statements.ddl_table.ReferencesClause",
         lambda d: ReferencesClause(d, Table(d, "other"), ["b"]),
     )
+    # The ALTER action renames (core settled them in the plain-JSON rewrite):
+    # ``AddColumn`` / ``AddIndex`` / ``AddTableConstraint`` became
+    # ``AddColumnAction`` / ``AddIndexAction`` / ``AddTableConstraintAction``,
+    # and a factory keyed by the old name is dead code that still reads as if
+    # it covered the class.
     register_special_constructor(
-        "statements.ddl_alter.AddColumn",
-        lambda d: ddl_alter.AddColumn(d, _integer_column(d)),
+        "statements.ddl_alter.AddColumnAction",
+        lambda d: ddl_alter.AddColumnAction(d, column=_integer_column(d)),
     )
     register_special_constructor(
-        "statements.ddl_alter.AddIndex",
-        lambda d: ddl_alter.AddIndex(d, IndexDefinition(d, "i", ["a"])),
+        "statements.ddl_alter.AddIndexAction",
+        lambda d: ddl_alter.AddIndexAction(d, IndexDefinition(d, "i", ["a"])),
     )
     register_special_constructor(
-        "statements.ddl_alter.AddTableConstraint",
-        lambda d: ddl_alter.AddTableConstraint(
+        "statements.ddl_alter.AddTableConstraintAction",
+        lambda d: ddl_alter.AddTableConstraintAction(
             d,
             TableConstraint(
                 d, branch=TablePrimaryKeyConstraint(d, ["a"]), name="c"
             ),
         ),
     )
+
+    # -- CHECK branches: the condition is DDL, so it binds nothing ----------
+    # The introspective guess builds the condition from a literal, and the
+    # formatter refuses any bind parameter in a DDL position.  A
+    # column-to-column comparison is the condition a CHECK actually has.
+    register_special_constructor(
+        "statements.ddl_table.ColumnCheckConstraint",
+        lambda d: ddl_table.ColumnCheckConstraint(d, _column_predicate(d)),
+    )
+    register_special_constructor(
+        "statements.ddl_table.TableCheckConstraint",
+        lambda d: ddl_table.TableCheckConstraint(d, _column_predicate(d)),
+    )
+    # The generated column carries a GeneratedColumnType member in its
+    # params whatever the expression does -- the refusal for that is pinned
+    # in ARTIFACT_REFUSALS below; the expression here is what lets the
+    # render half of the row be exercised at all.
+    register_special_constructor(
+        "statements.ddl_table.ColumnGeneratedConstraint",
+        lambda d: ddl_table.ColumnGeneratedConstraint(d, _column_predicate(d)),
+    )
+
+    # -- string functions: the numeric slot is a literal number -------------
+    # The guess supplies a word for the count/position slot; the constructor
+    # checks the value only when it is a literal, and a word returned by the
+    # artifact arrives as a literal whose value is not comparable.  A number
+    # is what the position means.
+    register_special_constructor(
+        "functions.string.LeftFunction",
+        lambda d: LeftFunction(d, Column(d, "a"), Literal(d, 1)),
+    )
+    register_special_constructor(
+        "functions.string.RightFunction",
+        lambda d: RightFunction(d, Column(d, "a"), Literal(d, 1)),
+    )
+    register_special_constructor(
+        "functions.string.SubstringExpression",
+        lambda d: SubstringExpression(d, Column(d, "a"), Literal(d, 1), Literal(d, 2)),
+    )
+
+    # -- the extract family: field and source are both declared -------------
+    # ``_ExtractBase`` and the field-named spelling are new nodes; the guess
+    # supplies a word the field validation refuses.  ``YEAR`` names a real
+    # field, and the field-named spelling must agree with it.
+    register_special_constructor(
+        "datetime._ExtractBase",
+        lambda d: _ExtractBase(d, "YEAR", Column(d, "created_at")),
+    )
+    register_special_constructor(
+        "datetime.ExtractFieldExpression",
+        lambda d: ExtractFieldExpression(
+            d, "YEAR", Column(d, "created_at"), spelling="YEAR"
+        ),
+    )
+
+    # -- declared result annotations: the annotated node is a column --------
+    # The formatter delegates to the annotated node and reads its ``alias``;
+    # the guess supplies a Literal, which declares none.  A Column is the
+    # node these annotate.
+    for _declared_cls in (
+        _Annotation,
+        ArrayAnnotation,
+        BinaryAnnotation,
+        BooleanAnnotation,
+        IntegerAnnotation,
+        JSONAnnotation,
+        NumberAnnotation,
+        TemporalAnnotation,
+        TextAnnotation,
+        UUIDAnnotation,
+        XMLAnnotation,
+    ):
+        register_special_constructor(
+            f"declared.{_declared_cls.__name__}",
+            lambda d, _cls=_declared_cls: _cls(d, Column(d, "a")),
+        )
 
     # -- expressions that need at least one member --------------------------
     # -- predicates whose column slot is an expression ----------------------
@@ -573,6 +687,16 @@ def register_specials():
     register_special_constructor(
         "predicates.LikePredicate",
         lambda d: LikePredicate(d, "LIKE", Column(d, "a"), Literal(d, "%x%")),
+    )
+    # -- EXISTS: the subquery is a one-row SELECT, not a wrapped literal -----
+    # The guess wraps a Literal, and the subquery node renders its payload at
+    # construction time, storing the SQL and the bind tuple -- which the
+    # artifact reads back as an array, changing the rendered bind parameters.
+    # A one-row SELECT over the catalogue table every Firebird database has is
+    # the shape EXISTS actually takes, and it binds nothing.
+    register_special_constructor(
+        "advanced_functions.ExistsPredicate",
+        lambda d: ExistsPredicate(d, Subquery(d, "SELECT 1 FROM RDB$DATABASE")),
     )
 
     register_special_constructor(
@@ -727,13 +851,23 @@ def register_specials():
         "impl.firebird.expression.ddl.sequence.FirebirdCreateSequenceStatement",
         lambda d: FirebirdCreateSequenceStatement(d, Sequence(d, "s")),
     )
+    # COMMENT ON names one of the object kinds this backend declares; the
+    # guess's word for ``object_type`` is refused by the normalization the
+    # artifact round-trip needs, so the factory names a real kind.
+    register_special_constructor(
+        "impl.firebird.expression.comment.FirebirdCommentExpression",
+        lambda d: FirebirdCommentExpression(
+            d, FirebirdCommentObjectType.TABLE, "t", comment="c"
+        ),
+    )
 
     # -- core CUSTOM needs the type name its ``raw`` slot exists to carry -----
     # ``raw`` defaults to the empty string, the filler skips it, and the class
     # refuses that empty name while constructing -- so it builds fine once it
-    # is handed a real one, and there is nothing to skip.
+    # is handed a real one, and there is nothing to skip.  The slot is
+    # keyword-only now, so the name arrives by keyword.
     register_special_constructor(
-        "types.custom.CustomType", lambda d: CustomType(d, "VARCHAR(10)")
+        "types.custom.CustomType", lambda d: CustomType(d, raw="VARCHAR(10)")
     )
 
 
@@ -756,21 +890,15 @@ UNCONSTRUCTIBLE = {
     # -- core: keyword-only parameters the introspective constructor skips ----
     # `name` and `constraint_type` sit behind defaulted positionals and are
     # keyword-only, so the constructor skips them and the class refuses an
-    # incomplete action.
-    "rhosocial.activerecord.backend.expression.statements.ddl_alter.AlterConstraint":
+    # incomplete action.  (Same shape the classes had before the plain-JSON
+    # rewrite settled the ``*Action`` suffix on their names.)
+    "rhosocial.activerecord.backend.expression.statements.ddl_alter.AlterConstraintAction":
         "`name` and `constraint_type` are keyword-only behind defaulted positionals.",
-    # Same shape as AlterConstraint: the required `name` is keyword-only.
-    "rhosocial.activerecord.backend.expression.statements.ddl_alter.ValidateConstraint":
-        "the required `name` is keyword-only behind a defaulted positional.",
     # Widens a SQLPredicate into a DomainCheckConstraint and needs one; the guess
     # supplies a bare comparison whose literal would have to render as a bind
     # parameter, which DDL cannot carry.
     "rhosocial.activerecord.backend.expression.statements.ddl_domain.AddDomainCheckAction":
         "needs a SQLPredicate that renders without bind parameters.",
-    # Its `values` list is keyword-only behind a defaulted positional, so the
-    # constructor skips it and the type declares no members.
-    "rhosocial.activerecord.backend.expression.types.enum_.EnumType":
-        "the `values` list is keyword-only behind a defaulted positional.",
     # XMLTABLE and the three XML constructors below used to be pinned here. None
     # of the four had a construction gap: each takes its item list as
     # `Sequence[...]`, and the introspective guess read the annotation's own
@@ -924,9 +1052,10 @@ LEGITIMATE_NON_RENDERS = {
     "rhosocial.activerecord.backend.expression.graph.TablePropertiesClause": (
         UnsupportedFeatureError, _NO_DIALECT_METHOD,
     ),
-    "rhosocial.activerecord.backend.expression.graph.EdgeTable": (
-        UnsupportedFeatureError, _NO_DIALECT_METHOD,
-    ),
+    # The definition node the graph module owns is EdgeTableDefinition now
+    # (one name, two contracts, split in the every-node-its-own-class wave):
+    # the object that remains called EdgeTable lives in objects.relation and
+    # renders through the Table formatter, so it is not pinned here.
     "rhosocial.activerecord.backend.expression.graph.VertexTable": (
         UnsupportedFeatureError, _NO_DIALECT_METHOD,
     ),
@@ -948,7 +1077,7 @@ LEGITIMATE_NON_RENDERS = {
     ),
 
     # ---- a generic type the Firebird type layer does not spell ------------
-    # `FirebirdTypeSupportMixin` declares no formatter for these seven generic
+    # `FirebirdTypeSupportMixin` declares no formatter for these eight generic
     # names. An unsupported *type* is a dialect gap and is reported as one, which
     # is why these are TypeError and not UnsupportedFeatureError.
     "rhosocial.activerecord.backend.expression.types.array.ArrayType": (
@@ -956,6 +1085,12 @@ LEGITIMATE_NON_RENDERS = {
     ),
     "rhosocial.activerecord.backend.expression.types.datetime_.IntervalType": (
         TypeError, "does not support the generic type 'interval'",
+    ),
+    # ENUM is MySQL/MariaDB native; Firebird's nearest form is a CHECK over a
+    # text column, so the generic name dispatches to nothing and the refusal
+    # says what the backend would use instead.
+    "rhosocial.activerecord.backend.expression.types.enum_.EnumType": (
+        TypeError, "does not support the generic type 'enum'",
     ),
     # TIME WITH TIME ZONE and TIMESTAMP WITH TIME ZONE exist in Firebird, but
     # only under their own classes; the generic names dispatch to nothing.
@@ -1026,6 +1161,14 @@ LEGITIMATE_NON_RENDERS = {
     "rhosocial.activerecord.backend.expression.statements.ddl_comment."
     "CommentOnStatement": (
         AttributeError, "has no attribute 'object_name'",
+    ),
+    # The declared-result base.  It names ``format_declared_result`` like its
+    # ten concrete subclasses, but the ``alias`` that formatter reads rides on
+    # the value-type mixins the concrete classes mix in -- not on this base --
+    # so the base alone, which is concrete enough to construct, trips on the
+    # read.  The concrete annotations render and are not pinned.
+    "rhosocial.activerecord.backend.expression.declared._Annotation": (
+        AttributeError, "has no attribute 'alias'",
     ),
 
     # ---- SQL/XML: Firebird 4 has no XML query functions -------------------
@@ -1154,7 +1297,12 @@ UNMODELLED_FORMATTERS = {
         "format_graph_columns_clause",
         "format_table_properties_clause",
         "format_vertex_table",
-        "format_edge_table",
+        # ``format_edge_table`` is gone from the table: the node that needed it
+        # was the graph-module half of the old EdgeTable name, now spelled
+        # EdgeTableDefinition -- and the object half renders as a Table.  What
+        # remains is the definition spelling, which a dialect without property
+        # graphs has no name for.
+        "format_edge_table_definition",
         "format_property_graph_object",
     ),
     "the object kinds Firebird does not have (no materialized view, no "
@@ -1203,8 +1351,167 @@ def _unmodelled_methods():
 
 
 # ---------------------------------------------------------------------------
+# Channels an artifact of one class cannot survive, pinned per channel
+# ---------------------------------------------------------------------------
+#
+# The plain-JSON rewrite (core 679d9817) removed every marker a value could
+# hide behind, and three kinds of parameter stopped travelling with it:
+#
+# * a plain ``Enum`` member is a host object with no wire form.  The value
+#   vocabulary is a closed set of fourteen kinds (§4.3/§10) and no plain enum
+#   is in it, so *encoding* refuses by name -- ``TypeError`` naming the type.
+# * a dataclass (or dataclass-like options object) has no place in an artifact
+#   at all -- the same refusal.
+# * a ``(str, Enum)`` whose ``__str__`` is still ``Enum.__str__`` spells
+#   ``ClassName.MEMBER`` into the XML channel (which writes scalars with
+#   ``str()``).  A constructor that validates refuses that word on the way
+#   back (``ValueError``); one that does not stores it, and the parameter
+#   comparison catches a value the member does not carry (``AssertionError``).
+#   The dict channel passes the member through untouched and JSON writes the
+#   member's own value, so only XML refuses.  The fix belongs to the enum
+#   (``__str__ = str.__str__``, as the org's own spelling rule already asks);
+#   these rows record the gap until it lands.
+#
+# Each entry names the class, the channels that refuse, the exact exception
+# type and a message fragment, and the reason.  A channel the mapping does not
+# name must round-trip clean.  ``test_unreadable_set_is_exact`` pins the table
+# in both directions, so a core fix that lets a class travel again fails here
+# until the row goes, and a class that starts refusing without a row fails too.
+
+
+def _every_channel(pair):
+    """``(type, fragment)`` as the pin for all three channels."""
+    return {"dict": pair, "json": pair, "xml": pair}
+
+
+#: The fragment the encode layer raises for a parameter the value vocabulary
+#: cannot write.  Each pin below prepends the type it names.
+_UNWRITABLE_VALUE = "is not one of the value kinds"
+
+ARTIFACT_REFUSALS = {
+    # -- plain-Enum params: the value vocabulary cannot write them ---------
+    "rhosocial.activerecord.backend.expression.statements.ddl_trigger."
+    "CreateTriggerStatement": (
+        _every_channel((TypeError, "TriggerEvent " + _UNWRITABLE_VALUE)),
+        "``events`` carries TriggerEvent members, a plain Enum with no wire "
+        "form; the artifact cannot name them.",
+    ),
+    "rhosocial.activerecord.backend.expression.statements.ddl_table."
+    "ForeignKeyConstraint": (
+        _every_channel((TypeError, "ReferentialAction " + _UNWRITABLE_VALUE)),
+        "``on_delete`` / ``on_update`` default to ReferentialAction.NO_ACTION "
+        "members, a plain Enum, so every instance carries one in its params.",
+    ),
+    "rhosocial.activerecord.backend.expression.statements.ddl_table."
+    "ColumnGeneratedConstraint": (
+        _every_channel((TypeError, "GeneratedColumnType " + _UNWRITABLE_VALUE)),
+        "the constructor fills ``storage_type`` with the VIRTUAL member when "
+        "the caller leaves it unset, so every instance carries a plain-Enum "
+        "member in its params.",
+    ),
+    "rhosocial.activerecord.backend.expression.statements.ddl_view."
+    "CreateViewStatement": (
+        _every_channel((TypeError, "ViewOptions " + _UNWRITABLE_VALUE)),
+        "``options or ViewOptions()`` means every instance carries an options "
+        "object, and a dataclass has no place in an artifact at all.",
+    ),
+    "rhosocial.activerecord.backend.expression.graph.GraphTableExpression": (
+        _every_channel((TypeError, "GraphColumn " + _UNWRITABLE_VALUE)),
+        "its COLUMNS clause is built from GraphColumn value objects, which are "
+        "neither expressions nor value kinds.",
+    ),
+    # -- a constructor that refuses the word its own enum writes -----------
+    "rhosocial.activerecord.backend.expression.statements.ddl_table."
+    "CreateTableCloneStatement": (
+        {"json": (TypeError, "mode must be a CreateTableCloneMode, got str"),
+         "xml": (TypeError, "mode must be a CreateTableCloneMode, got str")},
+        "the mode travels as its word (the enum is a string enum with the "
+        "plain ``__str__``), and the constructor refuses the word instead of "
+        "reading the member back: the write and the read disagree about what "
+        "the enum's own spelling is.  The dict channel hands the member "
+        "through untouched, so only the two text channels refuse.",
+    ),
+    # -- a (str, Enum) whose ``__str__`` is still ``Enum.__str__`` ---------
+    # DateTimeField and IntervalUnit inherit ``(str, Enum)`` but not
+    # ``str.__str__``, so the XML channel (which spells scalars with
+    # ``str()``) writes ``DateTimeField.YEAR`` and the constructor refuses
+    # that word.  Dict passes the member through; JSON writes the member's
+    # own value.  One channel refuses, and the row names it.
+    "rhosocial.activerecord.backend.expression.datetime.ExtractExpression": (
+        {"xml": (ValueError, "unsupported datetime field")},
+        "``field`` is a DateTimeField member; the XML channel spells it "
+        "``DateTimeField.YEAR`` and the read refuses that word.",
+    ),
+    "rhosocial.activerecord.backend.expression.datetime.DatePartExpression": (
+        {"xml": (ValueError, "unsupported datetime field")},
+        "same DateTimeField spelling gap as ExtractExpression.",
+    ),
+    "rhosocial.activerecord.backend.expression.datetime.DateTruncExpression": (
+        {"xml": (ValueError, "unsupported datetime field")},
+        "same DateTimeField spelling gap as ExtractExpression.",
+    ),
+    "rhosocial.activerecord.backend.expression.datetime.ExtractFieldExpression": (
+        {"xml": (ValueError, "unsupported datetime field")},
+        "same DateTimeField spelling gap as ExtractExpression.",
+    ),
+    "rhosocial.activerecord.backend.expression.datetime._ExtractBase": (
+        {"xml": (ValueError, "unsupported datetime field")},
+        "same DateTimeField spelling gap as ExtractExpression; the shared "
+        "base is its own collected class.",
+    ),
+    "rhosocial.activerecord.backend.expression.datetime.IntervalExpression": (
+        {"xml": (ValueError, "unsupported interval unit")},
+        "``unit`` is an IntervalUnit member; the XML channel spells it "
+        "``IntervalUnit.DAY`` and the read refuses that word.",
+    ),
+    "rhosocial.activerecord.backend.expression.datetime.DateTimeAddExpression": (
+        {"xml": (ValueError, "unsupported interval unit")},
+        "holds an IntervalExpression, whose unit hits the same spelling gap.",
+    ),
+    "rhosocial.activerecord.backend.expression.datetime.DateTimeSubtractExpression": (
+        {"xml": (ValueError, "unsupported interval unit")},
+        "holds an IntervalExpression, whose unit hits the same spelling gap.",
+    ),
+    "rhosocial.activerecord.backend.expression.datetime.DateTimeDiffExpression": (
+        {"xml": (ValueError, "unsupported interval unit")},
+        "takes the unit directly; same IntervalUnit spelling gap.",
+    ),
+    # The SQL/XML enums have the same missing ``__str__`` -- and here the
+    # rebuilt node happily stores the corrupted word (the constructor does not
+    # validate), so the refusal shows up as the parameter comparison catching
+    # a value the member does not carry, not as a decode error.
+    "rhosocial.activerecord.backend.expression.xml.XMLParseExpression": (
+        {"xml": (AssertionError, "which is not the word it carries")},
+        "``document_type`` is an XMLParseDocumentType member, a ``(str, "
+        "Enum)`` whose ``__str__`` is still ``Enum.__str__``: the XML channel "
+        "writes ``XMLParseDocumentType.DOCUMENT`` and the rebuilt node holds "
+        "that word, which the member does not carry.",
+    ),
+    "rhosocial.activerecord.backend.expression.xml.XMLSerializeExpression": (
+        {"xml": (AssertionError, "which is not the word it carries")},
+        "same XMLParseDocumentType-family spelling gap, on the serialize "
+        "node's own ``document_type``.",
+    ),
+}
+
+
+def _refusal_channels(fqn):
+    """The channel pins for *fqn*, or ``{}`` when its artifact travels clean."""
+    pinned = ARTIFACT_REFUSALS.get(fqn)
+    return pinned[0] if pinned else {}
+
+
+# ---------------------------------------------------------------------------
 # The local SQL assertion: classify the outcome instead of swallowing it
 # ---------------------------------------------------------------------------
+
+
+#: One render-and-compare channel: ``(label, (encode, decode))``.
+_CHANNELS = (
+    ("dict", (serialize, deserialize)),
+    ("json", (serialize_json, deserialize_json)),
+    ("xml", (serialize_xml, deserialize_xml)),
+)
 
 
 def assert_sql_roundtrip_classified(fqn, instance, dialect):
@@ -1279,11 +1586,36 @@ def assert_sql_roundtrip_classified(fqn, instance, dialect):
             f"  Exception: {exc}"
         ) from exc
 
-    for channel, decoded in (
-        ("dict", deserialize(serialize(instance), dialect)),
-        ("json", deserialize_json(serialize_json(instance), dialect)),
-        ("xml", deserialize_xml(serialize_xml(instance), dialect)),
-    ):
+    refusals = _refusal_channels(fqn)
+    for channel, (encode, decode) in _CHANNELS:
+        pin = refusals.get(channel)
+        if pin is not None:
+            expected_type, fragment = pin
+            try:
+                decoded = decode(encode(instance), dialect)
+                decoded_sql, decoded_params = decoded.to_sql()
+                same_sql = decoded_sql == expected_sql
+                same_params = decoded_params == expected_params
+                assert same_sql and same_params, (
+                    f"{fqn}: {channel} round-trip changed the SQL or the bind "
+                    f"parameters.\n"
+                    f"  original: {expected_sql!r} / {expected_params!r}\n"
+                    f"  {channel}: {decoded_sql!r} / {decoded_params!r}"
+                )
+            except expected_type as exc:
+                assert fragment in str(exc), (
+                    f"{fqn}: pinned as refusing on the {channel} channel with "
+                    f"{expected_type.__name__} saying {fragment!r}, but it "
+                    f"said: {exc}"
+                )
+            else:
+                raise AssertionError(
+                    f"{fqn}: pinned as refusing on the {channel} channel "
+                    f"({expected_type.__name__}, {fragment!r}) but the artifact "
+                    f"came back -- the pin is stale and must go"
+                )
+            continue
+        decoded = decode(encode(instance), dialect)
         decoded_sql, decoded_params = decoded.to_sql()
         assert decoded_sql == expected_sql, (
             f"{fqn}: {channel} round-trip changed the SQL.\n"
@@ -1318,7 +1650,7 @@ class TestExpressionRoundtripAll:
 
     def test_get_params_roundtrip_across_encodings(self, expr_case, fb4_dialect):
         fqn, instance = expr_case
-        roundtrip_expression(fqn, instance, fb4_dialect)
+        roundtrip_expression(fqn, instance, fb4_dialect, _refusal_channels(fqn))
 
     def test_to_sql_roundtrip_classified(self, expr_case, fb4_dialect):
         """A render must survive the round-trip; a non-render must be classified."""
@@ -1447,6 +1779,105 @@ class TestMatrixIntegrity:
             f"{sorted(declared - observed)}. Firebird may have gained one of "
             f"these, in which case the classes needing it now render and the "
             f"entry should go."
+        )
+
+    def test_unreadable_pins_name_collected_classes(self):
+        """Every refusal pin names a class the matrix actually collected."""
+        unknown = set(ARTIFACT_REFUSALS) - set(REGISTERED)
+        assert not unknown, (
+            f"ARTIFACT_REFUSALS names classes that were not registered: "
+            f"{sorted(unknown)}"
+        )
+        unnamed = sorted(
+            fqn
+            for fqn, (_, reason) in ARTIFACT_REFUSALS.items()
+            if not reason.strip()
+        )
+        assert not unnamed, f"ARTIFACT_REFUSALS entries without a reason: {unnamed}"
+
+    def test_unreadable_pins_still_refuse(self, fb4_dialect):
+        """Each pin still refuses on its channels, and travels clean on the rest.
+
+        Without the second half, a pin could sit on a class whose other
+        channels also refuse -- the rows would understate the gap and the
+        exactness test below would catch it only on the next edit.
+        """
+        for fqn, (channels, _) in sorted(ARTIFACT_REFUSALS.items()):
+            instance, source = make_instance(REGISTERED[fqn], fb4_dialect)
+            assert instance is not None, (
+                f"{fqn} is pinned as unreadable but cannot be constructed "
+                f"({source})"
+            )
+            for channel, (encode, decode) in _CHANNELS:
+                pin = channels.get(channel)
+                if pin is None:
+                    restored = decode(encode(instance), fb4_dialect)
+                    assert_params_equal(
+                        restored.get_params(), instance.get_params(), f"{fqn}/{channel}"
+                    )
+                    continue
+                expected_type, fragment = pin
+                try:
+                    restored = decode(encode(instance), fb4_dialect)
+                    assert_params_equal(
+                        restored.get_params(), instance.get_params(), f"{fqn}/{channel}"
+                    )
+                except expected_type as exc:
+                    assert fragment in str(exc), (
+                        f"{fqn}/{channel}: pinned as refusing with "
+                        f"{expected_type.__name__} saying {fragment!r}, but it "
+                        f"said: {exc}"
+                    )
+                else:
+                    raise AssertionError(
+                        f"{fqn}/{channel}: pinned as refusing "
+                        f"({expected_type.__name__}, {fragment!r}) but the "
+                        f"artifact came back -- the pin is stale and must go"
+                    )
+
+    def test_unreadable_set_is_exact(self, fb4_dialect):
+        """Pin the refusal table against what the channels actually refuse.
+
+        Both directions.  For every constructible class in the matrix, each
+        channel either lets the artifact come back and compare clean or it
+        does not; the observed per-channel failures must equal the pinned rows
+        exactly, so a class that starts refusing without a row fails here, and
+        a row whose class now travels fails until it goes.
+        """
+        observed = {}
+        for fqn, cls in sorted(REGISTERED.items()):
+            instance, _ = make_instance(cls, fb4_dialect)
+            if instance is None:
+                continue
+            failing = set()
+            for channel, (encode, decode) in _CHANNELS:
+                try:
+                    restored = decode(encode(instance), fb4_dialect)
+                    assert_params_equal(
+                        restored.get_params(), instance.get_params(), f"{fqn}/{channel}"
+                    )
+                except Exception:
+                    failing.add(channel)
+            if failing:
+                observed[fqn] = failing
+        pinned = {
+            fqn: set(channels) for fqn, (channels, _) in ARTIFACT_REFUSALS.items()
+        }
+        new_refusals = {f: sorted(c) for f, c in observed.items() if f not in pinned}
+        stale_pins = {f: sorted(c) for f, c in pinned.items() if f not in observed}
+        drifted = {
+            f: (sorted(pinned[f]), sorted(observed.get(f, set())))
+            for f in set(pinned) & set(observed)
+            if pinned[f] != observed[f]
+        }
+        assert observed == pinned, (
+            "the set of expression classes an artifact channel refuses "
+            "changed.\n"
+            f"  now refused but not pinned: {new_refusals}\n"
+            f"  pinned but now travelling: {stale_pins}\n"
+            f"  channel sets that drifted (pinned, observed): {drifted}\n"
+            "A new refusal needs a row with the type, the fragment and the "
+            "reason; a core fix means the row goes."
         )
 
     def test_matrix_covers_both_packages(self):
@@ -1734,6 +2165,20 @@ PAIR_BEARING_CASES = (
 PAIR_BEARING_IDS = [case[0] for case in PAIR_BEARING_CASES]
 
 
+def _pair_refusals(case_id):
+    """The channel pins for the class a pair case exercises, if it has any.
+
+    The case ids are prefixed with the bare class name; the matrix keys are
+    fully qualified.  One class per name across both packages, so the first
+    suffix match is the class.
+    """
+    class_name = case_id.split(".")[0]
+    for fqn in sorted(REGISTERED):
+        if fqn.rsplit(".", 1)[-1] == class_name:
+            return _refusal_channels(fqn)
+    return {}
+
+
 class TestClausePairFieldsRoundTrip:
     """The round's new pair fields survive dict / JSON / XML serialization."""
 
@@ -1749,7 +2194,9 @@ class TestClausePairFieldsRoundTrip:
         params = instance.get_params()
         assert params[a] == a_value, f"{case_id}: {a} was not stored"
         assert not params[b], f"{case_id}: {b} must stay unset"
-        roundtrip_expression(f"{case_id}.{a}", instance, fb4_dialect)
+        roundtrip_expression(
+            f"{case_id}.{a}", instance, fb4_dialect, _pair_refusals(case_id)
+        )
 
     @pytest.mark.parametrize(
         "case_id,a_builder,b_builder,a,b,a_value,b_value",
@@ -1763,7 +2210,9 @@ class TestClausePairFieldsRoundTrip:
         params = instance.get_params()
         assert params[b] == b_value, f"{case_id}: {b} was not stored"
         assert not params[a], f"{case_id}: {a} must stay unset"
-        roundtrip_expression(f"{case_id}.{b}", instance, fb4_dialect)
+        roundtrip_expression(
+            f"{case_id}.{b}", instance, fb4_dialect, _pair_refusals(case_id)
+        )
 
     def test_the_two_spellings_do_not_share_a_parameter(self, fb4_dialect):
         """A serializer that conflated the pair would pass the tests above."""
@@ -1773,3 +2222,75 @@ class TestClausePairFieldsRoundTrip:
             assert params_a != params_b, case_id
             assert params_a[a] == a_value and params_b[b] == b_value, case_id
             assert params_a[b] != b_value and params_b[a] != a_value, case_id
+
+
+# ---------------------------------------------------------------------------
+# The fourteen value kinds, spelled on the wire
+# ---------------------------------------------------------------------------
+#
+# One class -- ``Literal`` -- carries every value, and the artifact names the
+# value's kind, not the class.  Each kind's spelling is part of the wire
+# contract (§10): the artifact carries the plain scalar the kind's codec
+# writes -- no wrapper, no marker, no base64 envelope -- and the rebuilt
+# literal holds the host value again.  The scalars are written out by hand,
+# because each one is a statement about the wire form; computing them from the
+# codec would test the codec against itself.
+
+#: ``(wire kind, host value, the exact scalar the artifact carries)``.
+VALUE_KIND_SPELLINGS = (
+    ("null_value", None, None),
+    ("boolean_value", True, True),
+    ("integer_value", 7, 7),
+    ("float_value", 1.5, 1.5),
+    ("decimal_value", decimal.Decimal("1.25"), "1.25"),
+    ("string_value", "hi", "hi"),
+    ("binary_value", b"\x01\x02", "AQI="),
+    ("timestamp_value", datetime.datetime(2020, 1, 2, 3, 4, 5), "2020-01-02 03:04:05"),
+    ("date_value", datetime.date(2020, 1, 2), "2020-01-02"),
+    ("time_value", datetime.time(3, 4, 5), "03:04:05"),
+    ("interval_value", datetime.timedelta(days=1, hours=2), "P1DT2H"),
+    ("list_value", [1, "a"], [1, "a"]),
+    ("tuple_value", (1, "a"), [1, "a"]),
+    ("uuid_value", uuid.UUID(int=7), "00000000-0000-0000-0000-000000000007"),
+)
+
+
+class TestValueKindSpellings:
+    """The plain-JSON artifact spells each value kind as one bare scalar."""
+
+    @pytest.mark.parametrize(
+        ("wire", "host", "scalar"),
+        VALUE_KIND_SPELLINGS,
+        ids=[case[0] for case in VALUE_KIND_SPELLINGS],
+    )
+    def test_the_artifact_carries_the_plain_scalar(self, fb4_dialect, wire, host, scalar):
+        artifact = serialize(Literal(fb4_dialect, host))
+        assert artifact == {"kind": wire, "params": {"value": scalar, "inline": False}}, (
+            f"{wire}: the artifact must carry the bare scalar the kind names"
+        )
+
+    @pytest.mark.parametrize(
+        ("wire", "host", "scalar"),
+        VALUE_KIND_SPELLINGS,
+        ids=[case[0] for case in VALUE_KIND_SPELLINGS],
+    )
+    def test_every_kind_comes_back_as_its_host_value(self, fb4_dialect, wire, host, scalar):
+        restored = deserialize_json(serialize_json(Literal(fb4_dialect, host)), fb4_dialect)
+        assert type(restored.value) is type(host), (
+            f"{wire}: rebuilt as {type(restored.value).__name__}"
+        )
+        assert restored.value == host, wire
+        assert restored.get_params() == {"value": host, "inline": False}, wire
+
+    def test_the_inline_switch_rides_in_the_artifact(self, fb4_dialect):
+        """``inline`` is a constructor parameter like any other (§4.1)."""
+        artifact = serialize(Literal(fb4_dialect, 1, inline=True))
+        assert artifact == {"kind": "integer_value", "params": {"value": 1, "inline": True}}
+        restored = deserialize(artifact, fb4_dialect)
+        assert restored.inline is True
+
+    def test_the_value_kind_set_is_exactly_these_fourteen(self):
+        """The vocabulary is closed; the spellings above cover all of it."""
+        assert {member.wire for member in LiteralKind} == {
+            case[0] for case in VALUE_KIND_SPELLINGS
+        }

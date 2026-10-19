@@ -7,7 +7,11 @@ from enum import Enum
 from typing import Optional, Tuple
 
 
-class FirebirdCollation(Enum):
+class FirebirdCollation(str, Enum):
+    #: A member *is* the word it carries: ``__str__ = str.__str__`` keeps the
+    #: spelling the bare word (§11.3).
+    __str__ = str.__str__
+
     """Common Firebird collations for expression-level COLLATE."""
 
     UNICODE = "UNICODE"

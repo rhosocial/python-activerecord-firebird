@@ -18,7 +18,12 @@ if TYPE_CHECKING:  # pragma: no cover
     from rhosocial.activerecord.backend.dialect import SQLDialectBase
 
 
-class FirebirdCommentObjectType(Enum):
+class FirebirdCommentObjectType(str, Enum):
+    #: A member *is* the word it carries: ``__str__ = str.__str__`` keeps the
+    #: artifact's spelling the bare word, because the Enum ``__str__`` that
+    #: would otherwise win writes ``ClassName.MEMBER`` (§11.3).
+    __str__ = str.__str__
+
     """Object types accepted by COMMENT ON."""
 
     DATABASE = "DATABASE"
@@ -44,6 +49,30 @@ class FirebirdCommentObjectType(Enum):
     GLOBAL_MAPPING = "GLOBAL MAPPING"
 
 
+def _normalize_comment_object_type(
+    object_type: FirebirdCommentObjectType,
+) -> FirebirdCommentObjectType:
+    """The object type as the enum member, whatever spelling arrived.
+
+    The artifact carries the plain word (a string enum *is* a JSON string), so
+    the constructor accepts the word back and normalizes it.  Anything else is
+    refused here, by name, rather than at render time.
+    """
+    if isinstance(object_type, FirebirdCommentObjectType):
+        return object_type
+    if isinstance(object_type, str):
+        try:
+            return FirebirdCommentObjectType(object_type)
+        except ValueError as exc:
+            raise ValueError(
+                f"unsupported COMMENT ON object type: {object_type!r}"
+            ) from exc
+    raise TypeError(
+        f"object_type must be a FirebirdCommentObjectType (or its word), "
+        f"got {type(object_type).__name__}"
+    )
+
+
 class FirebirdCommentExpression(BaseExpression):
     """COMMENT ON <object> IS 'text' (or IS NULL to remove the comment)."""
 
@@ -55,7 +84,9 @@ class FirebirdCommentExpression(BaseExpression):
         comment: Optional[str] = None,
     ):
         super().__init__(dialect)
-        self.object_type: FirebirdCommentObjectType = object_type
+        self.object_type: FirebirdCommentObjectType = _normalize_comment_object_type(
+            object_type
+        )
         self.object_name: str = object_name
         self.comment: Optional[str] = comment
 
