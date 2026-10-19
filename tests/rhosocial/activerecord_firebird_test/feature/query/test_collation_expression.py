@@ -5,7 +5,9 @@ Tests for expression-level COLLATE support on Firebird.
 
 import pytest
 
+from rhosocial.activerecord.backend.dialect.exceptions import UnsupportedFeatureError
 from rhosocial.activerecord.backend.expression import Column, Literal
+from rhosocial.activerecord.backend.expression.collation import collate
 from rhosocial.activerecord.backend.impl.firebird.collation import FirebirdCollation
 from rhosocial.activerecord.backend.impl.firebird.dialect import FirebirdDialect
 
@@ -59,7 +61,11 @@ class TestFirebirdCollationExpression:
         assert params == ()
 
     def test_literal_collate_preserves_parameter_binding(self, dialect):
-        expr = Literal(dialect, "Alice").collate(FirebirdCollation.UNICODE_CI)
+        # A Literal is a value node and carries no operation surface of its
+        # own (rules §4.3), so COLLATE is composed with the collate factory
+        # over it rather than as a chain on the literal: the chain lives on
+        # SQLValue, which a Column is and a Literal is not.
+        expr = collate(Literal(dialect, "Alice"), FirebirdCollation.UNICODE_CI)
 
         sql, params = expr.to_sql()
 
@@ -69,7 +75,9 @@ class TestFirebirdCollationExpression:
     def test_rejects_schema_qualified_collation(self, dialect):
         expr = Column(dialect, "name").collate("UNICODE_CI", schema="PUBLIC")
 
-        with pytest.raises(Exception, match="COLLATE options: schema"):
+        with pytest.raises(
+            UnsupportedFeatureError, match="COLLATE schema qualification"
+        ):
             expr.to_sql()
 
     def test_rejects_unsupported_collation(self, dialect):
