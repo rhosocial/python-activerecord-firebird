@@ -128,6 +128,7 @@ from rhosocial.activerecord.backend.expression.objects import (
     View,
 )
 from rhosocial.activerecord.backend.expression.predicates import (
+    LikeOperator,
     ComparisonPredicate,
     ILikePredicate,
     LikePredicate,
@@ -687,7 +688,7 @@ def register_specials():
     # the round trip then classifies it as Firebird's own UnsupportedFeatureError.
     register_special_constructor(
         "predicates.LikePredicate",
-        lambda d: LikePredicate(d, "LIKE", Column(d, "a"), Literal(d, "%x%")),
+        lambda d: LikePredicate(d, LikeOperator.LIKE, Column(d, "a"), Literal(d, "%x%")),
     )
     # -- EXISTS: the subquery is a one-row SELECT, not a wrapped literal -----
     # The guess wraps a Literal, and the subquery node renders its payload at
