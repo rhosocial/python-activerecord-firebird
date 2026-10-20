@@ -1054,6 +1054,36 @@ def assert_params_equal(a: Any, b: Any, path: str = "params") -> None:
     assert a == b, f"{path}: {a!r} != {b!r}"
 
 
+def assert_render_survives(instance, restored, fqn, channel) -> None:
+    """Assert *restored* renders what *instance* renders, bind params included.
+
+    A channel can hand back parameters that compare clean and a node that
+    cannot render at all. ``CreateTriggerStatement`` is the case in this tree:
+    ``timing`` is a ``str`` enum, so the artifact carries its word, the
+    constructor stores that word, and the parameters compare clean -- Firebird's
+    comparison reads a member and the word it carries as equal -- while
+    ``format_create_trigger_statement`` then reads ``.value`` off a str.
+
+    The restored render's own exception is allowed to propagate: a channel
+    pinned as refusing has to fail with the exception type the pin names, and
+    swallowing it here would turn an ``AttributeError`` pin into an
+    ``AssertionError``.
+
+    An instance that does not render itself has no SQL to lose, so the
+    comparison is skipped for it; the caller classifies that case separately.
+    """
+    try:
+        expected = instance.to_sql()
+    except Exception:
+        return
+    actual = restored.to_sql()
+    assert actual == expected, (
+        f"{fqn}/{channel}: the restored node renders differently.\n"
+        f"  original: {expected!r}\n"
+        f"  restored: {actual!r}"
+    )
+
+
 def roundtrip_expression(
     fqn: str,
     instance: BaseExpression,
@@ -1064,10 +1094,11 @@ def roundtrip_expression(
 
     ``channel_refusals`` pins the channels an artifact of *this class* cannot
     be asserted clean on: ``{"xml": (ValueError, "unsupported datetime field")}``
-    says that channel must fail -- while encoding, decoding, or comparing the
-    parameters -- with exactly that type and message fragment, while the
-    channels the mapping does not name must round-trip clean.  The pin keeps a
-    known refusal named and asserted instead of failing as a bare exception.
+    says that channel must fail -- while encoding, decoding, comparing the
+    parameters, or rendering the restored node -- with exactly that type and
+    message fragment, while the channels the mapping does not name must
+    round-trip clean.  The pin keeps a known refusal named and asserted instead
+    of failing as a bare exception.
     """
     original = instance.get_params()
     refusals = channel_refusals or {}
@@ -1082,6 +1113,7 @@ def roundtrip_expression(
             try:
                 restored = build(instance, dialect)
                 assert_params_equal(restored.get_params(), original, f"{fqn}/{channel}")
+                assert_render_survives(instance, restored, fqn, channel)
             except expected_type as exc:
                 assert fragment in str(exc), (
                     f"{fqn}/{channel}: pinned as refusing with "
@@ -1096,6 +1128,7 @@ def roundtrip_expression(
             continue
         restored = build(instance, dialect)
         assert_params_equal(restored.get_params(), original, f"{fqn}/{channel}")
+        assert_render_survives(instance, restored, fqn, channel)
 
 
 def _rt_dict(instance, dialect):

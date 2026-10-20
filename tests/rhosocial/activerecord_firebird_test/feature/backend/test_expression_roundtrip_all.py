@@ -211,6 +211,7 @@ from rhosocial.activerecord.backend.expression.types.custom import CustomType
 from rhosocial.activerecord.backend.expression.values import LiteralKind
 from expression_roundtrip_harness import (
     assert_params_equal,
+    assert_render_survives,
     collect_expression_classes,
     make_instance,
     register_all,
@@ -1372,28 +1373,39 @@ def _unmodelled_methods():
 # ---------------------------------------------------------------------------
 #
 # The plain-JSON rewrite (core 679d9817) removed every marker a value could
-# hide behind, and three kinds of parameter stopped travelling with it:
+# hide behind, and two kinds of parameter stopped travelling with it:
 #
-# * a plain ``Enum`` member is a host object with no wire form.  The value
-#   vocabulary is a closed set of fourteen kinds (§4.3/§10) and no plain enum
-#   is in it, so *encoding* refuses by name -- ``TypeError`` naming the type.
 # * a dataclass (or dataclass-like options object) has no place in an artifact
-#   at all -- the same refusal.
-# * a ``(str, Enum)`` whose ``__str__`` is still ``Enum.__str__`` spells
-#   ``ClassName.MEMBER`` into the XML channel (which writes scalars with
-#   ``str()``).  A constructor that validates refuses that word on the way
-#   back (``ValueError``); one that does not stores it, and the parameter
-#   comparison catches a value the member does not carry (``AssertionError``).
-#   The dict channel passes the member through untouched and JSON writes the
-#   member's own value, so only XML refuses.  The fix belongs to the enum
-#   (``__str__ = str.__str__``, as the org's own spelling rule already asks);
-#   these rows record the gap until it lands.
+#   at all -- *encoding* refuses by name, ``TypeError`` naming the type.
+# * an enum parameter the writer can carry but the node cannot read back:
+#   either the constructor refuses the word its own enum writes
+#   (``TypeError``), or it stores the word, the parameters still compare clean
+#   because Firebird's comparison reads a member and its word as equal, and the
+#   restored node then cannot render (``AttributeError``).
+#
+# A third shape used to be recorded here and is gone: a ``(str, Enum)`` whose
+# ``__str__`` was still ``Enum.__str__`` spelled ``ClassName.MEMBER`` into the
+# XML channel, which a validating constructor refused (``ValueError``) or a
+# permissive one stored (``AssertionError`` in the comparison).  Core gave those
+# nine families ``__str__ = str.__str__`` as the org's spelling rule already
+# asked, so the XML channel writes the word and every one of those classes
+# round-trips.  The rows were deleted rather than narrowed.
+#
+# A plain ``Enum`` member was the other shape: it is a host object with no wire
+# form, so the value vocabulary refused it by name.  Core made the twelve
+# SQL-word enums str subclasses, so they travel as their words; the three
+# classes that carried one (``ColumnGeneratedConstraint``,
+# ``ForeignKeyConstraint``, ``CreateTriggerStatement``) lost their
+# all-channel rows.
 #
 # Each entry names the class, the channels that refuse, the exact exception
 # type and a message fragment, and the reason.  A channel the mapping does not
-# name must round-trip clean.  ``test_unreadable_set_is_exact`` pins the table
-# in both directions, so a core fix that lets a class travel again fails here
-# until the row goes, and a class that starts refusing without a row fails too.
+# name must round-trip clean -- which here means the parameters compare equal
+# *and* the restored node renders what the original rendered, because a channel
+# that loses the type and still passes the comparison can still lose the
+# render.  ``test_unreadable_set_is_exact`` pins the table in both directions,
+# so a core fix that lets a class travel again fails here until the row goes,
+# and a class that starts refusing without a row fails too.
 
 
 def _every_channel(pair):
@@ -1406,26 +1418,10 @@ def _every_channel(pair):
 _UNWRITABLE_VALUE = "is not one of the value kinds"
 
 ARTIFACT_REFUSALS = {
-    # -- plain-Enum params: the value vocabulary cannot write them ---------
-    "rhosocial.activerecord.backend.expression.statements.ddl_trigger."
-    "CreateTriggerStatement": (
-        _every_channel((TypeError, "TriggerEvent " + _UNWRITABLE_VALUE)),
-        "``events`` carries TriggerEvent members, a plain Enum with no wire "
-        "form; the artifact cannot name them.",
-    ),
-    "rhosocial.activerecord.backend.expression.statements.ddl_table."
-    "ForeignKeyConstraint": (
-        _every_channel((TypeError, "ReferentialAction " + _UNWRITABLE_VALUE)),
-        "``on_delete`` / ``on_update`` default to ReferentialAction.NO_ACTION "
-        "members, a plain Enum, so every instance carries one in its params.",
-    ),
-    "rhosocial.activerecord.backend.expression.statements.ddl_table."
-    "ColumnGeneratedConstraint": (
-        _every_channel((TypeError, "GeneratedColumnType " + _UNWRITABLE_VALUE)),
-        "the constructor fills ``storage_type`` with the VIRTUAL member when "
-        "the caller leaves it unset, so every instance carries a plain-Enum "
-        "member in its params.",
-    ),
+    # -- a plain-Enum param the value vocabulary cannot write ---------------
+    # (This block used to hold ``ReferentialAction`` / ``GeneratedColumnType``
+    # rows too. Core made those enums str subclasses, so the writer carries
+    # them and the classes round-trip; the rows are gone.)
     "rhosocial.activerecord.backend.expression.statements.ddl_view."
     "CreateViewStatement": (
         _every_channel((TypeError, "ViewOptions " + _UNWRITABLE_VALUE)),
@@ -1448,66 +1444,26 @@ ARTIFACT_REFUSALS = {
         "the enum's own spelling is.  The dict channel hands the member "
         "through untouched, so only the two text channels refuse.",
     ),
-    # -- a (str, Enum) whose ``__str__`` is still ``Enum.__str__`` ---------
-    # DateTimeField and IntervalUnit inherit ``(str, Enum)`` but not
-    # ``str.__str__``, so the XML channel (which spells scalars with
-    # ``str()``) writes ``DateTimeField.YEAR`` and the constructor refuses
-    # that word.  Dict passes the member through; JSON writes the member's
-    # own value.  One channel refuses, and the row names it.
-    "rhosocial.activerecord.backend.expression.datetime.ExtractExpression": (
-        {"xml": (ValueError, "unsupported datetime field")},
-        "``field`` is a DateTimeField member; the XML channel spells it "
-        "``DateTimeField.YEAR`` and the read refuses that word.",
-    ),
-    "rhosocial.activerecord.backend.expression.datetime.DatePartExpression": (
-        {"xml": (ValueError, "unsupported datetime field")},
-        "same DateTimeField spelling gap as ExtractExpression.",
-    ),
-    "rhosocial.activerecord.backend.expression.datetime.DateTruncExpression": (
-        {"xml": (ValueError, "unsupported datetime field")},
-        "same DateTimeField spelling gap as ExtractExpression.",
-    ),
-    "rhosocial.activerecord.backend.expression.datetime.ExtractFieldExpression": (
-        {"xml": (ValueError, "unsupported datetime field")},
-        "same DateTimeField spelling gap as ExtractExpression.",
-    ),
-    "rhosocial.activerecord.backend.expression.datetime._ExtractBase": (
-        {"xml": (ValueError, "unsupported datetime field")},
-        "same DateTimeField spelling gap as ExtractExpression; the shared "
-        "base is its own collected class.",
-    ),
-    "rhosocial.activerecord.backend.expression.datetime.IntervalExpression": (
-        {"xml": (ValueError, "unsupported interval unit")},
-        "``unit`` is an IntervalUnit member; the XML channel spells it "
-        "``IntervalUnit.DAY`` and the read refuses that word.",
-    ),
-    "rhosocial.activerecord.backend.expression.datetime.DateTimeAddExpression": (
-        {"xml": (ValueError, "unsupported interval unit")},
-        "holds an IntervalExpression, whose unit hits the same spelling gap.",
-    ),
-    "rhosocial.activerecord.backend.expression.datetime.DateTimeSubtractExpression": (
-        {"xml": (ValueError, "unsupported interval unit")},
-        "holds an IntervalExpression, whose unit hits the same spelling gap.",
-    ),
-    "rhosocial.activerecord.backend.expression.datetime.DateTimeDiffExpression": (
-        {"xml": (ValueError, "unsupported interval unit")},
-        "takes the unit directly; same IntervalUnit spelling gap.",
-    ),
-    # The SQL/XML enums have the same missing ``__str__`` -- and here the
-    # rebuilt node happily stores the corrupted word (the constructor does not
-    # validate), so the refusal shows up as the parameter comparison catching
-    # a value the member does not carry, not as a decode error.
-    "rhosocial.activerecord.backend.expression.xml.XMLParseExpression": (
-        {"xml": (AssertionError, "which is not the word it carries")},
-        "``document_type`` is an XMLParseDocumentType member, a ``(str, "
-        "Enum)`` whose ``__str__`` is still ``Enum.__str__``: the XML channel "
-        "writes ``XMLParseDocumentType.DOCUMENT`` and the rebuilt node holds "
-        "that word, which the member does not carry.",
-    ),
-    "rhosocial.activerecord.backend.expression.xml.XMLSerializeExpression": (
-        {"xml": (AssertionError, "which is not the word it carries")},
-        "same XMLParseDocumentType-family spelling gap, on the serialize "
-        "node's own ``document_type``.",
+    # -- a constructor that stores the word its own enum writes -------------
+    # ``CreateTriggerStatement`` keeps ``timing`` as the plain word, so the
+    # parameters compare clean (Firebird's harness reads a str enum member and
+    # the word it carries as equal) and the loss shows one layer later:
+    # ``format_create_trigger_statement`` reads ``.value`` off a str.  The
+    # dict channel passes the member through, which is why only the two text
+    # channels are pinned.
+    #
+    # The whole ``(str, Enum)``-without-``__str__`` block that used to sit here
+    # -- the nine datetime/interval classes and the two SQL/XML ones -- is gone:
+    # core gave those families ``__str__ = str.__str__``, so the XML channel
+    # spells "year" / "DOCUMENT" and both the normaliser and the parameter
+    # comparison accept it.
+    "rhosocial.activerecord.backend.expression.statements.ddl_trigger."
+    "CreateTriggerStatement": (
+        {"json": (AttributeError, "'str' object has no attribute 'value'"),
+         "xml": (AttributeError, "'str' object has no attribute 'value'")},
+        "``timing`` is a TriggerTiming member; the JSON and XML channels write "
+        "the word and the constructor stores it, so the rebuilt node's "
+        "formatter reads ``.value`` off a str.",
     ),
 }
 
@@ -1839,6 +1795,7 @@ class TestMatrixIntegrity:
                     assert_params_equal(
                         restored.get_params(), instance.get_params(), f"{fqn}/{channel}"
                     )
+                    assert_render_survives(instance, restored, fqn, channel)
                 except expected_type as exc:
                     assert fragment in str(exc), (
                         f"{fqn}/{channel}: pinned as refusing with "
@@ -1873,6 +1830,7 @@ class TestMatrixIntegrity:
                     assert_params_equal(
                         restored.get_params(), instance.get_params(), f"{fqn}/{channel}"
                     )
+                    assert_render_survives(instance, restored, fqn, channel)
                 except Exception:
                     failing.add(channel)
             if failing:
