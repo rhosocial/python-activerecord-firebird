@@ -48,6 +48,12 @@ from ..mixins import (
     untrack_firebird_connection,
 )
 from ..async_transaction import AsyncFirebirdTransactionManager
+from ..query_nodes import (
+    database_probe_sql,
+    engine_version_sql,
+    health_check_sql,
+    mon_version_sql,
+)
 
 
 _shared_executor_instance = None
@@ -200,9 +206,11 @@ class AsyncFirebirdBackend(
             temp_cursor = cursor is None
             if cursor is None:
                 cursor = self._connection.cursor()
+            probe, probe_params = health_check_sql(self.dialect)
             try:
                 await loop.run_in_executor(
-                    self._executor, lambda: cursor.execute("SELECT 1 FROM RDB$DATABASE")
+                    self._executor,
+                    lambda: cursor.execute(probe, probe_params or None),
                 )
                 await loop.run_in_executor(self._executor, cursor.fetchone)
                 return True
@@ -228,20 +236,20 @@ class AsyncFirebirdBackend(
             await self.connect()
         loop = asyncio.get_event_loop()
         cursor = self._cursor or self._connection.cursor()
+        context_sql, context_params = engine_version_sql(self.dialect)
         try:
             await loop.run_in_executor(
                 self._executor,
-                lambda: cursor.execute(
-                    "SELECT RDB$GET_CONTEXT('SYSTEM', 'ENGINE_VERSION') FROM RDB$DATABASE"
-                ),
+                lambda: cursor.execute(context_sql, context_params or None),
             )
             row = await loop.run_in_executor(self._executor, cursor.fetchone)
             if row and row[0]:
                 version_str = str(row[0])
             else:
+                mon_sql, mon_params = mon_version_sql(self.dialect)
                 await loop.run_in_executor(
                     self._executor,
-                    lambda: cursor.execute("SELECT MON$VERSION FROM MON$DATABASE"),
+                    lambda: cursor.execute(mon_sql, mon_params or None),
                 )
                 row = await loop.run_in_executor(self._executor, cursor.fetchone)
                 if row and row[0]:
@@ -249,10 +257,11 @@ class AsyncFirebirdBackend(
                 else:
                     return (2, 5, 0)
         except Exception:
+            probe_sql, probe_params = database_probe_sql(self.dialect)
             try:
                 await loop.run_in_executor(
                     self._executor,
-                    lambda: cursor.execute("SELECT * FROM RDB$DATABASE"),
+                    lambda: cursor.execute(probe_sql, probe_params or None),
                 )
                 desc = cursor.description
                 version_str = str(desc[0][0]) if desc else "2.5.0"

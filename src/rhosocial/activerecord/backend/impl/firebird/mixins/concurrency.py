@@ -52,8 +52,11 @@ class FirebirdConcurrencyMixin:
         caller falls back to the configured pool size (or no constraint).
         """
         try:
+            from ..query_nodes import max_connections_sql
+
+            sql, params = max_connections_sql(self.dialect)
             cursor = self._connection.cursor()
-            cursor.execute("SELECT MON$MAX_CONNECTIONS FROM MON$DATABASE")
+            cursor.execute(sql, params or None)
             row = cursor.fetchone()
             cursor.close()
             if row and row[0] is not None:

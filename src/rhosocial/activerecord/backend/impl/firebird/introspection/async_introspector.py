@@ -135,117 +135,331 @@ class FirebirdAsyncIntrospectorMixin(IntrospectorMixin):
 
     def _make_database_info_sql(self) -> str:
         """Return SQL to query basic database info."""
-        return "SELECT MON$DATABASE_NAME FROM MON$DATABASE", ()
+        from ..query_nodes import column, relation, select_sql
+
+        d = self.dialect
+        return select_sql(
+            d, [column(d, "MON$DATABASE_NAME")], from_=relation(d, "MON$DATABASE")
+        )
 
     def _make_table_list_sql(self, schema: Optional[str] = None,
                               include_system: bool = False,
                               include_views: bool = True,
                               table_type: Optional[str] = None) -> str:
-        self._reject_namespace(schema)
-        if include_system:
-            where = ""
-        else:
-            where = "AND RDB$SYSTEM_FLAG = 0"
-        if include_views:
-            view_clause = ""
-        else:
-            view_clause = "AND RDB$VIEW_BLR IS NULL"
-        sql = (
-            "SELECT RDB$RELATION_NAME, RDB$VIEW_BLR "
-            "FROM RDB$RELATIONS "
-            f"WHERE 1=1 {where} {view_clause} "
-            "ORDER BY RDB$RELATION_NAME"
+        """Tables (and views) of the database, by relation name.
+
+        ``RDB$SYSTEM_FLAG = 0`` drops the catalogue's own relations and
+        ``RDB$VIEW_BLR IS NULL`` drops views; both are conditions of the
+        question, not data, so they stay inline exactly as the text had them.
+        The old statement also opened its WHERE with a bare ``1=1`` to make
+        the optional clauses append cleanly -- that was clause assembly
+        mechanics, not a condition, and the tree makes it unnecessary.
+        """
+        from ..query_nodes import (
+            column,
+            compare,
+            conjunction,
+            literal,
+            null_test,
+            relation,
+            select_sql,
         )
-        return sql, ()
+
+        self._reject_namespace(schema)
+        d = self.dialect
+        conditions = []
+        if not include_system:
+            conditions.append(
+                compare(d, "eq", column(d, "RDB$SYSTEM_FLAG"), literal(d, 0, inline=True))
+            )
+        if not include_views:
+            conditions.append(null_test(d, column(d, "RDB$VIEW_BLR")))
+        return select_sql(
+            d,
+            [column(d, "RDB$RELATION_NAME"), column(d, "RDB$VIEW_BLR")],
+            from_=relation(d, "RDB$RELATIONS"),
+            where=conjunction(d, *conditions) if conditions else None,
+            order_by=[column(d, "RDB$RELATION_NAME")],
+        )
 
     def _make_column_list_sql(self, table_name: str, schema: Optional[str] = None) -> str:
-        self._reject_namespace(schema)
-        sql = f"""
-            SELECT
-                rf.RDB$FIELD_NAME AS COLUMN_NAME,
-                f.RDB$FIELD_TYPE AS FIELD_TYPE,
-                f.RDB$FIELD_SUB_TYPE AS FIELD_SUB_TYPE,
-                f.RDB$CHARACTER_LENGTH AS CHAR_LENGTH,
-                f.RDB$FIELD_PRECISION AS PRECISION,
-                f.RDB$FIELD_SCALE AS SCALE,
-                rf.RDB$NULL_FLAG AS NULL_FLAG,
-                rf.RDB$DEFAULT_SOURCE AS DEFAULT_SOURCE,
-                rf.RDB$POSITION AS POSITION,
-                rf.RDB$COMPUTED_SOURCE AS COMPUTED_SOURCE
-            FROM RDB$RELATION_FIELDS rf
-            JOIN RDB$FIELDS f ON rf.RDB$FIELD_SOURCE = f.RDB$FIELD_NAME
-            WHERE rf.RDB$RELATION_NAME = {self.dialect.p()}
-            ORDER BY rf.RDB$POSITION
+        """The columns of one relation, with the domain each is built on.
+
+        ``RDB$RELATION_FIELDS`` holds the per-column facts and ``RDB$FIELDS``
+        the domain the column was declared from, so the two are joined through
+        ``RDB$FIELD_SOURCE``. The relation name is a bind position.
         """
-        return sql, (table_name,)
+        from ..query_nodes import (
+            column,
+            compare,
+            join,
+            literal,
+            relation,
+            select_sql,
+        )
+
+        self._reject_namespace(schema)
+        d = self.dialect
+        joined = join(
+            d,
+            relation(d, "RDB$RELATION_FIELDS", alias="rf"),
+            relation(d, "RDB$FIELDS", alias="f"),
+            condition=compare(
+                d,
+                "eq",
+                column(d, "RDB$FIELD_SOURCE", "rf"),
+                column(d, "RDB$FIELD_NAME", "f"),
+            ),
+        )
+        return select_sql(
+            d,
+            [
+                column(d, "RDB$FIELD_NAME", "rf", alias="COLUMN_NAME"),
+                column(d, "RDB$FIELD_TYPE", "f", alias="FIELD_TYPE"),
+                column(d, "RDB$FIELD_SUB_TYPE", "f", alias="FIELD_SUB_TYPE"),
+                column(d, "RDB$CHARACTER_LENGTH", "f", alias="CHAR_LENGTH"),
+                column(d, "RDB$FIELD_PRECISION", "f", alias="PRECISION"),
+                column(d, "RDB$FIELD_SCALE", "f", alias="SCALE"),
+                column(d, "RDB$NULL_FLAG", "rf", alias="NULL_FLAG"),
+                column(d, "RDB$DEFAULT_SOURCE", "rf", alias="DEFAULT_SOURCE"),
+                column(d, "RDB$POSITION", "rf", alias="POSITION"),
+                column(d, "RDB$COMPUTED_SOURCE", "rf", alias="COMPUTED_SOURCE"),
+            ],
+            from_=joined,
+            where=compare(
+                d,
+                "eq",
+                column(d, "RDB$RELATION_NAME", "rf"),
+                literal(d, table_name),
+            ),
+            order_by=[column(d, "RDB$POSITION", "rf")],
+        )
 
     def _make_index_list_sql(self, table_name: str, schema: Optional[str] = None) -> str:
+        """The indexes of one relation with their key columns, in key order."""
+        from ..query_nodes import (
+            column,
+            compare,
+            join,
+            literal,
+            relation,
+            select_sql,
+        )
+
         self._reject_namespace(schema)
-        sql = f"""
-            SELECT
-                i.RDB$INDEX_NAME AS INDEX_NAME,
-                i.RDB$UNIQUE_FLAG AS UNIQUE_FLAG,
-                i.RDB$INDEX_INACTIVE AS INACTIVE,
-                i.RDB$INDEX_TYPE AS INDEX_TYPE,
-                isg.RDB$FIELD_NAME AS FIELD_NAME,
-                isg.RDB$FIELD_POSITION AS FIELD_POSITION
-            FROM RDB$INDICES i
-            JOIN RDB$INDEX_SEGMENTS isg
-                ON i.RDB$INDEX_NAME = isg.RDB$INDEX_NAME
-            WHERE i.RDB$RELATION_NAME = {self.dialect.p()}
-            ORDER BY i.RDB$INDEX_NAME, isg.RDB$FIELD_POSITION
-        """
-        return sql, (table_name,)
+        d = self.dialect
+        joined = join(
+            d,
+            relation(d, "RDB$INDICES", alias="i"),
+            relation(d, "RDB$INDEX_SEGMENTS", alias="isg"),
+            condition=compare(
+                d,
+                "eq",
+                column(d, "RDB$INDEX_NAME", "i"),
+                column(d, "RDB$INDEX_NAME", "isg"),
+            ),
+        )
+        return select_sql(
+            d,
+            [
+                column(d, "RDB$INDEX_NAME", "i", alias="INDEX_NAME"),
+                column(d, "RDB$UNIQUE_FLAG", "i", alias="UNIQUE_FLAG"),
+                column(d, "RDB$INDEX_INACTIVE", "i", alias="INACTIVE"),
+                column(d, "RDB$INDEX_TYPE", "i", alias="INDEX_TYPE"),
+                column(d, "RDB$FIELD_NAME", "isg", alias="FIELD_NAME"),
+                column(d, "RDB$FIELD_POSITION", "isg", alias="FIELD_POSITION"),
+            ],
+            from_=joined,
+            where=compare(
+                d,
+                "eq",
+                column(d, "RDB$RELATION_NAME", "i"),
+                literal(d, table_name),
+            ),
+            order_by=[
+                column(d, "RDB$INDEX_NAME", "i"),
+                column(d, "RDB$FIELD_POSITION", "isg"),
+            ],
+        )
 
     def _make_primary_key_sql(self, table_name: str) -> str:
-        sql = f"""
-            SELECT isg.RDB$FIELD_NAME
-            FROM RDB$INDICES i
-            JOIN RDB$INDEX_SEGMENTS isg
-                ON i.RDB$INDEX_NAME = isg.RDB$INDEX_NAME
-            WHERE i.RDB$RELATION_NAME = {self.dialect.p()}
-              AND i.RDB$UNIQUE_FLAG = 1
-              AND i.RDB$INDEX_NAME LIKE 'RDB$PRIMARY%'
-            ORDER BY isg.RDB$FIELD_POSITION
+        """The primary key's columns: the relation's unique ``RDB$PRIMARY%`` index.
+
+        Firebird names a primary key's backing index ``RDB$PRIMARY<n>``, so the
+        index name is matched by a LIKE pattern -- a literal of the question,
+        not data, and inline exactly as the text had it.
         """
-        return sql, (table_name,)
+        from ..query_nodes import (
+            column,
+            compare,
+            conjunction,
+            join,
+            like,
+            literal,
+            relation,
+            select_sql,
+        )
+
+        d = self.dialect
+        joined = join(
+            d,
+            relation(d, "RDB$INDICES", alias="i"),
+            relation(d, "RDB$INDEX_SEGMENTS", alias="isg"),
+            condition=compare(
+                d,
+                "eq",
+                column(d, "RDB$INDEX_NAME", "i"),
+                column(d, "RDB$INDEX_NAME", "isg"),
+            ),
+        )
+        return select_sql(
+            d,
+            [column(d, "RDB$FIELD_NAME", "isg")],
+            from_=joined,
+            where=conjunction(
+                d,
+                compare(
+                    d,
+                    "eq",
+                    column(d, "RDB$RELATION_NAME", "i"),
+                    literal(d, table_name),
+                ),
+                compare(
+                    d,
+                    "eq",
+                    column(d, "RDB$UNIQUE_FLAG", "i"),
+                    literal(d, 1, inline=True),
+                ),
+                like(d, column(d, "RDB$INDEX_NAME", "i"), "RDB$PRIMARY%"),
+            ),
+            order_by=[column(d, "RDB$FIELD_POSITION", "isg")],
+        )
 
     def _make_foreign_key_sql(self, table_name: str, schema: Optional[str] = None) -> str:
-        self._reject_namespace(schema)
-        sql = f"""
-            SELECT
-                rc.RDB$CONSTRAINT_NAME AS CONSTRAINT_NAME,
-                rc.RDB$INDEX_NAME AS INDEX_NAME,
-                seg.RDB$FIELD_NAME AS COLUMN_NAME,
-                ref.RDB$RELATION_NAME AS REF_TABLE,
-                ref_seg.RDB$FIELD_NAME AS REF_COLUMN,
-                rc.RDB$DELETE_RULE AS DELETE_RULE
-            FROM RDB$REF_CONSTRAINTS rc
-            JOIN RDB$INDEX_SEGMENTS seg
-                ON rc.RDB$INDEX_NAME = seg.RDB$INDEX_NAME
-            JOIN RDB$INDICES i
-                ON rc.RDB$INDEX_NAME = i.RDB$INDEX_NAME
-            JOIN RDB$INDEX_SEGMENTS ref_seg
-                ON rc.RDB$CONSTRAINT_NAME_UQ = ref_seg.RDB$INDEX_NAME
-            JOIN RDB$INDICES ref_i
-                ON rc.RDB$CONSTRAINT_NAME_UQ = ref_i.RDB$INDEX_NAME
-            JOIN RDB$RELATIONS ref
-                ON ref_i.RDB$RELATION_NAME = ref.RDB$RELATION_NAME
-            WHERE i.RDB$RELATION_NAME = {self.dialect.p()}
-            ORDER BY seg.RDB$FIELD_POSITION
+        """The outgoing foreign keys of one relation, with their targets.
+
+        Six relation reads: the constraint and its referencing index, that
+        index's own segments, the unique index the constraint points at and
+        that index's segments, and finally the target relation itself. Each
+        join is stated where it belongs rather than in one flat FROM list, so
+        which relation reads to which is visible in the tree.
         """
-        return sql, (table_name,)
+        from ..query_nodes import (
+            column,
+            compare,
+            join,
+            literal,
+            relation,
+            select_sql,
+        )
+
+        self._reject_namespace(schema)
+        d = self.dialect
+        # seg reads the referencing index's columns; ref_seg the referenced
+        # index's. Both join on an index name, so they are kept apart by the
+        # distinct relations they hang from, not by name alone.
+        joined = join(
+            d,
+            join(
+                d,
+                join(
+                    d,
+                    join(
+                        d,
+                        join(
+                            d,
+                            relation(d, "RDB$REF_CONSTRAINTS", alias="rc"),
+                            relation(d, "RDB$INDEX_SEGMENTS", alias="seg"),
+                            condition=compare(
+                                d,
+                                "eq",
+                                column(d, "RDB$INDEX_NAME", "rc"),
+                                column(d, "RDB$INDEX_NAME", "seg"),
+                            ),
+                        ),
+                        relation(d, "RDB$INDICES", alias="i"),
+                        condition=compare(
+                            d,
+                            "eq",
+                            column(d, "RDB$INDEX_NAME", "rc"),
+                            column(d, "RDB$INDEX_NAME", "i"),
+                        ),
+                    ),
+                    relation(d, "RDB$INDEX_SEGMENTS", alias="ref_seg"),
+                    condition=compare(
+                        d,
+                        "eq",
+                        column(d, "RDB$CONSTRAINT_NAME_UQ", "rc"),
+                        column(d, "RDB$INDEX_NAME", "ref_seg"),
+                    ),
+                ),
+                relation(d, "RDB$INDICES", alias="ref_i"),
+                condition=compare(
+                    d,
+                    "eq",
+                    column(d, "RDB$CONSTRAINT_NAME_UQ", "rc"),
+                    column(d, "RDB$INDEX_NAME", "ref_i"),
+                ),
+            ),
+            relation(d, "RDB$RELATIONS", alias="ref"),
+            condition=compare(
+                d,
+                "eq",
+                column(d, "RDB$RELATION_NAME", "ref_i"),
+                column(d, "RDB$RELATION_NAME", "ref"),
+            ),
+        )
+        return select_sql(
+            d,
+            [
+                column(d, "RDB$CONSTRAINT_NAME", "rc", alias="CONSTRAINT_NAME"),
+                column(d, "RDB$INDEX_NAME", "rc", alias="INDEX_NAME"),
+                column(d, "RDB$FIELD_NAME", "seg", alias="COLUMN_NAME"),
+                column(d, "RDB$RELATION_NAME", "ref", alias="REF_TABLE"),
+                column(d, "RDB$FIELD_NAME", "ref_seg", alias="REF_COLUMN"),
+                column(d, "RDB$DELETE_RULE", "rc", alias="DELETE_RULE"),
+            ],
+            from_=joined,
+            where=compare(
+                d,
+                "eq",
+                column(d, "RDB$RELATION_NAME", "i"),
+                literal(d, table_name),
+            ),
+            order_by=[column(d, "RDB$FIELD_POSITION", "seg")],
+        )
 
     def _make_view_list_sql(self, schema: Optional[str] = None) -> str:
-        self._reject_namespace(schema)
-        sql = """
-            SELECT RDB$RELATION_NAME, RDB$VIEW_SOURCE
-            FROM RDB$RELATIONS
-            WHERE RDB$SYSTEM_FLAG = 0
-              AND RDB$VIEW_BLR IS NOT NULL
-            ORDER BY RDB$RELATION_NAME
+        """The database's views: relations that are neither system nor baseless.
+
+        ``RDB$VIEW_BLR IS NOT NULL`` is what makes a relation a view;
+        ``RDB$VIEW_SOURCE`` carries its text.
         """
-        return sql, ()
+        from ..query_nodes import (
+            column,
+            compare,
+            conjunction,
+            literal,
+            null_test,
+            relation,
+            select_sql,
+        )
+
+        self._reject_namespace(schema)
+        d = self.dialect
+        return select_sql(
+            d,
+            [column(d, "RDB$RELATION_NAME"), column(d, "RDB$VIEW_SOURCE")],
+            from_=relation(d, "RDB$RELATIONS"),
+            where=conjunction(
+                d,
+                compare(
+                    d, "eq", column(d, "RDB$SYSTEM_FLAG"), literal(d, 0, inline=True)
+                ),
+                null_test(d, column(d, "RDB$VIEW_BLR"), is_not=True),
+            ),
+            order_by=[column(d, "RDB$RELATION_NAME")],
+        )
 
     # ------------------------------------------------------------------
     # Parse methods
