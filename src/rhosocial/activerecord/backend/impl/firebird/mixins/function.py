@@ -85,11 +85,16 @@ class FirebirdFunctionMixin:
         Returns:
             A ``(sql, params)`` tuple.
         """
+        operand_sql, operand_params = expr.operand.to_sql()
         if expr.unit == "octet":
-            return self._format_scalar_function("OCTET_LENGTH", expr)
-        if expr.unit == "bit":
-            return self._format_scalar_function("BIT_LENGTH", expr)
-        return self._format_scalar_function("CHAR_LENGTH", expr)
+            sql = f"OCTET_LENGTH({operand_sql})"
+        elif expr.unit == "bit":
+            sql = f"BIT_LENGTH({operand_sql})"
+        else:
+            sql = f"CHAR_LENGTH({operand_sql})"
+        if expr.alias:
+            sql = f"{sql} AS {self.format_identifier(expr.alias)}"
+        return sql, tuple(operand_params)
 
     def _format_pinned_aggregate(
         self, name: str, expr: "bases.BaseExpression"

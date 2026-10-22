@@ -153,11 +153,11 @@ class FirebirdExpressionMixin:
         before rendering (because the base formatter accesses node-specific
         attributes that CastExpression doesn't carry).
         """
-        if not self._validate_data_type(target_type):
-            raise ValueError(
-                f"Invalid target type '{target_type}': "
-                "must contain only alphanumeric characters, spaces, parentheses, and commas."
-            )
+        from rhosocial.activerecord.backend.expression.type_name import (
+            validate_type_name,
+        )
+
+        validate_type_name(target_type)
         sql = f"CAST({inner_sql} AS {target_type})"
         if alias:
             sql = f"{sql} AS {self.format_identifier(alias)}"

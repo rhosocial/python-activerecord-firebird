@@ -240,6 +240,14 @@ _SUGGESTION_TEMPORAL = "Firebird does not support temporal tables."
 
 
 class FirebirdDialect(
+    # The bases below come in bundles: a backend mixin, then the core bundle
+    # it stands in for. The backend's answer has to come first -- a mixin
+    # placed after the class it overrides never wins -- so a new mixin goes
+    # immediately before the core mixin it overrides, and the pairing is read
+    # off the list. Two positions sit outside that pairing and are called out
+    # where they occur: a mixin that overrides a method ``SQLDialectBase``
+    # defines has to precede the base, and a mixin that subclasses a core
+    # mixin has to precede it too (C3: a subclass precedes its base).
     # Firebird-specific mixins MUST precede their generic counterparts so that
     # the C3 linearization resolves the overrides to the Firebird versions.
     #
