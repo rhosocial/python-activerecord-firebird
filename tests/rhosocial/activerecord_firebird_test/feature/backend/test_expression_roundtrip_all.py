@@ -200,7 +200,7 @@ from rhosocial.activerecord.backend.expression.statements.ddl_trigger import (
 from rhosocial.activerecord.backend.expression.statements.dql import QueryStatement
 from rhosocial.activerecord.backend.expression.transaction import (
     BeginTransactionStatement,
-    SetTransactionExpression,
+    SetTransactionStatement,
 )
 from rhosocial.activerecord.backend.expression.statements.dml import (
     MergeAction,
@@ -996,7 +996,7 @@ LEGITIMATE_NON_RENDERS = {
     "rhosocial.activerecord.backend.expression.statements.dml.InsertDataSource": (
         NotImplementedError, _NO_FORMATTER,
     ),
-    "rhosocial.activerecord.backend.expression.transaction.TransactionExpression": (
+    "rhosocial.activerecord.backend.expression.transaction.TransactionStatement": (
         NotImplementedError, _NO_FORMATTER,
     ),
     # The roots of the object tree. Each concrete object overrides `format_method`
@@ -2100,9 +2100,9 @@ PAIR_BEARING_CASES = (
         True,
     ),
     (
-        "SetTransactionExpression.deferrable",
-        lambda d: SetTransactionExpression(d, deferrable=True),
-        lambda d: SetTransactionExpression(d, not_deferrable=True),
+        "SetTransactionStatement.deferrable",
+        lambda d: SetTransactionStatement(d, deferrable=True),
+        lambda d: SetTransactionStatement(d, not_deferrable=True),
         "deferrable",
         "not_deferrable",
         True,

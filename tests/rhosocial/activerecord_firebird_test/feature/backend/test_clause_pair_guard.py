@@ -88,7 +88,7 @@ from rhosocial.activerecord.backend.expression.statements.ddl_view import (
 from rhosocial.activerecord.backend.expression.statements.dql import QueryStatement
 from rhosocial.activerecord.backend.expression.transaction import (
     BeginTransactionStatement,
-    SetTransactionExpression,
+    SetTransactionStatement,
 )
 from rhosocial.activerecord.backend.impl.dummy.dialect import DummyDialect
 from rhosocial.activerecord.backend.impl.firebird.dialect import FirebirdDialect
@@ -342,8 +342,8 @@ PAIR_CASES = (
         a_probe="supports_deferrable_transaction",
     ),
     PairCase(
-        "SetTransactionExpression.deferrable",
-        lambda d, **kw: SetTransactionExpression(d, **kw),
+        "SetTransactionStatement.deferrable",
+        lambda d, **kw: SetTransactionStatement(d, **kw),
         "deferrable",
         "not_deferrable",
         r"(?<!NOT )DEFERRABLE\b",
@@ -369,8 +369,8 @@ PAIR_CASES = (
         capable=True,
     ),
     PairCase(
-        "SetTransactionExpression.wait",
-        lambda d, **kw: SetTransactionExpression(d, **kw),
+        "SetTransactionStatement.wait",
+        lambda d, **kw: SetTransactionStatement(d, **kw),
         "wait",
         "no_wait",
         r"(?<!NO )WAIT\b",
@@ -557,9 +557,9 @@ class TestGuardIsNotVacuous:
             "TableConstraint.enforced",
             "AlterConstraintAction.enforced",
             "BeginTransactionStatement.deferrable",
-            "SetTransactionExpression.deferrable",
+            "SetTransactionStatement.deferrable",
             "BeginTransactionStatement.wait",
-            "SetTransactionExpression.wait",
+            "SetTransactionStatement.wait",
             "DropTableStatement.cascade",
             "DropViewStatement.cascade",
             "DropFunctionStatement.cascade",
@@ -946,9 +946,9 @@ class TestTransactionWaitPairIsWired:
         )
 
     def test_set_transaction_signature_is_pinned(self):
-        actual = set(inspect.signature(SetTransactionExpression.__init__).parameters)
+        actual = set(inspect.signature(SetTransactionStatement.__init__).parameters)
         assert actual == SET_TRANSACTION_PARAMS, (
-            "SetTransactionExpression's parameter list changed; the Firebird "
+            "SetTransactionStatement's parameter list changed; the Firebird "
             "formatter must consume the new parameter before this pin is updated.\n"
             f"  added:   {sorted(actual - SET_TRANSACTION_PARAMS)}\n"
             f"  removed: {sorted(SET_TRANSACTION_PARAMS - actual)}"

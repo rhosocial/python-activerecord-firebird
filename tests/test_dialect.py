@@ -159,9 +159,9 @@ class TestFirebirdDialectTransaction:
 
     def test_format_set_transaction(self, dialect):
         from rhosocial.activerecord.backend.transaction import IsolationLevel, TransactionMode
-        from rhosocial.activerecord.backend.expression.transaction import SetTransactionExpression
+        from rhosocial.activerecord.backend.expression.transaction import SetTransactionStatement
 
-        expr = SetTransactionExpression(
+        expr = SetTransactionStatement(
             dialect,
             isolation_level=IsolationLevel.READ_COMMITTED,
             mode=TransactionMode.READ_WRITE,
