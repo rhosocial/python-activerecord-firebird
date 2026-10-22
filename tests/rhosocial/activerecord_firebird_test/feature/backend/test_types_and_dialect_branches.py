@@ -64,7 +64,7 @@ from rhosocial.activerecord.backend.impl.firebird.expression.column import (
     FirebirdColumnDefinition,
 )
 from rhosocial.activerecord.backend.impl.firebird.expression.create_table import (
-    FirebirdCreateTableExpression,
+    FirebirdCreateTableStatement,
 )
 from rhosocial.activerecord.backend.impl.firebird.expression.ddl.sequence import (
     FirebirdCreateSequenceStatement,
@@ -863,7 +863,7 @@ class TestCreateTableRebuildSnapshots:
         (False, 'ON COMMIT PRESERVE ROWS'),
     ])
     def test_global_temporary_table(self, dialect, on_commit_delete, expected_tail):
-        expr = FirebirdCreateTableExpression(
+        expr = FirebirdCreateTableStatement(
             dialect, Table(dialect, "tmp_t"),
             [_column(dialect, "id", IntegerType(dialect))],
             temporary=True, on_commit_delete=on_commit_delete,
@@ -882,7 +882,7 @@ class TestCreateTableRebuildSnapshots:
         ``on_commit_delete`` is a declared field of this backend's own node,
         not an attribute mounted on the generic statement after construction.
         """
-        expr = FirebirdCreateTableExpression(
+        expr = FirebirdCreateTableStatement(
             dialect, Table(dialect, "gt_a"),
             [_column(dialect, "id", IntegerType(dialect))],
             temporary=True, on_commit_delete=on_commit_delete,
@@ -918,7 +918,7 @@ class TestCreateTableRebuildSnapshots:
         assert sql.startswith('CREATE TABLE IF NOT EXISTS "TBL_C"')
 
     def test_external_file_clause(self, dialect):
-        expr = FirebirdCreateTableExpression(
+        expr = FirebirdCreateTableStatement(
             dialect, Table(dialect, "ext_t"),
             [_column(dialect, "id", IntegerType(dialect))],
             external_file="/data/ext.fdb",

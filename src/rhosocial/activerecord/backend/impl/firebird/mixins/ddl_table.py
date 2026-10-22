@@ -180,15 +180,15 @@ class FirebirdTableMixin:
         parts.append(expr.table.to_sql()[0])
 
         if expr.temporary:
-            # ``on_commit_delete`` is FirebirdCreateTableExpression's field --
+            # ``on_commit_delete`` is FirebirdCreateTableStatement's field --
             # the generic statement has no such clause, and omitting it is the
             # server's own default (ON COMMIT DELETE ROWS). The kind decides
             # whether the question exists, then the field is read.
             from rhosocial.activerecord.backend.impl.firebird.expression.create_table import (
-                FirebirdCreateTableExpression,
+                FirebirdCreateTableStatement,
             )
 
-            if isinstance(expr, FirebirdCreateTableExpression):
+            if isinstance(expr, FirebirdCreateTableStatement):
                 if expr.on_commit_delete:
                     parts.append("ON COMMIT DELETE ROWS")
                 else:
@@ -207,14 +207,14 @@ class FirebirdTableMixin:
 
         parts.append(f"({', '.join(column_parts)})")
 
-        # ``external_file`` is FirebirdCreateTableExpression's field; the
+        # ``external_file`` is FirebirdCreateTableStatement's field; the
         # generic statement declares no such clause, so the kind decides
         # whether the question exists, then the field is read.
         from rhosocial.activerecord.backend.impl.firebird.expression.create_table import (
-            FirebirdCreateTableExpression,
+            FirebirdCreateTableStatement,
         )
 
-        if isinstance(expr, FirebirdCreateTableExpression) and expr.external_file:
+        if isinstance(expr, FirebirdCreateTableStatement) and expr.external_file:
             parts.append(f"EXTERNAL FILE '{expr.external_file}'")
 
         return ' '.join(parts), tuple(all_params)

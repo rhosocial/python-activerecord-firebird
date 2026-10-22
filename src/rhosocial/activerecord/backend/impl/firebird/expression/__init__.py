@@ -2,7 +2,7 @@
 """Firebird-specific expression types."""
 
 from .column import FirebirdColumnDefinition, FirebirdColumnOptions
-from .create_table import FirebirdCreateTableExpression
+from .create_table import FirebirdCreateTableStatement
 from .alter_table import (
     SetGeneratedAction,
     RestartIdentityAction,
@@ -63,7 +63,7 @@ from .types import (
 
 __all__ = [
     'FirebirdColumnDefinition', 'FirebirdColumnOptions',
-    "FirebirdCreateTableExpression",
+    "FirebirdCreateTableStatement",
     "SetGeneratedAction",
     "RestartIdentityAction",
     "SetIncrementAction",
