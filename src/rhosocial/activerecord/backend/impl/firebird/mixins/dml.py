@@ -17,11 +17,11 @@ if TYPE_CHECKING:
         MergeStatement,
     )
     from ..expression.dml import (
-        UpdateOrInsertExpression,
-        ExecuteBlockExpression,
+        UpdateOrInsertStatement,
+        ExecuteBlockStatement,
         AutonomousTransactionDoExpression,
     )
-    from ..expression.execute_statement import FirebirdExecuteStatementExpression
+    from ..expression.execute_statement import FirebirdExecuteStatement
 
 
 class FirebirdDMLOperationMixin:
@@ -165,7 +165,7 @@ class FirebirdDMLOperationMixin:
 
         return sql, tuple(all_params)
 
-    def format_update_or_insert(self, expr: "UpdateOrInsertExpression") -> Tuple[str, tuple]:
+    def format_update_or_insert_statement(self, expr: "UpdateOrInsertStatement") -> Tuple[str, tuple]:
         table_name = expr.table
         insert_columns = expr.insert_columns
         insert_values = expr.insert_values
@@ -320,7 +320,7 @@ class FirebirdDMLOperationMixin:
 
         return " ".join(merge_sql_parts), tuple(all_params)
 
-    def format_execute_block(self, expr: "ExecuteBlockExpression") -> Tuple[str, tuple]:
+    def format_execute_block_statement(self, expr: "ExecuteBlockStatement") -> Tuple[str, tuple]:
         block = expr.block
         params = expr.params
 
@@ -335,7 +335,7 @@ class FirebirdDMLOperationMixin:
             sql = f"EXECUTE BLOCK\nAS\nBEGIN\n{block}\nEND"
         return sql, tuple(all_params)
 
-    def format_execute_statement(self, expr: "FirebirdExecuteStatementExpression") -> Tuple[str, tuple]:
+    def format_execute_statement(self, expr: "FirebirdExecuteStatement") -> Tuple[str, tuple]:
         """Format EXECUTE STATEMENT (dynamic SQL) for Firebird.
 
         The bare ``EXECUTE STATEMENT`` form is available since Firebird 1.5,
@@ -379,11 +379,13 @@ class FirebirdDMLOperationMixin:
 
         return " ".join(parts), tuple(all_params)
 
-    def format_autonomous_transaction_do(self, expr: "AutonomousTransactionDoExpression") -> Tuple[str, tuple]:
+    def format_autonomous_transaction_do_expression(
+        self, expr: "AutonomousTransactionDoExpression"
+    ) -> Tuple[str, tuple]:
         """Format IN AUTONOMOUS TRANSACTION DO <statement> (Firebird 3.0+).
 
         The block is wrapped in ``BEGIN ... END`` unless it already starts
-        with ``BEGIN``, mirroring :meth:`format_execute_block`.
+        with ``BEGIN``, mirroring :meth:`format_execute_block_statement`.
         """
         block = expr.block
 

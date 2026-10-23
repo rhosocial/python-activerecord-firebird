@@ -956,7 +956,7 @@ class TestTransactionWaitPairIsWired:
 
     @pytest.mark.parametrize(
         "method_name",
-        ["format_begin_transaction_statement", "format_set_transaction"],
+        ["format_begin_transaction_statement", "format_set_transaction_statement"],
     )
     def test_firebird_formatter_consumes_both_wait_parameters(self, method_name):
         source = inspect.getsource(getattr(FirebirdTransactionMixin, method_name))

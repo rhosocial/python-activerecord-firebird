@@ -54,7 +54,7 @@ def _normalize_routine_mode(mode: FirebirdRoutineMode) -> FirebirdRoutineMode:
 RoutineParam = Union[tuple, dict]
 
 
-class FirebirdCreateProcedureExpression(BaseExpression):
+class FirebirdCreateProcedureStatement(BaseExpression):
     """CREATE [OR ALTER | RECREATE] PROCEDURE name (params) RETURNS (...) AS <body>."""
 
     def __init__(
@@ -78,7 +78,7 @@ class FirebirdCreateProcedureExpression(BaseExpression):
         return "format_create_procedure_statement"
 
 
-class FirebirdCreateFunctionExpression(BaseExpression):
+class FirebirdCreateFunctionStatement(BaseExpression):
     """CREATE [OR ALTER | RECREATE] FUNCTION name (params) RETURNS type AS <body>.
 
     Stored functions require Firebird 3.0 or later.
@@ -105,7 +105,7 @@ class FirebirdCreateFunctionExpression(BaseExpression):
         return "format_create_function_statement"
 
 
-class FirebirdDropRoutineExpression(BaseExpression):
+class FirebirdDropRoutineStatement(BaseExpression):
     """DROP / CREATE OR ALTER / RECREATE for a PROCEDURE or FUNCTION.
 
     ``routine_type`` selects the object kind and ``mode`` the DDL variant.
@@ -138,7 +138,7 @@ class FirebirdDropRoutineExpression(BaseExpression):
 
 __all__ = [
     "FirebirdRoutineMode",
-    "FirebirdCreateProcedureExpression",
-    "FirebirdCreateFunctionExpression",
-    "FirebirdDropRoutineExpression",
+    "FirebirdCreateProcedureStatement",
+    "FirebirdCreateFunctionStatement",
+    "FirebirdDropRoutineStatement",
 ]

@@ -38,7 +38,7 @@ class BlobColumnExpression(BaseExpression):
 
     @property
     def format_method(self) -> str:
-        return "format_blob_column"
+        return "format_blob_column_expression"
 
 
 class BlobLiteralExpression(BaseExpression):
@@ -77,7 +77,7 @@ class BlobLiteralExpression(BaseExpression):
 
     @property
     def format_method(self) -> str:
-        return "format_blob_literal"
+        return "format_blob_literal_expression"
 
 
 __all__ = ["BlobColumnExpression", "BlobLiteralExpression"]

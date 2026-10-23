@@ -21,7 +21,7 @@ from rhosocial.activerecord.backend.expression.statements import (
 )
 from rhosocial.activerecord.backend.impl.firebird.dialect import FirebirdDialect
 from rhosocial.activerecord.backend.impl.firebird.expression.dml import (
-    UpdateOrInsertExpression,
+    UpdateOrInsertStatement,
 )
 from rhosocial.activerecord.backend.impl.firebird.mixins.dml import FirebirdDMLOperationMixin
 
@@ -253,7 +253,7 @@ class TestMergeVersionBoundaries:
 
     def test_update_or_insert_unaffected(self):
         dialect = FirebirdDialect((2, 5, 0))
-        expr = UpdateOrInsertExpression(
+        expr = UpdateOrInsertStatement(
             dialect,
             Table(dialect, "products"),
             ["id", "name", "price"],

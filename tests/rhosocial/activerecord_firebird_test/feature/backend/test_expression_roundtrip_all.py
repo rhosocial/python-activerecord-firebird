@@ -147,7 +147,7 @@ from rhosocial.activerecord.backend.impl.firebird.expression.blob import (
     BlobLiteralExpression,
 )
 from rhosocial.activerecord.backend.impl.firebird.expression.comment import (
-    FirebirdCommentExpression,
+    FirebirdCommentOnStatement,
     FirebirdCommentObjectType,
 )
 from rhosocial.activerecord.backend.impl.firebird.expression.column import (
@@ -158,8 +158,8 @@ from rhosocial.activerecord.backend.impl.firebird.expression.ddl.domain import (
     FirebirdSetDomainDataTypeAction,
 )
 from rhosocial.activerecord.backend.impl.firebird.expression.ddl.routine import (
-    FirebirdCreateFunctionExpression,
-    FirebirdCreateProcedureExpression,
+    FirebirdCreateFunctionStatement,
+    FirebirdCreateProcedureStatement,
 )
 from rhosocial.activerecord.backend.impl.firebird.expression.ddl.sequence import (
     FirebirdCreateSequenceStatement,
@@ -847,14 +847,14 @@ def register_specials():
     # This backend's own CREATE PROCEDURE / CREATE FUNCTION carry a PSQL ``mode``
     # and render through the same formatter names as the core statements.
     register_special_constructor(
-        "impl.firebird.expression.ddl.routine.FirebirdCreateProcedureExpression",
-        lambda d: FirebirdCreateProcedureExpression(
+        "impl.firebird.expression.ddl.routine.FirebirdCreateProcedureStatement",
+        lambda d: FirebirdCreateProcedureStatement(
             d, "proc", params=[("a", "INTEGER")], body="SELECT 1"
         ),
     )
     register_special_constructor(
-        "impl.firebird.expression.ddl.routine.FirebirdCreateFunctionExpression",
-        lambda d: FirebirdCreateFunctionExpression(
+        "impl.firebird.expression.ddl.routine.FirebirdCreateFunctionStatement",
+        lambda d: FirebirdCreateFunctionStatement(
             d, "fn", params=[("a", "INTEGER")], returns="INTEGER", body="SELECT 1"
         ),
     )
@@ -869,8 +869,8 @@ def register_specials():
     # guess's word for ``object_type`` is refused by the normalization the
     # artifact round-trip needs, so the factory names a real kind.
     register_special_constructor(
-        "impl.firebird.expression.comment.FirebirdCommentExpression",
-        lambda d: FirebirdCommentExpression(
+        "impl.firebird.expression.comment.FirebirdCommentOnStatement",
+        lambda d: FirebirdCommentOnStatement(
             d, FirebirdCommentObjectType.TABLE, "t", comment="c"
         ),
     )
@@ -1151,9 +1151,9 @@ LEGITIMATE_NON_RENDERS = {
     # Firebird subclass and the subclass's fields are absent from the base.
     #
     # The reads on the Firebird side are each self-consistent --
-    # ``FirebirdCreateDatabaseExpression`` declares ``file_path``,
-    # ``FirebirdCreateFunctionExpression`` declares ``mode``, and
-    # ``FirebirdCommentExpression`` declares ``object_name`` -- so this is a
+    # ``FirebirdCreateDatabaseStatement`` declares ``file_path``,
+    # ``FirebirdCreateFunctionStatement`` declares ``mode``, and
+    # ``FirebirdCommentOnStatement`` declares ``object_name`` -- so this is a
     # collision, not a mis-read. It predates this matrix. Each entry pins the
     # exact missing attribute, so it stops matching the moment either shape
     # changes and whoever fixes the collision finds the pin failing.
@@ -1163,7 +1163,7 @@ LEGITIMATE_NON_RENDERS = {
     # *returns*, and that inspection sits after the call. Each colliding read is
     # inside the formatter body -- ``format_create_database_statement`` reading
     # ``expr.file_path``, ``format_create_function_statement`` reading
-    # ``expr.mode``, ``format_comment_statement`` reading ``expr.object_name``
+    # ``expr.mode``, ``format_comment_on_statement`` reading ``expr.object_name``
     # -- so the formatter never returns and the shape check is never reached.
     # The symptom is unmoved, which is what says the cause is still the collision
     # and not something new; had it become a ``TypeError`` from the shape check,
@@ -1345,19 +1345,19 @@ UNMODELLED_FORMATTERS = {
     "SQL/XML (Firebird 4 has no XML query functions, so the dialect declares "
     "no ``format_xml*`` method at all; the S1-c ``PassingClause`` rides the "
     "same absence through its own ``format_passing_clause``)": (
-        "format_xmlagg_expression",
-        "format_xmlattributes_expression",
-        "format_xmlcomment_expression",
-        "format_xmlconcat_expression",
-        "format_xmlelement_expression",
+        "format_xml_agg_expression",
+        "format_xml_attributes_expression",
+        "format_xml_comment_expression",
+        "format_xml_concat_expression",
+        "format_xml_element_expression",
         "format_xmlexists_predicate",
-        "format_xmlforest_expression",
+        "format_xml_forest_expression",
         "format_xmlpi_expression",
-        "format_xmlparse_expression",
-        "format_xmlquery_expression",
-        "format_xmlroot_expression",
-        "format_xmlserialize_expression",
-        "format_xmltable_expression",
+        "format_xml_parse_expression",
+        "format_xml_query_expression",
+        "format_xml_root_expression",
+        "format_xml_serialize_expression",
+        "format_xml_table_expression",
         "format_passing_clause",
     ),
 }

@@ -5,7 +5,7 @@ Procedures exist since Firebird 1.0 and are gated here at ``(2, 5, 0)``;
 stored functions were introduced in Firebird 3.0.  The PSQL body is
 received as a string; when it does not already start with ``BEGIN`` it is
 wrapped in a ``BEGIN ... END`` block (mirroring
-``FirebirdDMLOperationMixin.format_execute_block``).
+``FirebirdDMLOperationMixin.format_execute_block_statement``).
 """
 
 from typing import Any, List, Tuple, TYPE_CHECKING
@@ -18,15 +18,15 @@ from ..expression.ddl.routine import FirebirdRoutineMode
 
 if TYPE_CHECKING:
     from ..expression.ddl.routine import (
-        FirebirdCreateProcedureExpression,
-        FirebirdCreateFunctionExpression,
-        FirebirdDropRoutineExpression,
+        FirebirdCreateProcedureStatement,
+        FirebirdCreateFunctionStatement,
+        FirebirdDropRoutineStatement,
     )
 
 
 class FirebirdRoutineMixin:
 
-    def format_create_procedure_statement(self, expr: "FirebirdCreateProcedureExpression") -> Tuple[str, tuple]:
+    def format_create_procedure_statement(self, expr: "FirebirdCreateProcedureStatement") -> Tuple[str, tuple]:
         """Format CREATE [OR ALTER | RECREATE] PROCEDURE ... AS <body>."""
         self._check_routine_version("CREATE PROCEDURE", (2, 5, 0))
 
@@ -39,7 +39,7 @@ class FirebirdRoutineMixin:
         parts.append(self._format_psql_body(expr.body))
         return " ".join(parts), ()
 
-    def format_create_function_statement(self, expr: "FirebirdCreateFunctionExpression") -> Tuple[str, tuple]:
+    def format_create_function_statement(self, expr: "FirebirdCreateFunctionStatement") -> Tuple[str, tuple]:
         """Format CREATE [OR ALTER | RECREATE] FUNCTION ... RETURNS type AS <body>.
 
         Overrides the core ``FunctionMixin`` renderer so the Firebird PSQL
@@ -57,7 +57,7 @@ class FirebirdRoutineMixin:
         parts.append(self._format_psql_body(expr.body))
         return " ".join(parts), ()
 
-    def format_drop_routine_statement(self, expr: "FirebirdDropRoutineExpression") -> Tuple[str, tuple]:
+    def format_drop_routine_statement(self, expr: "FirebirdDropRoutineStatement") -> Tuple[str, tuple]:
         """Format DROP / CREATE OR ALTER / RECREATE for a PROCEDURE or FUNCTION."""
         minimum = (3, 0, 0) if expr.routine_type == "FUNCTION" else (2, 5, 0)
         self._check_routine_version(f"{expr.routine_type} routine DDL", minimum)

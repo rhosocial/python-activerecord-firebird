@@ -7,22 +7,22 @@ All tests are pure construction — no database connection.
 
 from rhosocial.activerecord.backend.impl.firebird.dialect import FirebirdDialect
 from rhosocial.activerecord.backend.impl.firebird.expression import (
-    FirebirdAlterExceptionExpression,
-    FirebirdCreateExceptionExpression,
-    FirebirdDropExceptionExpression,
+    FirebirdAlterExceptionStatement,
+    FirebirdCreateExceptionStatement,
+    FirebirdDropExceptionStatement,
 )
 
 
 class TestCreateException:
     def test_create_exception(self):
         dialect = FirebirdDialect((4, 0, 0))
-        sql, params = FirebirdCreateExceptionExpression(dialect, "e_bad_qty", "库存不足").to_sql()
+        sql, params = FirebirdCreateExceptionStatement(dialect, "e_bad_qty", "库存不足").to_sql()
         assert sql == 'CREATE EXCEPTION "E_BAD_QTY" \'库存不足\''
         assert params == ()
 
     def test_create_exception_escapes_quote(self):
         dialect = FirebirdDialect((4, 0, 0))
-        sql, params = FirebirdCreateExceptionExpression(dialect, "e_q", "it's bad").to_sql()
+        sql, params = FirebirdCreateExceptionStatement(dialect, "e_q", "it's bad").to_sql()
         assert sql == "CREATE EXCEPTION \"E_Q\" 'it''s bad'"
         assert params == ()
 
@@ -30,7 +30,7 @@ class TestCreateException:
 class TestAlterException:
     def test_alter_exception(self):
         dialect = FirebirdDialect((4, 0, 0))
-        sql, params = FirebirdAlterExceptionExpression(dialect, "e_bad_qty", "新消息").to_sql()
+        sql, params = FirebirdAlterExceptionStatement(dialect, "e_bad_qty", "新消息").to_sql()
         assert sql == 'ALTER EXCEPTION "E_BAD_QTY" \'新消息\''
         assert params == ()
 
@@ -38,7 +38,7 @@ class TestAlterException:
 class TestDropException:
     def test_drop_exception(self):
         dialect = FirebirdDialect((4, 0, 0))
-        sql, params = FirebirdDropExceptionExpression(dialect, "e_bad_qty").to_sql()
+        sql, params = FirebirdDropExceptionStatement(dialect, "e_bad_qty").to_sql()
         assert sql == 'DROP EXCEPTION "E_BAD_QTY"'
         assert params == ()
 

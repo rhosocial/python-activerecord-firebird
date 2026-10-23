@@ -23,9 +23,9 @@ from rhosocial.activerecord.backend.impl.firebird.expression.ddl.domain import (
     FirebirdDropDomainExpression,
 )
 from rhosocial.activerecord.backend.impl.firebird.expression.ddl.package import (
-    FirebirdCreatePackageBodyExpression,
-    FirebirdCreatePackageExpression,
-    FirebirdDropPackageExpression,
+    FirebirdCreatePackageBodyStatement,
+    FirebirdCreatePackageStatement,
+    FirebirdDropPackageStatement,
 )
 
 
@@ -89,23 +89,23 @@ class TestDomainDDL:
 
 class TestPackageDDL:
     def test_create_package_with_body(self, dialect):
-        sql, _ = FirebirdCreatePackageExpression(
+        sql, _ = FirebirdCreatePackageStatement(
             dialect, "pkg_inventory", body="  PROCEDURE p();"
         ).to_sql()
         assert 'CREATE PACKAGE "PKG_INVENTORY"' in sql
         assert "PROCEDURE p();" in sql
 
     def test_create_package_body(self, dialect):
-        sql, _ = FirebirdCreatePackageBodyExpression(
+        sql, _ = FirebirdCreatePackageBodyStatement(
             dialect, "pkg_inventory", body="IMPLEMENTATION"
         ).to_sql()
         assert 'CREATE PACKAGE BODY "PKG_INVENTORY"' in sql
         assert "IMPLEMENTATION" in sql
 
     def test_drop_package_variants(self, dialect):
-        header_sql, _ = FirebirdDropPackageExpression(dialect, "pkg_old").to_sql()
+        header_sql, _ = FirebirdDropPackageStatement(dialect, "pkg_old").to_sql()
         assert header_sql == 'DROP PACKAGE "PKG_OLD"'
-        body_sql, _ = FirebirdDropPackageExpression(dialect, "pkg_old", body=True).to_sql()
+        body_sql, _ = FirebirdDropPackageStatement(dialect, "pkg_old", body=True).to_sql()
         assert body_sql == 'DROP PACKAGE BODY "PKG_OLD"'
 
 

@@ -11,12 +11,12 @@ import pytest
 from rhosocial.activerecord.backend.dialect.exceptions import UnsupportedFeatureError
 from rhosocial.activerecord.backend.impl.firebird.dialect import FirebirdDialect
 from rhosocial.activerecord.backend.impl.firebird.expression import (
-    FirebirdCreateFunctionExpression,
-    FirebirdCreatePackageBodyExpression,
-    FirebirdCreatePackageExpression,
-    FirebirdCreateProcedureExpression,
-    FirebirdDropPackageExpression,
-    FirebirdDropRoutineExpression,
+    FirebirdCreateFunctionStatement,
+    FirebirdCreatePackageBodyStatement,
+    FirebirdCreatePackageStatement,
+    FirebirdCreateProcedureStatement,
+    FirebirdDropPackageStatement,
+    FirebirdDropRoutineStatement,
     FirebirdRoutineMode,
 )
 
@@ -24,7 +24,7 @@ from rhosocial.activerecord.backend.impl.firebird.expression import (
 class TestCreateProcedure:
     def test_create_procedure(self):
         dialect = FirebirdDialect((4, 0, 0))
-        expr = FirebirdCreateProcedureExpression(
+        expr = FirebirdCreateProcedureStatement(
             dialect,
             "p",
             params=[("x", "INT")],
@@ -40,7 +40,7 @@ class TestCreateProcedure:
 
     def test_create_or_alter_procedure(self):
         dialect = FirebirdDialect((4, 0, 0))
-        expr = FirebirdCreateProcedureExpression(
+        expr = FirebirdCreateProcedureStatement(
             dialect,
             "p",
             params=[("x", "INT")],
@@ -54,7 +54,7 @@ class TestCreateProcedure:
 
     def test_recreate_procedure(self):
         dialect = FirebirdDialect((4, 0, 0))
-        expr = FirebirdCreateProcedureExpression(
+        expr = FirebirdCreateProcedureStatement(
             dialect,
             "p",
             params=[("x", "INT")],
@@ -69,7 +69,7 @@ class TestCreateProcedure:
 
     def test_procedure_body_wrapped_when_not_begin(self):
         dialect = FirebirdDialect((4, 0, 0))
-        expr = FirebirdCreateProcedureExpression(
+        expr = FirebirdCreateProcedureStatement(
             dialect,
             "p",
             params=[("x", "INT")],
@@ -81,7 +81,7 @@ class TestCreateProcedure:
 
     def test_procedure_supports_dict_params(self):
         dialect = FirebirdDialect((4, 0, 0))
-        expr = FirebirdCreateProcedureExpression(
+        expr = FirebirdCreateProcedureStatement(
             dialect,
             "p",
             params=[{"name": "x", "type": "INT"}],
@@ -95,7 +95,7 @@ class TestCreateProcedure:
 class TestCreateFunction:
     def test_create_function(self):
         dialect = FirebirdDialect((4, 0, 0))
-        expr = FirebirdCreateFunctionExpression(
+        expr = FirebirdCreateFunctionStatement(
             dialect,
             "f",
             params=[("x", "INT")],
@@ -112,7 +112,7 @@ class TestCreateFunction:
 class TestDropRoutine:
     def test_drop_procedure(self):
         dialect = FirebirdDialect((4, 0, 0))
-        sql, params = FirebirdDropRoutineExpression(
+        sql, params = FirebirdDropRoutineStatement(
             dialect, "p", routine_type="PROCEDURE"
         ).to_sql()
         assert sql == 'DROP PROCEDURE "P"'
@@ -120,7 +120,7 @@ class TestDropRoutine:
 
     def test_drop_function(self):
         dialect = FirebirdDialect((4, 0, 0))
-        sql, params = FirebirdDropRoutineExpression(
+        sql, params = FirebirdDropRoutineStatement(
             dialect, "f", routine_type="FUNCTION"
         ).to_sql()
         assert sql == 'DROP FUNCTION "F"'
@@ -128,7 +128,7 @@ class TestDropRoutine:
 
     def test_recreate_via_drop_routine(self):
         dialect = FirebirdDialect((4, 0, 0))
-        expr = FirebirdDropRoutineExpression(
+        expr = FirebirdDropRoutineStatement(
             dialect,
             "p",
             routine_type="PROCEDURE",
@@ -144,7 +144,7 @@ class TestDropRoutine:
 class TestPackage:
     def test_create_package(self):
         dialect = FirebirdDialect((4, 0, 0))
-        expr = FirebirdCreatePackageExpression(
+        expr = FirebirdCreatePackageStatement(
             dialect, "pk", body="BEGIN PROCEDURE p (x INT); END"
         )
         sql, params = expr.to_sql()
@@ -153,7 +153,7 @@ class TestPackage:
 
     def test_create_package_body(self):
         dialect = FirebirdDialect((4, 0, 0))
-        expr = FirebirdCreatePackageBodyExpression(
+        expr = FirebirdCreatePackageBodyStatement(
             dialect, "pk", body="BEGIN PROCEDURE p (x INT) AS BEGIN END END"
         )
         sql, params = expr.to_sql()
@@ -162,13 +162,13 @@ class TestPackage:
 
     def test_drop_package(self):
         dialect = FirebirdDialect((4, 0, 0))
-        sql, params = FirebirdDropPackageExpression(dialect, "pk").to_sql()
+        sql, params = FirebirdDropPackageStatement(dialect, "pk").to_sql()
         assert sql == 'DROP PACKAGE "PK"'
         assert params == ()
 
     def test_drop_package_body(self):
         dialect = FirebirdDialect((4, 0, 0))
-        sql, params = FirebirdDropPackageExpression(dialect, "pk", body=True).to_sql()
+        sql, params = FirebirdDropPackageStatement(dialect, "pk", body=True).to_sql()
         assert sql == 'DROP PACKAGE BODY "PK"'
         assert params == ()
 
@@ -176,7 +176,7 @@ class TestPackage:
 class TestRoutineVersionGating:
     def test_procedure_ok_on_fb2_5(self):
         dialect = FirebirdDialect((2, 5, 0))
-        expr = FirebirdCreateProcedureExpression(
+        expr = FirebirdCreateProcedureStatement(
             dialect, "p", params=[("x", "INT")], body="BEGIN END"
         )
         sql, params = expr.to_sql()
@@ -184,7 +184,7 @@ class TestRoutineVersionGating:
 
     def test_function_raises_on_fb2_5(self):
         dialect = FirebirdDialect((2, 5, 0))
-        expr = FirebirdCreateFunctionExpression(
+        expr = FirebirdCreateFunctionStatement(
             dialect, "f", params=[("x", "INT")], returns="INT", body="BEGIN END"
         )
         with pytest.raises(UnsupportedFeatureError):
@@ -193,19 +193,19 @@ class TestRoutineVersionGating:
     def test_package_raises_on_fb2_5(self):
         dialect = FirebirdDialect((2, 5, 0))
         with pytest.raises(UnsupportedFeatureError):
-            FirebirdCreatePackageExpression(dialect, "pk", body="BEGIN END").to_sql()
+            FirebirdCreatePackageStatement(dialect, "pk", body="BEGIN END").to_sql()
 
     def test_drop_function_raises_on_fb2_5(self):
         dialect = FirebirdDialect((2, 5, 0))
         with pytest.raises(UnsupportedFeatureError):
-            FirebirdDropRoutineExpression(dialect, "f", routine_type="FUNCTION").to_sql()
+            FirebirdDropRoutineStatement(dialect, "f", routine_type="FUNCTION").to_sql()
 
     def test_function_and_package_ok_on_fb3(self):
         dialect = FirebirdDialect((3, 0, 0))
-        FirebirdCreateFunctionExpression(
+        FirebirdCreateFunctionStatement(
             dialect, "f", params=[("x", "INT")], returns="INT", body="BEGIN END"
         ).to_sql()
-        FirebirdCreatePackageExpression(dialect, "pk", body="BEGIN END").to_sql()
+        FirebirdCreatePackageStatement(dialect, "pk", body="BEGIN END").to_sql()
 
     def test_supports_packages_gated(self):
         assert FirebirdDialect((3, 0, 0)).supports_packages() is True

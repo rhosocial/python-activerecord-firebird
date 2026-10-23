@@ -89,7 +89,7 @@ class FirebirdTransactionMixin:
 
         return " ".join(parts), ()
 
-    def format_set_transaction(self, expr: "SetTransactionStatement") -> Tuple[str, tuple]:
+    def format_set_transaction_statement(self, expr: "SetTransactionStatement") -> Tuple[str, tuple]:
         from rhosocial.activerecord.backend.transaction import IsolationLevel, TransactionMode
 
         parts = ["SET TRANSACTION"]

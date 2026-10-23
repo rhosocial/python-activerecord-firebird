@@ -295,7 +295,7 @@ class FirebirdDialect(
     # that forwards to the mixin would make the same answer reachable twice.
     FirebirdDMLOperationMixin,  # Must be before DMLMixin
     FirebirdTableMixin,         # Before DDLColumnMixin and before TableMixin
-    FirebirdCommentMixin,       # Must be before TableMixin (supports_comment_on/format_comment_statement)
+    FirebirdCommentMixin,       # Must be before TableMixin (supports_comment_on/format_comment_on_statement)
     DDLColumnMixin,
     UserDefinedTypeMixin,
     TransactionControlMixin,

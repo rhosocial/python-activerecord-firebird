@@ -22,7 +22,7 @@ class GenIdExpression(BaseExpression):
 
     @property
     def format_method(self) -> str:
-        return "format_gen_id"
+        return "format_gen_id_expression"
 
     def __repr__(self) -> str:
         return f"GenIdExpression({self.generator_name}, step={self.step})"
@@ -37,7 +37,7 @@ class NextValueForExpression(BaseExpression):
 
     @property
     def format_method(self) -> str:
-        return "format_next_value_for"
+        return "format_next_value_for_expression"
 
     def __repr__(self) -> str:
         return f"NextValueForExpression({self.sequence_name})"

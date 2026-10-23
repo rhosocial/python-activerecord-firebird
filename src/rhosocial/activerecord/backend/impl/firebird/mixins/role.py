@@ -15,9 +15,9 @@ from ..expression.ddl.role import FirebirdRoleAlterClause
 
 if TYPE_CHECKING:
     from ..expression.ddl.role import (
-        FirebirdCreateRoleExpression,
-        FirebirdAlterRoleExpression,
-        FirebirdDropRoleExpression,
+        FirebirdCreateRoleStatement,
+        FirebirdAlterRoleStatement,
+        FirebirdDropRoleStatement,
     )
 
 
@@ -35,12 +35,12 @@ class FirebirdRoleMixin:
     def supports_drop_role(self) -> bool:
         return _norm_version(self.version) >= (2, 5, 0)
 
-    def format_create_role_statement(self, expr: "FirebirdCreateRoleExpression") -> Tuple[str, tuple]:
+    def format_create_role_statement(self, expr: "FirebirdCreateRoleStatement") -> Tuple[str, tuple]:
         """Format CREATE ROLE name."""
         self._check_role_version("CREATE ROLE", (2, 5, 0))
         return f"CREATE ROLE {self.format_identifier(expr.role_name)}", ()
 
-    def format_alter_role_statement(self, expr: "FirebirdAlterRoleExpression") -> Tuple[str, tuple]:
+    def format_alter_role_statement(self, expr: "FirebirdAlterRoleStatement") -> Tuple[str, tuple]:
         """Format ALTER ROLE name <clause> (Firebird 3.0+).
 
         Firebird 5.0 ALTER ROLE supports: ``SET SYSTEM PRIVILEGES TO <list>``,
@@ -63,7 +63,7 @@ class FirebirdRoleMixin:
             )
         return f"ALTER ROLE {name} {expr.clause.value}", ()
 
-    def format_drop_role_statement(self, expr: "FirebirdDropRoleExpression") -> Tuple[str, tuple]:
+    def format_drop_role_statement(self, expr: "FirebirdDropRoleStatement") -> Tuple[str, tuple]:
         """Format DROP ROLE name."""
         self._check_role_version("DROP ROLE", (2, 5, 0))
         return f"DROP ROLE {self.format_identifier(expr.role_name)}", ()

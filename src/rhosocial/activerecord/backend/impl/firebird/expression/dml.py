@@ -1,9 +1,9 @@
 # src/rhosocial/activerecord/backend/impl/firebird/expression/dml.py
 """Firebird DML-specific expression classes.
 
-``UpdateOrInsertExpression`` wraps the ``UPDATE OR INSERT INTO … MATCHING …``
+``UpdateOrInsertStatement`` wraps the ``UPDATE OR INSERT INTO … MATCHING …``
 statement.  ``AutonomousTransactionDoExpression`` wraps the
-``IN AUTONOMOUS TRANSACTION DO …`` block.  ``ExecuteBlockExpression`` wraps the
+``IN AUTONOMOUS TRANSACTION DO …`` block.  ``ExecuteBlockStatement`` wraps the
 ``EXECUTE BLOCK …`` statement.
 """
 
@@ -15,7 +15,7 @@ if TYPE_CHECKING:  # pragma: no cover
     from rhosocial.activerecord.backend.dialect import SQLDialectBase
 
 
-class UpdateOrInsertExpression(BaseExpression):
+class UpdateOrInsertStatement(BaseExpression):
     """``UPDATE OR INSERT INTO table (cols) VALUES (vals) MATCHING (match)
     [RETURNING …]``.
 
@@ -53,7 +53,7 @@ class UpdateOrInsertExpression(BaseExpression):
 
     @property
     def format_method(self) -> str:
-        return "format_update_or_insert"
+        return "format_update_or_insert_statement"
 
 
 class AutonomousTransactionDoExpression(BaseExpression):
@@ -65,10 +65,10 @@ class AutonomousTransactionDoExpression(BaseExpression):
 
     @property
     def format_method(self) -> str:
-        return "format_autonomous_transaction_do"
+        return "format_autonomous_transaction_do_expression"
 
 
-class ExecuteBlockExpression(BaseExpression):
+class ExecuteBlockStatement(BaseExpression):
     """``EXECUTE BLOCK (…) AS BEGIN … END``."""
 
     def __init__(
@@ -83,11 +83,11 @@ class ExecuteBlockExpression(BaseExpression):
 
     @property
     def format_method(self) -> str:
-        return "format_execute_block"
+        return "format_execute_block_statement"
 
 
 __all__ = [
-    "UpdateOrInsertExpression",
+    "UpdateOrInsertStatement",
     "AutonomousTransactionDoExpression",
-    "ExecuteBlockExpression",
+    "ExecuteBlockStatement",
 ]

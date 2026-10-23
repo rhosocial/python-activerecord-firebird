@@ -9,7 +9,7 @@ if TYPE_CHECKING:
 
 class FirebirdBlobMixin:
 
-    def format_blob_column(self, expr: "BlobColumnExpression") -> Tuple[str, tuple]:
+    def format_blob_column_expression(self, expr: "BlobColumnExpression") -> Tuple[str, tuple]:
         column_name = expr.column_name
         sub_type = expr.sub_type
         segment_size = expr.segment_size
@@ -27,6 +27,6 @@ class FirebirdBlobMixin:
     def supports_blob_sub_type(self, sub_type: int) -> bool:
         return sub_type in (0, 1, 2, 3, 4, 5)
 
-    def format_blob_literal(self, expr: "BlobLiteralExpression") -> Tuple[str, tuple]:
+    def format_blob_literal_expression(self, expr: "BlobLiteralExpression") -> Tuple[str, tuple]:
         escaped = expr.value.hex()
         return f"X'{escaped}'", ()

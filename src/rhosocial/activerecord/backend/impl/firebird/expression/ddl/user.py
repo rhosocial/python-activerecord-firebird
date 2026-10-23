@@ -16,7 +16,7 @@ if TYPE_CHECKING:  # pragma: no cover
     from rhosocial.activerecord.backend.dialect import SQLDialectBase
 
 
-class FirebirdCreateUserExpression(BaseExpression):
+class FirebirdCreateUserStatement(BaseExpression):
     """CREATE USER name PASSWORD '...' [FIRSTNAME ...] [MIDDLENAME ...]
     [LASTNAME ...] [GRANT ADMIN ROLE]."""
 
@@ -43,7 +43,7 @@ class FirebirdCreateUserExpression(BaseExpression):
         return "format_create_user_statement"
 
 
-class FirebirdAlterUserExpression(BaseExpression):
+class FirebirdAlterUserStatement(BaseExpression):
     """ALTER USER name [PASSWORD ...] [FIRSTNAME ...] [MIDDLENAME ...]
     [LASTNAME ...] [GRANT ADMIN ROLE] [REVOKE ADMIN ROLE]."""
 
@@ -72,7 +72,7 @@ class FirebirdAlterUserExpression(BaseExpression):
         return "format_alter_user_statement"
 
 
-class FirebirdDropUserExpression(BaseExpression):
+class FirebirdDropUserStatement(BaseExpression):
     """DROP USER name."""
 
     def __init__(self, dialect: "SQLDialectBase", username: str):
@@ -85,7 +85,7 @@ class FirebirdDropUserExpression(BaseExpression):
 
 
 __all__ = [
-    "FirebirdCreateUserExpression",
-    "FirebirdAlterUserExpression",
-    "FirebirdDropUserExpression",
+    "FirebirdCreateUserStatement",
+    "FirebirdAlterUserStatement",
+    "FirebirdDropUserStatement",
 ]

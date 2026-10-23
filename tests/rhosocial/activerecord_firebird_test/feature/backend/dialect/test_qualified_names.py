@@ -42,7 +42,7 @@ from rhosocial.activerecord.backend.expression.statements import (
 from rhosocial.activerecord.backend.expression.types import IntegerType
 from rhosocial.activerecord.backend.impl.firebird.dialect import FirebirdDialect
 from rhosocial.activerecord.backend.impl.firebird.expression.dml import (
-    UpdateOrInsertExpression,
+    UpdateOrInsertStatement,
 )
 from rhosocial.activerecord.backend.impl.firebird.introspection.async_introspector import (
     FirebirdAsyncIntrospectorMixin,
@@ -217,7 +217,7 @@ class TestStatementsGoThroughTheObjectLayer:
             query.to_sql()
 
     def test_update_or_insert_renders_its_target(self, dialect):
-        expr = UpdateOrInsertExpression(
+        expr = UpdateOrInsertStatement(
             dialect, Table(dialect, "orders"), ["id"], [1], ["id"]
         )
         sql, params = expr.to_sql()
@@ -227,7 +227,7 @@ class TestStatementsGoThroughTheObjectLayer:
         assert params == (1,)
 
     def test_update_or_insert_refuses_a_qualified_target(self, dialect, qualified):
-        expr = UpdateOrInsertExpression(
+        expr = UpdateOrInsertStatement(
             dialect, qualified, ["id"], [1], ["id"]
         )
         with pytest.raises(UnsupportedFeatureError, match="schema-qualified"):

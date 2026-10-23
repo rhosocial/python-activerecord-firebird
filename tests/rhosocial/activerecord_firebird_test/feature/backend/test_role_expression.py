@@ -10,9 +10,9 @@ import pytest
 from rhosocial.activerecord.backend.dialect.exceptions import UnsupportedFeatureError
 from rhosocial.activerecord.backend.impl.firebird.dialect import FirebirdDialect
 from rhosocial.activerecord.backend.impl.firebird.expression import (
-    FirebirdAlterRoleExpression,
-    FirebirdCreateRoleExpression,
-    FirebirdDropRoleExpression,
+    FirebirdAlterRoleStatement,
+    FirebirdCreateRoleStatement,
+    FirebirdDropRoleStatement,
     FirebirdRoleAlterClause,
 )
 
@@ -20,13 +20,13 @@ from rhosocial.activerecord.backend.impl.firebird.expression import (
 class TestCreateRole:
     def test_create_role(self):
         dialect = FirebirdDialect((4, 0, 0))
-        sql, params = FirebirdCreateRoleExpression(dialect, "r").to_sql()
+        sql, params = FirebirdCreateRoleStatement(dialect, "r").to_sql()
         assert sql == 'CREATE ROLE "R"'
         assert params == ()
 
     def test_create_role_fb2_5(self):
         dialect = FirebirdDialect((2, 5, 0))
-        sql, params = FirebirdCreateRoleExpression(dialect, "r").to_sql()
+        sql, params = FirebirdCreateRoleStatement(dialect, "r").to_sql()
         assert sql == 'CREATE ROLE "R"'
         assert params == ()
 
@@ -34,7 +34,7 @@ class TestCreateRole:
 class TestAlterRole:
     def test_alter_role_set_system_privileges(self):
         dialect = FirebirdDialect((4, 0, 0))
-        sql, params = FirebirdAlterRoleExpression(
+        sql, params = FirebirdAlterRoleStatement(
             dialect,
             "r",
             clause=FirebirdRoleAlterClause.SET_SYSTEM_PRIVILEGES,
@@ -49,7 +49,7 @@ class TestAlterRole:
     def test_alter_role_set_system_privileges_requires_list(self):
         dialect = FirebirdDialect((4, 0, 0))
         with pytest.raises(ValueError):
-            FirebirdAlterRoleExpression(
+            FirebirdAlterRoleStatement(
                 dialect,
                 "r",
                 clause=FirebirdRoleAlterClause.SET_SYSTEM_PRIVILEGES,
@@ -57,7 +57,7 @@ class TestAlterRole:
 
     def test_alter_role_drop_system_privileges(self):
         dialect = FirebirdDialect((4, 0, 0))
-        sql, params = FirebirdAlterRoleExpression(
+        sql, params = FirebirdAlterRoleStatement(
             dialect, "r", clause=FirebirdRoleAlterClause.DROP_SYSTEM_PRIVILEGES
         ).to_sql()
         assert sql == 'ALTER ROLE "R" DROP SYSTEM PRIVILEGES'
@@ -65,7 +65,7 @@ class TestAlterRole:
 
     def test_alter_role_set_auto_admin_mapping(self):
         dialect = FirebirdDialect((4, 0, 0))
-        sql, params = FirebirdAlterRoleExpression(
+        sql, params = FirebirdAlterRoleStatement(
             dialect, "r", clause=FirebirdRoleAlterClause.SET_AUTO_ADMIN_MAPPING
         ).to_sql()
         assert sql == 'ALTER ROLE "R" SET AUTO ADMIN MAPPING'
@@ -73,7 +73,7 @@ class TestAlterRole:
 
     def test_alter_role_drop_auto_admin_mapping(self):
         dialect = FirebirdDialect((4, 0, 0))
-        sql, params = FirebirdAlterRoleExpression(
+        sql, params = FirebirdAlterRoleStatement(
             dialect, "r", clause=FirebirdRoleAlterClause.DROP_AUTO_ADMIN_MAPPING
         ).to_sql()
         assert sql == 'ALTER ROLE "R" DROP AUTO ADMIN MAPPING'
@@ -81,20 +81,20 @@ class TestAlterRole:
 
     def test_alter_role_default_is_auto_admin_mapping(self):
         dialect = FirebirdDialect((4, 0, 0))
-        sql, params = FirebirdAlterRoleExpression(dialect, "r").to_sql()
+        sql, params = FirebirdAlterRoleStatement(dialect, "r").to_sql()
         assert sql == 'ALTER ROLE "R" SET AUTO ADMIN MAPPING'
         assert params == ()
 
     def test_alter_role_requires_fb3(self):
         dialect = FirebirdDialect((2, 5, 0))
         with pytest.raises(UnsupportedFeatureError):
-            FirebirdAlterRoleExpression(dialect, "r").to_sql()
+            FirebirdAlterRoleStatement(dialect, "r").to_sql()
 
 
 class TestDropRole:
     def test_drop_role(self):
         dialect = FirebirdDialect((4, 0, 0))
-        sql, params = FirebirdDropRoleExpression(dialect, "r").to_sql()
+        sql, params = FirebirdDropRoleStatement(dialect, "r").to_sql()
         assert sql == 'DROP ROLE "R"'
         assert params == ()
 

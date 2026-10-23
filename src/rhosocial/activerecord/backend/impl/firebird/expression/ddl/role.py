@@ -57,7 +57,7 @@ def _normalize_role_clause(clause: FirebirdRoleAlterClause) -> FirebirdRoleAlter
     )
 
 
-class FirebirdCreateRoleExpression(BaseExpression):
+class FirebirdCreateRoleStatement(BaseExpression):
     """CREATE ROLE name."""
 
     def __init__(self, dialect: "SQLDialectBase", role_name: str):
@@ -69,7 +69,7 @@ class FirebirdCreateRoleExpression(BaseExpression):
         return "format_create_role_statement"
 
 
-class FirebirdAlterRoleExpression(BaseExpression):
+class FirebirdAlterRoleStatement(BaseExpression):
     """ALTER ROLE name {SET SYSTEM PRIVILEGES TO ... | DROP SYSTEM
     PRIVILEGES | SET/DROP AUTO ADMIN MAPPING} (Firebird 3.0+)."""
 
@@ -90,7 +90,7 @@ class FirebirdAlterRoleExpression(BaseExpression):
         return "format_alter_role_statement"
 
 
-class FirebirdDropRoleExpression(BaseExpression):
+class FirebirdDropRoleStatement(BaseExpression):
     """DROP ROLE name."""
 
     def __init__(self, dialect: "SQLDialectBase", role_name: str):
@@ -104,7 +104,7 @@ class FirebirdDropRoleExpression(BaseExpression):
 
 __all__ = [
     "FirebirdRoleAlterClause",
-    "FirebirdCreateRoleExpression",
-    "FirebirdAlterRoleExpression",
-    "FirebirdDropRoleExpression",
+    "FirebirdCreateRoleStatement",
+    "FirebirdAlterRoleStatement",
+    "FirebirdDropRoleStatement",
 ]

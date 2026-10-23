@@ -15,7 +15,7 @@ if TYPE_CHECKING:  # pragma: no cover
     from rhosocial.activerecord.backend.dialect import SQLDialectBase
 
 
-class FirebirdCreateExceptionExpression(BaseExpression):
+class FirebirdCreateExceptionStatement(BaseExpression):
     """CREATE EXCEPTION name 'message'."""
 
     def __init__(self, dialect: "SQLDialectBase", exception_name: str, message: str):
@@ -28,7 +28,7 @@ class FirebirdCreateExceptionExpression(BaseExpression):
         return "format_create_exception_statement"
 
 
-class FirebirdAlterExceptionExpression(BaseExpression):
+class FirebirdAlterExceptionStatement(BaseExpression):
     """ALTER EXCEPTION name 'message'."""
 
     def __init__(self, dialect: "SQLDialectBase", exception_name: str, message: str):
@@ -41,7 +41,7 @@ class FirebirdAlterExceptionExpression(BaseExpression):
         return "format_alter_exception_statement"
 
 
-class FirebirdDropExceptionExpression(BaseExpression):
+class FirebirdDropExceptionStatement(BaseExpression):
     """DROP EXCEPTION name."""
 
     def __init__(self, dialect: "SQLDialectBase", exception_name: str):
@@ -54,7 +54,7 @@ class FirebirdDropExceptionExpression(BaseExpression):
 
 
 __all__ = [
-    "FirebirdCreateExceptionExpression",
-    "FirebirdAlterExceptionExpression",
-    "FirebirdDropExceptionExpression",
+    "FirebirdCreateExceptionStatement",
+    "FirebirdAlterExceptionStatement",
+    "FirebirdDropExceptionStatement",
 ]

@@ -20,7 +20,7 @@ if TYPE_CHECKING:  # pragma: no cover
     from rhosocial.activerecord.backend.dialect import SQLDialectBase
 
 
-class FirebirdExecuteStatementExpression(BaseExpression):
+class FirebirdExecuteStatement(BaseExpression):
     """EXECUTE STATEMENT sql [WITH {AUTONOMOUS | COMMON} TRANSACTION]
     [WITH CALLER PRIVILEGES] [(params)].
 
@@ -48,4 +48,4 @@ class FirebirdExecuteStatementExpression(BaseExpression):
         return "format_execute_statement"
 
 
-__all__ = ["FirebirdExecuteStatementExpression"]
+__all__ = ["FirebirdExecuteStatement"]

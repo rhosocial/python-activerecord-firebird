@@ -14,14 +14,14 @@ from rhosocial.activerecord.backend.dialect.exceptions import UnsupportedFeature
 from rhosocial.activerecord.backend.impl.firebird.dialect import FirebirdDialect
 from rhosocial.activerecord.backend.impl.firebird.expression import (
     AutonomousTransactionDoExpression,
-    FirebirdExecuteStatementExpression,
+    FirebirdExecuteStatement,
 )
 
 
 class TestExecuteStatement:
     def test_execute_statement_literal(self):
         dialect = FirebirdDialect((4, 0, 0))
-        sql, params = FirebirdExecuteStatementExpression(
+        sql, params = FirebirdExecuteStatement(
             dialect, "UPDATE t SET c = 1"
         ).to_sql()
         assert sql == "EXECUTE STATEMENT 'UPDATE t SET c = 1'"
@@ -29,7 +29,7 @@ class TestExecuteStatement:
 
     def test_execute_statement_autonomous_transaction(self):
         dialect = FirebirdDialect((4, 0, 0))
-        sql, params = FirebirdExecuteStatementExpression(
+        sql, params = FirebirdExecuteStatement(
             dialect, "UPDATE t SET c = 1", transaction="AUTONOMOUS"
         ).to_sql()
         assert sql == "EXECUTE STATEMENT 'UPDATE t SET c = 1' WITH AUTONOMOUS TRANSACTION"
@@ -37,7 +37,7 @@ class TestExecuteStatement:
 
     def test_execute_statement_common_transaction_and_caller_privileges(self):
         dialect = FirebirdDialect((4, 0, 0))
-        sql, params = FirebirdExecuteStatementExpression(
+        sql, params = FirebirdExecuteStatement(
             dialect,
             "UPDATE t SET c = 1",
             transaction="COMMON",
@@ -51,7 +51,7 @@ class TestExecuteStatement:
 
     def test_execute_statement_with_params(self):
         dialect = FirebirdDialect((4, 0, 0))
-        sql, params = FirebirdExecuteStatementExpression(
+        sql, params = FirebirdExecuteStatement(
             dialect, "UPDATE t SET c = ?", params=[1]
         ).to_sql()
         assert sql == "EXECUTE STATEMENT 'UPDATE t SET c = ?' (?)"
@@ -59,7 +59,7 @@ class TestExecuteStatement:
 
     def test_execute_statement_variable_sql(self):
         dialect = FirebirdDialect((4, 0, 0))
-        sql, params = FirebirdExecuteStatementExpression(
+        sql, params = FirebirdExecuteStatement(
             dialect, ":sql_param", caller_privileges=True
         ).to_sql()
         assert sql == "EXECUTE STATEMENT :sql_param WITH CALLER PRIVILEGES"
@@ -87,7 +87,7 @@ class TestAutonomousTransactionDo:
 class TestExecuteStatementVersionGating:
     def test_execute_statement_raises_on_fb2_5(self):
         dialect = FirebirdDialect((2, 5, 0))
-        expr = FirebirdExecuteStatementExpression(
+        expr = FirebirdExecuteStatement(
             dialect, "UPDATE t SET c = 1", transaction="AUTONOMOUS"
         )
         with pytest.raises(UnsupportedFeatureError):
@@ -101,7 +101,7 @@ class TestExecuteStatementVersionGating:
 
     def test_execute_statement_ok_on_fb3(self):
         dialect = FirebirdDialect((3, 0, 0))
-        sql, params = FirebirdExecuteStatementExpression(
+        sql, params = FirebirdExecuteStatement(
             dialect, "UPDATE t SET c = 1", transaction="AUTONOMOUS"
         ).to_sql()
         assert sql == "EXECUTE STATEMENT 'UPDATE t SET c = 1' WITH AUTONOMOUS TRANSACTION"
@@ -119,7 +119,10 @@ class TestExecuteStatementDispatch:
         dialect = FirebirdDialect((4, 0, 0))
         mixin = FirebirdDMLOperationMixin
         assert type(dialect).format_execute_statement == mixin.format_execute_statement
-        assert type(dialect).format_autonomous_transaction_do == mixin.format_autonomous_transaction_do
+        assert (
+            type(dialect).format_autonomous_transaction_do_expression
+            == mixin.format_autonomous_transaction_do_expression
+        )
 
 
 class TestLateralDeclaration:

@@ -12,9 +12,9 @@ from rhosocial.activerecord.backend.dialect.exceptions import UnsupportedFeature
 
 if TYPE_CHECKING:
     from ..expression.ddl.user import (
-        FirebirdCreateUserExpression,
-        FirebirdAlterUserExpression,
-        FirebirdDropUserExpression,
+        FirebirdCreateUserStatement,
+        FirebirdAlterUserStatement,
+        FirebirdDropUserStatement,
     )
 
 
@@ -29,7 +29,7 @@ class FirebirdUserMixin:
     def supports_drop_user(self) -> bool:
         return _norm_version(self.version) >= (3, 0, 0)
 
-    def format_create_user_statement(self, expr: "FirebirdCreateUserExpression") -> Tuple[str, tuple]:
+    def format_create_user_statement(self, expr: "FirebirdCreateUserStatement") -> Tuple[str, tuple]:
         """Format CREATE USER name PASSWORD '...' [FIRSTNAME ...] [MIDDLENAME ...]
         [LASTNAME ...] [GRANT ADMIN ROLE]."""
         self._check_user_version("CREATE USER")
@@ -50,7 +50,7 @@ class FirebirdUserMixin:
             parts.append("GRANT ADMIN ROLE")
         return " ".join(parts), ()
 
-    def format_alter_user_statement(self, expr: "FirebirdAlterUserExpression") -> Tuple[str, tuple]:
+    def format_alter_user_statement(self, expr: "FirebirdAlterUserStatement") -> Tuple[str, tuple]:
         """Format ALTER USER name [PASSWORD ...] [FIRSTNAME ...] [MIDDLENAME ...]
         [LASTNAME ...] [GRANT ADMIN ROLE] [REVOKE ADMIN ROLE]."""
         self._check_user_version("ALTER USER")
@@ -70,7 +70,7 @@ class FirebirdUserMixin:
             parts.append("REVOKE ADMIN ROLE")
         return " ".join(parts), ()
 
-    def format_drop_user_statement(self, expr: "FirebirdDropUserExpression") -> Tuple[str, tuple]:
+    def format_drop_user_statement(self, expr: "FirebirdDropUserStatement") -> Tuple[str, tuple]:
         """Format DROP USER name."""
         self._check_user_version("DROP USER")
         return f"DROP USER {self.format_identifier(expr.username)}", ()

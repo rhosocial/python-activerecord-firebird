@@ -70,7 +70,7 @@ from rhosocial.activerecord.backend.impl.firebird.expression.ddl.sequence import
     FirebirdCreateSequenceStatement,
 )
 from rhosocial.activerecord.backend.impl.firebird.expression.dml import (
-    UpdateOrInsertExpression,
+    UpdateOrInsertStatement,
 )
 from rhosocial.activerecord.backend.impl.firebird.expression.generator import (
     GenIdExpression,
@@ -587,7 +587,7 @@ class TestReturningBranches:
         assert delete.to_sql() == ('DELETE FROM "USERS" WHERE "ID" = ? RETURNING *', (7,))
 
     def test_update_or_insert_with_matching_and_returning(self, dialect):
-        expr = UpdateOrInsertExpression(
+        expr = UpdateOrInsertStatement(
             dialect,
             Table(dialect, "users"),
             ["name", "age"],

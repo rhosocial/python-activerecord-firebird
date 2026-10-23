@@ -29,7 +29,7 @@ class FirebirdDatabaseSecurityMode(str, Enum):
     DEFINER = "DEFINER"
 
 
-class FirebirdCreateDatabaseExpression(BaseExpression):
+class FirebirdCreateDatabaseStatement(BaseExpression):
     """CREATE DATABASE 'file' [USER 'u'] [PASSWORD 'p'] [PAGE_SIZE n]
     [DEFAULT CHARACTER SET cs] [COLLATION col] [DIALECT n] [FORCE WRITE]
     [SQL SECURITY INVOKER | DEFINER].
@@ -84,7 +84,7 @@ class FirebirdCreateDatabaseExpression(BaseExpression):
         return "format_create_database_statement"
 
 
-class FirebirdDropDatabaseExpression(BaseExpression):
+class FirebirdDropDatabaseStatement(BaseExpression):
     """DROP DATABASE."""
 
     def __init__(self, dialect: "SQLDialectBase"):
@@ -97,6 +97,6 @@ class FirebirdDropDatabaseExpression(BaseExpression):
 
 __all__ = [
     "FirebirdDatabaseSecurityMode",
-    "FirebirdCreateDatabaseExpression",
-    "FirebirdDropDatabaseExpression",
+    "FirebirdCreateDatabaseStatement",
+    "FirebirdDropDatabaseStatement",
 ]

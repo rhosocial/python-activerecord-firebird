@@ -5,7 +5,7 @@
 (gated here at ``(2, 5, 0)``).  Firebird has no inline column comments, so
 documentation must be attached via ``COMMENT ON ... IS 'text'``.  The
 expression delegates SQL generation to the dialect's
-``format_comment_statement`` method, following the Expression-Dialect
+``format_comment_on_statement`` method, following the Expression-Dialect
 separation pattern.
 """
 
@@ -73,7 +73,7 @@ def _normalize_comment_object_type(
     )
 
 
-class FirebirdCommentExpression(BaseExpression):
+class FirebirdCommentOnStatement(BaseExpression):
     """COMMENT ON <object> IS 'text' (or IS NULL to remove the comment)."""
 
     def __init__(
@@ -92,7 +92,7 @@ class FirebirdCommentExpression(BaseExpression):
 
     @property
     def format_method(self) -> str:
-        return "format_comment_statement"
+        return "format_comment_on_statement"
 
 
-__all__ = ["FirebirdCommentObjectType", "FirebirdCommentExpression"]
+__all__ = ["FirebirdCommentObjectType", "FirebirdCommentOnStatement"]
