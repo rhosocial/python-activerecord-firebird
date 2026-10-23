@@ -21,8 +21,11 @@ from rhosocial.activerecord.backend.introspection.types import (
     ReferentialAction,
     IntrospectionViewInfo,
     IntrospectionTriggerInfo,
+    IntrospectionScope,
 )
 from rhosocial.activerecord.backend.dialect.exceptions import UnsupportedFeatureError
+
+from .types import FirebirdDomainInfo, FirebirdGeneratorInfo
 
 # Firebird field types mapping (shared with sync introspector)
 FB_FIELD_TYPES = {
@@ -432,6 +435,140 @@ class FirebirdAsyncIntrospectorMixin(IntrospectorMixin):
             order_by=[column(d, "RDB$FIELD_POSITION", "seg")],
         )
 
+    def _make_generator_list_sql(self, include_system: bool = False):
+        """The generators (sequences) this database owns, by name.
+
+        ``RDB$GENERATORS`` records the name, the id and the system flag, but
+        **not the value**: the number a generator has reached is engine state,
+        not a catalogue column. The value is therefore a separate question per
+        generator (:func:`...query_nodes.generator_value_sql`) -- Firebird has
+        no way to pass a generator name as a bind parameter, so one statement
+        cannot read N values and N statements are what remains.
+
+        ``RDB$SYSTEM_FLAG = 0`` drops the generators Firebird owns (identity
+        columns and other internal sequences); ``include_system`` keeps them.
+        """
+        from ..query_nodes import (
+            column,
+            compare,
+            conjunction,
+            literal,
+            relation,
+            select_sql,
+        )
+
+        d = self.dialect
+        conditions = []
+        if not include_system:
+            conditions.append(
+                compare(
+                    d, "eq", column(d, "RDB$SYSTEM_FLAG"), literal(d, 0, inline=True)
+                )
+            )
+        return select_sql(
+            d,
+            [
+                column(d, "RDB$GENERATOR_NAME", alias="GENERATOR_NAME"),
+                column(d, "RDB$SYSTEM_FLAG", alias="SYSTEM_FLAG"),
+            ],
+            from_=relation(d, "RDB$GENERATORS"),
+            where=conjunction(d, *conditions) if conditions else None,
+            order_by=[column(d, "RDB$GENERATOR_NAME")],
+        )
+
+    def _make_generator_value_sql(self, name: str):
+        """The current value of one generator, read with ``GEN_ID(name, 0)``."""
+        from ..query_nodes import generator_value_sql
+
+        return generator_value_sql(self.dialect, name)
+
+    def _make_domain_list_sql(self, include_system: bool = False):
+        """The domains of this database, with the attributes they were declared with.
+
+        A domain is spread over two catalogue relations, so both are read:
+
+        * ``RDB$DOMAINS`` holds what makes a *domain* a domain -- its name, the
+          check text (``RDB$VALIDATION_SOURCE``), the system flag, the comment.
+        * ``RDB$FIELDS`` holds the type descriptor the domain points at
+          (``RDB$FIELD_NAME`` is the join key, not ``RDB$DOMAIN_NAME``):
+          base type, sub type, byte length, character length, precision,
+          scale, null flag and the ``DEFAULT`` source. Firebird keeps a
+          domain's default on this descriptor, the same place a column's
+          default lives.
+
+        ``RDB$CHARACTER_SETS`` is a **LEFT** join because the charset id is
+        NULL for non-character types: an inner join would silently drop every
+        numeric, date and blob domain from the answer.
+
+        ``RDB$DOMAIN_NAME IS NOT NULL`` filters the rows Firebird writes for
+        types declared inline (``NUMERIC(9,2)`` and friends are stored as
+        nameless, system-owned domain rows); those are not domains a caller
+        created, and ``RDB$SYSTEM_FLAG`` keeps the rest of the system's own
+        rows when ``include_system`` is False.
+        """
+        from ..query_nodes import (
+            column,
+            compare,
+            conjunction,
+            join,
+            literal,
+            null_test,
+            relation,
+            select_sql,
+        )
+
+        d = self.dialect
+        joined = join(
+            d,
+            join(
+                d,
+                relation(d, "RDB$DOMAINS", alias="dm"),
+                relation(d, "RDB$FIELDS", alias="f"),
+                condition=compare(
+                    d,
+                    "eq",
+                    column(d, "RDB$FIELD_NAME", "dm"),
+                    column(d, "RDB$FIELD_NAME", "f"),
+                ),
+            ),
+            relation(d, "RDB$CHARACTER_SETS", alias="cs"),
+            condition=compare(
+                d,
+                "eq",
+                column(d, "RDB$CHARACTER_SET_ID", "f"),
+                column(d, "RDB$CHARACTER_SET_ID", "cs"),
+            ),
+            join_type="LEFT JOIN",
+        )
+        conditions = [null_test(d, column(d, "RDB$DOMAIN_NAME", "dm"), is_not=True)]
+        if not include_system:
+            conditions.append(
+                compare(
+                    d, "eq", column(d, "RDB$SYSTEM_FLAG", "dm"), literal(d, 0, inline=True)
+                )
+            )
+        return select_sql(
+            d,
+            [
+                column(d, "RDB$DOMAIN_NAME", "dm", alias="DOMAIN_NAME"),
+                column(d, "RDB$FIELD_TYPE", "f", alias="FIELD_TYPE"),
+                column(d, "RDB$FIELD_SUB_TYPE", "f", alias="FIELD_SUB_TYPE"),
+                column(d, "RDB$FIELD_LENGTH", "f", alias="FIELD_LENGTH"),
+                column(d, "RDB$CHARACTER_LENGTH", "f", alias="CHARACTER_LENGTH"),
+                column(d, "RDB$FIELD_PRECISION", "f", alias="PRECISION"),
+                column(d, "RDB$FIELD_SCALE", "f", alias="SCALE"),
+                column(d, "RDB$CHARACTER_SET_NAME", "cs", alias="CHARACTER_SET_NAME"),
+                column(d, "RDB$NULL_FLAG", "f", alias="NULL_FLAG"),
+                column(d, "RDB$DEFAULT_SOURCE", "f", alias="DEFAULT_SOURCE"),
+                column(d, "RDB$VALIDATION_SOURCE", "dm", alias="VALIDATION_SOURCE"),
+                column(d, "RDB$SYSTEM_FLAG", "dm", alias="SYSTEM_FLAG"),
+                column(d, "RDB$DESCRIPTION", "dm", alias="DESCRIPTION"),
+            ],
+            from_=joined,
+            where=conjunction(d, *conditions),
+            order_by=[column(d, "RDB$DOMAIN_NAME", "dm")],
+        )
+
     def _make_view_list_sql(self, schema: Optional[str] = None) -> str:
         """The database's views: relations that are neither system nor baseless.
 
@@ -619,9 +756,155 @@ class FirebirdAsyncIntrospectorMixin(IntrospectorMixin):
             for row in rows if row.get("RDB$RELATION_NAME")
         ]
 
+    def _parse_view_info(self, rows: List[Dict[str, Any]],
+                         view_name: str,
+                         schema: str) -> Optional[IntrospectionViewInfo]:
+        """One view from the rows a single-view query returned, or ``None``.
+
+        The core manager asks this after ``_build_view_info_sql`` narrows the
+        catalogue to one view, so the shape is ``_parse_views`` on at most one
+        row. ``list_views`` then does the filtering for the list question, and
+        this parser does not repeat it: an empty row set means the name is not
+        a view, which is exactly what ``None`` already says.
+
+        ``RDB$VIEW_SOURCE`` is the definition and ``RDB$VIEW_BLR`` is what
+        marks a relation as a view (see ``_make_view_list_sql``); a view has
+        no ``CHECK OPTION`` in Firebird and is not updatable through the
+        catalogue, so both stay absent rather than guessed.
+        """
+        matches = self._parse_views(rows, schema)
+        return matches[0] if matches else None
+
     def _parse_triggers(self, rows: List[Dict[str, Any]],
                          schema: str) -> List[IntrospectionTriggerInfo]:
         return []
+
+    # ------------------------------------------------------------------
+    # Generators and domains
+    #
+    # These two families are Firebird's own, so they have no ``_build_*``
+    # entry point on the core mixin: the core has no question to ask about
+    # them. What is shared here is what both directions need -- the row shape
+    # a parser reads and the names a caller looks objects up by.
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _row_name(row: Dict[str, Any], key: str) -> str:
+        """One catalogue name, stripped, or ``""`` when the row has none.
+
+        Firebird's ``CHAR`` columns come back space-padded, and a name that is
+        only padding is not an object.
+        """
+        raw = row.get(key)
+        return str(raw).strip() if raw else ""
+
+    @staticmethod
+    def _text_or_none(value: Any) -> Optional[str]:
+        """A catalogue text column as a stripped string, or ``None``.
+
+        ``DEFAULT``/``CHECK``/description are ``BLOB TEXT``; the driver hands
+        them back as ``str``, and an all-space body is the catalogue's way of
+        saying "no source".
+        """
+        if value is None:
+            return None
+        text = str(value).strip()
+        return text or None
+
+    @staticmethod
+    def _find_by_name(items: List[Any], name: str) -> Optional[Any]:
+        """The item named *name*, or ``None``.
+
+        Firebird folds unquoted identifiers to upper case, so ``my_gen`` names
+        ``MY_GEN`` unless it was created quoted. An exact match is tried first
+        (so two names differing only by case stay distinguishable), then a
+        case-insensitive one.
+        """
+        for item in items:
+            if item.name == name:
+                return item
+        folded = name.upper()
+        for item in items:
+            if item.name.upper() == folded:
+                return item
+        return None
+
+    @staticmethod
+    def _describe_domain_type(
+        field_type: Optional[int],
+        sub_type: Optional[int],
+        scale: Optional[int],
+    ) -> str:
+        """The domain's base type, from the catalogue's type codes.
+
+        ``NUMERIC`` and ``DECIMAL`` are named from the pair Firebird records
+        for them -- an integer field type with sub type 1 or 2 and a negative
+        scale -- rather than from the integer type underneath, which is what
+        the column parser reports. A domain's whole purpose is the attributes
+        it attaches to a type, so naming the storage integer here would lose
+        the one a caller declared.
+        """
+        if (
+            field_type in (7, 8, 16, 26)
+            and sub_type in (1, 2)
+            and scale is not None
+            and scale < 0
+        ):
+            return "NUMERIC" if sub_type == 1 else "DECIMAL"
+        type_name = FB_FIELD_TYPES.get(field_type, f"UNKNOWN({field_type})")
+        if type_name == "BLOB":
+            blob_sub = FB_BLOB_SUB_TYPES.get(sub_type, str(sub_type))
+            return f"BLOB SUB_TYPE {blob_sub}"
+        return type_name
+
+    def _parse_generators(
+        self,
+        rows: List[Dict[str, Any]],
+        values: Dict[str, int],
+    ) -> List[FirebirdGeneratorInfo]:
+        """Pair each generator row with the value read for that generator."""
+        generators: List[FirebirdGeneratorInfo] = []
+        for row in rows:
+            name = self._row_name(row, "GENERATOR_NAME")
+            if not name:
+                continue
+            generators.append(
+                FirebirdGeneratorInfo(
+                    name=name,
+                    value=values[name],
+                    is_system=bool(row.get("SYSTEM_FLAG")),
+                )
+            )
+        return generators
+
+    def _parse_domains(self, rows: List[Dict[str, Any]]) -> List[FirebirdDomainInfo]:
+        domains: List[FirebirdDomainInfo] = []
+        for row in rows:
+            name = self._row_name(row, "DOMAIN_NAME")
+            if not name:
+                continue
+            charset = self._text_or_none(row.get("CHARACTER_SET_NAME"))
+            domains.append(
+                FirebirdDomainInfo(
+                    name=name,
+                    base_type=self._describe_domain_type(
+                        row.get("FIELD_TYPE"),
+                        row.get("FIELD_SUB_TYPE"),
+                        row.get("SCALE"),
+                    ),
+                    length=row.get("FIELD_LENGTH"),
+                    character_length=row.get("CHARACTER_LENGTH"),
+                    numeric_precision=row.get("PRECISION"),
+                    numeric_scale=row.get("SCALE"),
+                    charset=charset,
+                    nullable=row.get("NULL_FLAG") is None,
+                    default_source=self._text_or_none(row.get("DEFAULT_SOURCE")),
+                    check_source=self._text_or_none(row.get("VALIDATION_SOURCE")),
+                    is_system=bool(row.get("SYSTEM_FLAG")),
+                    description=self._text_or_none(row.get("DESCRIPTION")),
+                )
+            )
+        return domains
 
     # ------------------------------------------------------------------
     # Core ``IntrospectorMixin`` entry points
@@ -697,3 +980,83 @@ class AsyncFirebirdIntrospector(FirebirdAsyncIntrospectorMixin, AsyncAbstractInt
         table.indexes = await self.list_indexes(table_name, schema)
         table.foreign_keys = await self.list_foreign_keys(table_name, schema)
         return table
+
+    # ------------------------------------------------------------------
+    # Firebird-specific object families
+    #
+    # Generators and domains have no core entry point: the core's scopes name
+    # them (SEQUENCE; and SCHEMA for a database-wide type catalogue), but the
+    # questions and their results are Firebird's own. These methods are the
+    # async half of the pair the sync introspector declares -- same names,
+    # same signatures, same returns.
+    # ------------------------------------------------------------------
+
+    async def list_generators(self, include_system: bool = False) -> List[FirebirdGeneratorInfo]:
+        """List the generators (sequences) of this database with their values.
+
+        One ``GEN_ID(<name>, 0)`` per generator: a generator name cannot be
+        bound as a parameter, so the catalogue read and the value reads cannot
+        be one statement. The result is cached, so the cost is paid once per
+        cache generation rather than once per call.
+        """
+        key = self._cache.key(
+            IntrospectionScope.SEQUENCE, extra=f"generators:{include_system}"
+        )
+        cached = self._cache.get(key)
+        if cached is not None:
+            return cached
+
+        sql, params = self._make_generator_list_sql(include_system)
+        rows = await self._executor.execute(sql, params)
+        values: Dict[str, int] = {}
+        for row in rows:
+            name = self._row_name(row, "GENERATOR_NAME")
+            if not name:
+                continue
+            value_sql, value_params = self._make_generator_value_sql(name)
+            value_rows = await self._executor.execute(value_sql, value_params)
+            values[name] = int(value_rows[0]["GENERATOR_VALUE"])
+
+        result = self._parse_generators(rows, values)
+        self._cache.set(key, result)
+        return result
+
+    async def get_generator_info(self, name: str) -> Optional[FirebirdGeneratorInfo]:
+        """Return the named generator (sequence), or ``None``.
+
+        The default list answers first, so looking up a generator the user
+        created never reads the system's own rows -- and never pays their
+        ``GEN_ID`` calls. Only a name that list does not contain falls back to
+        ``include_system=True``.
+        """
+        found = self._find_by_name(await self.list_generators(), name)
+        if found is not None:
+            return found
+        return self._find_by_name(
+            await self.list_generators(include_system=True), name
+        )
+
+    async def list_domains(self, include_system: bool = False) -> List[FirebirdDomainInfo]:
+        """List the domains of this database with their declared attributes."""
+        key = self._cache.key(
+            IntrospectionScope.SCHEMA, extra=f"domains:{include_system}"
+        )
+        cached = self._cache.get(key)
+        if cached is not None:
+            return cached
+
+        sql, params = self._make_domain_list_sql(include_system)
+        result = self._parse_domains(await self._executor.execute(sql, params))
+        self._cache.set(key, result)
+        return result
+
+    async def get_domain_info(self, name: str) -> Optional[FirebirdDomainInfo]:
+        """Return the named domain, or ``None``.
+
+        The default list answers first; only a system domain's name needs the
+        ``include_system=True`` pass.
+        """
+        found = self._find_by_name(await self.list_domains(), name)
+        if found is not None:
+            return found
+        return self._find_by_name(await self.list_domains(include_system=True), name)

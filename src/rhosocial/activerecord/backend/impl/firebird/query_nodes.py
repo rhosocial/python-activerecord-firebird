@@ -67,6 +67,18 @@ def literal(dialect: "SQLDialectBase", value: Any, inline: bool = False):
     return Literal(dialect, value, inline=inline)
 
 
+def identifier(dialect: "SQLDialectBase", name: str):
+    """A bare identifier, quoted by the dialect -- an argument, not a value.
+
+    ``GEN_ID`` takes a generator *name*, which SQL cannot bind: a placeholder
+    there is a syntax error. This is how such a name is passed as a node, so
+    the dialect still owns the quoting rather than the caller interpolating.
+    """
+    from rhosocial.activerecord.backend.expression import Identifier
+
+    return Identifier(dialect, name)
+
+
 def relation(
     dialect: "SQLDialectBase",
     name: str,
@@ -236,6 +248,38 @@ def engine_version_sql(dialect: "SQLDialectBase") -> Tuple[str, tuple]:
     )
 
 
+def generator_value_sql(dialect: "SQLDialectBase", name: str) -> Tuple[str, tuple]:
+    """The current value of one generator, read without advancing it.
+
+    ``GEN_ID(<name>, 0)`` increments by zero and returns the result, so it is
+    a read. It is used in preference to the two alternatives because it is the
+    only one that is both exact and version-independent:
+
+    * ``RDB$GENERATORS`` records the name and id, never the value -- there is
+      no value column to read.
+    * ``RDB$GET_CONTEXT('SYSTEM', <name>)`` answers for context variables the
+      caller set, not for generator state, so it returns NULL for a generator.
+
+    The call is also transaction-independent: two connections see the same
+    number, whereas a value cached in application code would not.
+    """
+    from rhosocial.activerecord.backend.expression import Identifier
+
+    return select_sql(
+        dialect,
+        [
+            call(
+                dialect,
+                "gen_id",
+                Identifier(dialect, name),
+                literal(dialect, 0, inline=True),
+                alias="GENERATOR_VALUE",
+            )
+        ],
+        from_=relation(dialect, "RDB$DATABASE"),
+    )
+
+
 def mon_version_sql(dialect: "SQLDialectBase") -> Tuple[str, tuple]:
     """The ``MON$VERSION`` of this attachment (the older way to ask)."""
     return select_sql(
@@ -275,7 +319,9 @@ __all__ = [
     "conjunction",
     "database_probe_sql",
     "engine_version_sql",
+    "generator_value_sql",
     "health_check_sql",
+    "identifier",
     "join",
     "like",
     "literal",

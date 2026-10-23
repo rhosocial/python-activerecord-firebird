@@ -17,7 +17,18 @@ from .output import create_provider
 
 OUTPUT_CHOICES = ["table", "json", "csv", "tsv"]
 
-INTROSPECT_TYPES = ["tables", "views", "table", "columns", "indexes", "foreign-keys", "triggers", "database"]
+INTROSPECT_TYPES = [
+    "tables",
+    "views",
+    "table",
+    "columns",
+    "indexes",
+    "foreign-keys",
+    "triggers",
+    "database",
+    "generators",
+    "domains",
+]
 
 
 def create_parser(subparsers):
@@ -37,6 +48,14 @@ def create_parser(subparsers):
 
   # Get column details for a table
   %(prog)s columns users --database /path/to/test_db
+
+  # List generators (sequences) with their current values, or one of them
+  %(prog)s generators --database /path/to/test_db
+  %(prog)s generators MY_GENERATOR --database /path/to/test_db
+
+  # List domains, or one of them
+  %(prog)s domains --database /path/to/test_db
+  %(prog)s domains POSITIVE_INT --database /path/to/test_db
 
   # Output as JSON
   %(prog)s tables --database /path/to/test_db -o json
@@ -71,13 +90,16 @@ def create_parser(subparsers):
     parser.add_argument(
         "type",
         choices=INTROSPECT_TYPES,
-        help="Introspection type: tables, views, table, columns, indexes, foreign-keys, triggers, database",
+        help=(
+            "Introspection type: tables, views, table, columns, indexes, "
+            "foreign-keys, triggers, database, generators, domains"
+        ),
     )
     parser.add_argument(
         "name",
         nargs="?",
         default=None,
-        help="Table/view name (required for some types)",
+        help="Table/view/generator/domain name (required for some types)",
     )
     parser.add_argument(
         "--schema",
@@ -211,6 +233,33 @@ def _handle_introspect_sync(args, backend: FirebirdBackend, provider):
             data = _serialize_for_output(info)
             provider.display_results([data], title="Database Info")
 
+        elif args.type == "generators":
+            if args.name:
+                generator = introspector.get_generator_info(args.name)
+                if generator is None:
+                    print(f"Error: Generator '{args.name}' not found", file=sys.stderr)
+                    sys.exit(1)
+                provider.display_results(
+                    [_serialize_for_output(generator)],
+                    title=f"Generator {generator.name}",
+                )
+            else:
+                generators = introspector.list_generators()
+                provider.display_results(_serialize_for_output(generators), title="Generators")
+
+        elif args.type == "domains":
+            if args.name:
+                domain = introspector.get_domain_info(args.name)
+                if domain is None:
+                    print(f"Error: Domain '{args.name}' not found", file=sys.stderr)
+                    sys.exit(1)
+                provider.display_results(
+                    [_serialize_for_output(domain)], title=f"Domain {domain.name}"
+                )
+            else:
+                domains = introspector.list_domains()
+                provider.display_results(_serialize_for_output(domains), title="Domains")
+
     except ConnectionError as e:
         provider.display_connection_error(e)
         sys.exit(1)
@@ -292,6 +341,33 @@ async def _handle_introspect_async(args, backend: AsyncFirebirdBackend, provider
             info = await introspector.get_database_info()
             data = _serialize_for_output(info)
             provider.display_results([data], title="Database Info")
+
+        elif args.type == "generators":
+            if args.name:
+                generator = await introspector.get_generator_info(args.name)
+                if generator is None:
+                    print(f"Error: Generator '{args.name}' not found", file=sys.stderr)
+                    sys.exit(1)
+                provider.display_results(
+                    [_serialize_for_output(generator)],
+                    title=f"Generator {generator.name}",
+                )
+            else:
+                generators = await introspector.list_generators()
+                provider.display_results(_serialize_for_output(generators), title="Generators")
+
+        elif args.type == "domains":
+            if args.name:
+                domain = await introspector.get_domain_info(args.name)
+                if domain is None:
+                    print(f"Error: Domain '{args.name}' not found", file=sys.stderr)
+                    sys.exit(1)
+                provider.display_results(
+                    [_serialize_for_output(domain)], title=f"Domain {domain.name}"
+                )
+            else:
+                domains = await introspector.list_domains()
+                provider.display_results(_serialize_for_output(domains), title="Domains")
 
     except ConnectionError as e:
         provider.display_connection_error(e)
