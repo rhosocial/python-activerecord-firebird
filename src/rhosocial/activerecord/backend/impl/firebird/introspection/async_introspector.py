@@ -6,6 +6,9 @@ from rhosocial.activerecord.backend.introspection.base import (
     IntrospectorMixin,
     AsyncAbstractIntrospector,
 )
+from rhosocial.activerecord.backend.introspection.cache import (
+    IntrospectionCache,
+)
 from rhosocial.activerecord.backend.introspection.types import (
     IntrospectionDatabaseInfo,
     IntrospectionTableInfo,
@@ -664,8 +667,13 @@ class AsyncFirebirdIntrospector(FirebirdAsyncIntrospectorMixin, AsyncAbstractInt
     run sync fdb cursor operations in a background thread.
     """
 
-    def __init__(self, backend, executor):
-        super().__init__(backend, executor)
+    def __init__(
+        self,
+        backend,
+        executor,
+        cache: Optional[IntrospectionCache] = None,
+    ):
+        super().__init__(backend, executor, cache)
         self._status_instance = None
 
     @property

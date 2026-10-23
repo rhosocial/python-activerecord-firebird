@@ -9,6 +9,9 @@ from typing import Optional
 from rhosocial.activerecord.backend.introspection.base import (
     SyncAbstractIntrospector,
 )
+from rhosocial.activerecord.backend.introspection.cache import (
+    IntrospectionCache,
+)
 from rhosocial.activerecord.backend.introspection.executor import (
     SyncIntrospectorExecutor,
 )
@@ -23,9 +26,13 @@ from .status_introspector import SyncFirebirdStatusIntrospector
 class SyncFirebirdIntrospector(FirebirdAsyncIntrospectorMixin, SyncAbstractIntrospector):
     """Synchronous Firebird schema introspector."""
 
-    def __init__(self, backend):
+    def __init__(
+        self,
+        backend,
+        cache: Optional[IntrospectionCache] = None,
+    ):
         executor = SyncIntrospectorExecutor(backend)
-        super().__init__(backend, executor)
+        super().__init__(backend, executor, cache)
         self._status_instance = None
 
     @property
