@@ -23,7 +23,7 @@ Spellings
 ---------
 A concept that SQL spells several ways is one class with a ``spelling``
 argument, so every formatter that can be handed one declares, through
-:meth:`~...dialect.mixins.data_type.DataTypeMixin._check_spelling`, which of
+:meth:`~...dialect.mixins.data_type.DataTypeMixin.check_spelling`, which of
 those words Firebird's own grammar uses. The rule this dialect follows:
 
 * a word **Firebird writes** is accepted and rendered as Firebird's canonical
@@ -228,7 +228,7 @@ class FirebirdTypeSupportMixin(DDLTypeMixin, DDLTypeSupport):
         because a per-formatter check is a per-formatter bug waiting to happen.
 
         It is called **first** in every one of those formatters, ahead of
-        ``_check_spelling``, the 4.0 version gate and every precision and scale
+        ``check_spelling``, the 4.0 version gate and every precision and scale
         ``ValueError``. That ordering is the point: a declaration this grammar
         cannot express at all is a stronger and less recoverable statement than
         a misspelled word or an out-of-range number, so it is the one the caller
@@ -415,7 +415,7 @@ class FirebirdTypeSupportMixin(DDLTypeMixin, DDLTypeSupport):
         spelling check — see :meth:`_check_firebird_signed`.
         """
         self._check_firebird_signed(data_type)
-        self._check_spelling(data_type, IntegerType)
+        self.check_spelling(data_type, IntegerType)
         return "INTEGER", ()
 
     def format_data_type_bigint(self, data_type: BigIntType) -> Tuple[str, tuple]:
@@ -430,7 +430,7 @@ class FirebirdTypeSupportMixin(DDLTypeMixin, DDLTypeSupport):
         spelling check — see :meth:`_check_firebird_signed`.
         """
         self._check_firebird_signed(data_type)
-        self._check_spelling(data_type, ("bigint",))
+        self.check_spelling(data_type, ("bigint",))
         return "BIGINT", ()
 
     def format_data_type_smallint(self, data_type: SmallIntType) -> Tuple[str, tuple]:
@@ -442,7 +442,7 @@ class FirebirdTypeSupportMixin(DDLTypeMixin, DDLTypeSupport):
         :meth:`_check_firebird_signed`.
         """
         self._check_firebird_signed(data_type)
-        self._check_spelling(data_type, ("smallint",))
+        self.check_spelling(data_type, ("smallint",))
         return "SMALLINT", ()
 
     def format_data_type_tinyint(self, data_type: TinyIntType) -> Tuple[str, tuple]:
@@ -456,7 +456,7 @@ class FirebirdTypeSupportMixin(DDLTypeMixin, DDLTypeSupport):
         see :meth:`_check_firebird_signed`.
         """
         self._check_firebird_signed(data_type)
-        self._check_spelling(data_type, TinyIntType)
+        self.check_spelling(data_type, TinyIntType)
         return "SMALLINT", ()
 
     def format_data_type_float(self, data_type: FloatType) -> Tuple[str, tuple]:
@@ -541,7 +541,7 @@ class FirebirdTypeSupportMixin(DDLTypeMixin, DDLTypeSupport):
         see :meth:`_check_firebird_signed`.
         """
         self._check_firebird_signed(data_type, "approximate numeric (DOUBLE PRECISION)")
-        self._check_spelling(data_type, DoubleType)
+        self.check_spelling(data_type, DoubleType)
         return "DOUBLE PRECISION", ()
 
     def format_data_type_decimal(self, data_type: DecimalType) -> Tuple[str, tuple]:
@@ -556,7 +556,7 @@ class FirebirdTypeSupportMixin(DDLTypeMixin, DDLTypeSupport):
         for a signed declaration.
         """
         self._check_firebird_signed(data_type, "exact numeric (DECIMAL)")
-        self._check_spelling(data_type, DecimalType)
+        self.check_spelling(data_type, DecimalType)
         self._validate_numeric(data_type.precision, data_type.scale)
         if data_type.precision is not None and data_type.scale is not None:
             return f"DECIMAL({data_type.precision}, {data_type.scale})", ()
@@ -571,7 +571,7 @@ class FirebirdTypeSupportMixin(DDLTypeMixin, DDLTypeSupport):
         Firebird 3 introduced the type as ``BOOLEAN`` and has no alias for it —
         so the spelling is refused instead of being answered with a declaration
         the server would reject."""
-        self._check_spelling(data_type, ("boolean",))
+        self.check_spelling(data_type, ("boolean",))
         self._check_fb3_type("BOOLEAN")
         return "BOOLEAN", ()
 
@@ -592,7 +592,7 @@ class FirebirdTypeSupportMixin(DDLTypeMixin, DDLTypeSupport):
         :meth:`type_parameter_defaults` entry — a server that will not create the
         column supplies nothing to read back — stays attached to the number.
         """
-        self._check_spelling(data_type, VarCharType)
+        self.check_spelling(data_type, VarCharType)
         length = data_type.length
         if length is None:
             length = self._FB_RENDERED_VARCHAR_LENGTH
@@ -612,7 +612,7 @@ class FirebirdTypeSupportMixin(DDLTypeMixin, DDLTypeSupport):
         ``length``; the fallback reads the one declaration so a type built
         without a dialect renders the same number.
         """
-        self._check_spelling(data_type, CharType)
+        self.check_spelling(data_type, CharType)
         length = data_type.length
         if length is None:
             length = self.type_parameter_defaults()["char"]["length"]
@@ -629,7 +629,7 @@ class FirebirdTypeSupportMixin(DDLTypeMixin, DDLTypeSupport):
         The default spelling must always render, or the concept would be
         unusable on this backend.
         """
-        self._check_spelling(data_type, ("text",))
+        self.check_spelling(data_type, ("text",))
         return "BLOB SUB_TYPE TEXT", ()
 
     def format_data_type_datetime(self, data_type: DateTimeType) -> Tuple[str, tuple]:
@@ -715,7 +715,7 @@ class FirebirdTypeSupportMixin(DDLTypeMixin, DDLTypeSupport):
         PostgreSQL declaration, and quietly substituting this backend's is
         exactly the substitution the gate exists to catch.
         """
-        self._check_spelling(data_type, ("blob",))
+        self.check_spelling(data_type, ("blob",))
         return "BLOB", ()
 
     def format_data_type_binary(self, data_type: BinaryType) -> Tuple[str, tuple]:
@@ -742,7 +742,7 @@ class FirebirdTypeSupportMixin(DDLTypeMixin, DDLTypeSupport):
         the one declaration rather than repeated; see :meth:`format_data_type_char`
         for why Firebird's 1 is a documented default and not a choice of this
         backend."""
-        self._check_spelling(data_type, CharType)
+        self.check_spelling(data_type, CharType)
         length = data_type.length
         if length is None:
             length = self.type_parameter_defaults()["firebird_char"]["length"]
@@ -755,7 +755,7 @@ class FirebirdTypeSupportMixin(DDLTypeMixin, DDLTypeSupport):
         the unsized ``VARCHAR(255)`` here is a decision of this backend rather
         than a Firebird default — it is the same number, named once in
         :attr:`_FB_RENDERED_VARCHAR_LENGTH`."""
-        self._check_spelling(data_type, VarCharType)
+        self.check_spelling(data_type, VarCharType)
         length = data_type.length
         if length is None:
             length = self._FB_RENDERED_VARCHAR_LENGTH

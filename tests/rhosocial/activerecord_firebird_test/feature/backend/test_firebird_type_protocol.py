@@ -1110,7 +1110,7 @@ class TestIdentityFieldsAreHonouredOrRefused:
         )
         unread = set()
         for key in keys:
-            klass = dialect._type_class_for(key)
+            klass = dialect.type_class_for(key)
             if klass is None:
                 continue
             body = formatter_and_helpers(key)
@@ -1158,7 +1158,7 @@ class TestIdentityFieldsAreHonouredOrRefused:
         )
         declaring, silent = set(), set()
         for key in keys:
-            klass = dialect._type_class_for(key) or DataType
+            klass = dialect.type_class_for(key) or DataType
             if "unsigned" not in klass.PARAMETERS:
                 continue
             declaring.add(key)

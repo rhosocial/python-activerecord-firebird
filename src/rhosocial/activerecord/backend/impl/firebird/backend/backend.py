@@ -301,8 +301,8 @@ class FirebirdBackend(
             mapping = column_mapping or {}
             for row in rows:
                 row_dict = dict(zip(column_names, row, strict=False))
-                adapted_row = self._adapt_row_types(row_dict, adapters)
-                final_row = self._remap_row_columns(adapted_row, mapping)
+                adapted_row = self.adapt_row_types(row_dict, adapters)
+                final_row = self.remap_row_columns(adapted_row, mapping)
                 if char_columns:
                     for col in char_columns:
                         if isinstance(final_row.get(col), str):
