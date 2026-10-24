@@ -130,19 +130,22 @@ class TestIntrospectParserContract:
             args = parse_introspect_args(["introspect", introspect_type])
             assert args.type == introspect_type
 
-    def test_name_schema_and_flags(self):
+    def test_name_and_flags(self):
+        """The name and ``--include-system``; there is no namespace flag.
+
+        Firebird has one unnamed namespace, so nothing here names a level.
+        The case that a ``--schema`` flag is *absent* is pinned in
+        ``test_cli.py``, which asserts the parser refuses it.
+        """
         args = parse_introspect_args([
-            "introspect", "columns", "users", "--schema", "MAIN",
-            "--include-system",
+            "introspect", "columns", "users", "--include-system",
         ])
         assert args.name == "users"
-        assert args.schema == "MAIN"
         assert args.include_system is True
 
     def test_defaults(self):
         args = parse_introspect_args(["introspect", "tables"])
         assert args.name is None
-        assert args.schema is None
         assert args.include_system is False
         assert args.output == "table"
 
@@ -200,14 +203,20 @@ class TestIntrospectHandleHappyPaths:
         call = FakeBackend.last_instance.introspector.calls[0]
         assert call == ("list_tables", None, True)
 
-    def test_schema_forwarded(self, monkeypatch):
+    def test_the_connection_database_is_the_only_scope(self, monkeypatch):
+        """What the run asks about is the database it connected to.
+
+        There is no namespace flag, so the schema each question receives is
+        the introspector's own default -- which for Firebird is nothing at
+        all, because nothing qualifies a name above the table.
+        """
         monkeypatch.setattr(introspect_mod, "FirebirdBackend", FakeBackend)
         args = parse_introspect_args([
-            "introspect", "columns", "USERS", "--database", "/tmp/x.fdb", "--schema", "MAIN",
+            "introspect", "columns", "USERS", "--database", "/tmp/x.fdb",
         ])
         introspect_mod.handle(args)
         call = FakeBackend.last_instance.introspector.calls[0]
-        assert call == ("list_columns", "USERS", "MAIN")
+        assert call == ("list_columns", "USERS", None)
 
     def test_default_table_output_emits_rows_via_fallback_provider(self, monkeypatch, capsys):
         monkeypatch.setattr(introspect_mod, "FirebirdBackend", FakeBackend)

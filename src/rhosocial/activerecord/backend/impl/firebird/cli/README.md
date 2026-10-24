@@ -48,6 +48,11 @@ selects one object for `generators` and `domains`.
 *   **Read-only.** `introspect` never writes. It does not create, drop, or
     alter anything, so it is safe to run against a database whose schema
     matters.
+*   **There is no namespace flag, and that is deliberate.** Firebird has a
+    single unnamed namespace: every object lives in the one database the
+    connection opens, and nothing qualifies a name above it. An earlier version
+    accepted `--schema`, which named a level this engine does not have; it is
+    gone rather than aliased.
 *   **Catalogue names are upper case and space-padded.** Firebird stores
     `CHAR` columns padded, so the introspector strips them; a name that is
     only padding is not an object.
