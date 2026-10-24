@@ -485,52 +485,42 @@ class FirebirdAsyncIntrospectorMixin(IntrospectorMixin):
     def _make_domain_list_sql(self, include_system: bool = False):
         """The domains of this database, with the attributes they were declared with.
 
-        A domain is spread over two catalogue relations, so both are read:
-
-        * ``RDB$DOMAINS`` holds what makes a *domain* a domain -- its name, the
-          check text (``RDB$VALIDATION_SOURCE``), the system flag, the comment.
-        * ``RDB$FIELDS`` holds the type descriptor the domain points at
-          (``RDB$FIELD_NAME`` is the join key, not ``RDB$DOMAIN_NAME``):
-          base type, sub type, byte length, character length, precision,
-          scale, null flag and the ``DEFAULT`` source. Firebird keeps a
-          domain's default on this descriptor, the same place a column's
-          default lives.
+        One relation, not two. ``RDB$FIELDS`` is where Firebird keeps "the
+        definitions of columns and domains, both system and custom" (language
+        reference, D.11) -- the name, the type descriptor, the ``DEFAULT``
+        source, the ``CHECK`` source, the null flag, the system flag and the
+        comment all sit on it. There is no ``RDB$DOMAINS`` table: an earlier
+        version of this query joined one, which the server refused with
+        "Table unknown", because it does not exist.
 
         ``RDB$CHARACTER_SETS`` is a **LEFT** join because the charset id is
         NULL for non-character types: an inner join would silently drop every
         numeric, date and blob domain from the answer.
 
-        ``RDB$DOMAIN_NAME IS NOT NULL`` filters the rows Firebird writes for
-        types declared inline (``NUMERIC(9,2)`` and friends are stored as
-        nameless, system-owned domain rows); those are not domains a caller
-        created, and ``RDB$SYSTEM_FLAG`` keeps the rest of the system's own
-        rows when ``include_system`` is False.
+        What separates a domain from an implicit column domain is the name.
+        ``RDB$FIELDS`` also carries the row Firebird generates for every column
+        declared inline (``NUMERIC(9,2)`` and friends), and those are not
+        objects a caller created -- the language reference notes that
+        system-created domain names start with ``RDB$``. A caller asking for
+        the domains it declared therefore gets the rows whose names do not;
+        ``include_system`` reads every row instead, the system ones included.
         """
         from ..query_nodes import (
             column,
             compare,
             conjunction,
             join,
-            literal,
-            null_test,
+            like,
             relation,
             select_sql,
         )
 
         d = self.dialect
-        joined = join(
+        # A LEFT join, not INNER: RDB$CHARACTER_SET_ID is only meaningful for
+        # character types, and the join must not delete the rest of the answer.
+        source = join(
             d,
-            join(
-                d,
-                relation(d, "RDB$DOMAINS", alias="dm"),
-                relation(d, "RDB$FIELDS", alias="f"),
-                condition=compare(
-                    d,
-                    "eq",
-                    column(d, "RDB$FIELD_NAME", "dm"),
-                    column(d, "RDB$FIELD_NAME", "f"),
-                ),
-            ),
+            relation(d, "RDB$FIELDS", alias="f"),
             relation(d, "RDB$CHARACTER_SETS", alias="cs"),
             condition=compare(
                 d,
@@ -540,17 +530,21 @@ class FirebirdAsyncIntrospectorMixin(IntrospectorMixin):
             ),
             join_type="LEFT JOIN",
         )
-        conditions = [null_test(d, column(d, "RDB$DOMAIN_NAME", "dm"), is_not=True)]
+        conditions = []
         if not include_system:
+            # NOT LIKE 'RDB$%' is the documented discriminator for a
+            # system-generated name. It is a string test rather than a flag
+            # because RDB$FIELDS has no flag saying "this row is a named
+            # domain" -- RDB$SYSTEM_FLAG means something else ("the domain is
+            # automatically created by the system"), which is the
+            # implicit-column rows this same filter removes.
             conditions.append(
-                compare(
-                    d, "eq", column(d, "RDB$SYSTEM_FLAG", "dm"), literal(d, 0, inline=True)
-                )
+                like(d, column(d, "RDB$FIELD_NAME", "f"), "RDB$%", negated=True)
             )
         return select_sql(
             d,
             [
-                column(d, "RDB$DOMAIN_NAME", "dm", alias="DOMAIN_NAME"),
+                column(d, "RDB$FIELD_NAME", "f", alias="DOMAIN_NAME"),
                 column(d, "RDB$FIELD_TYPE", "f", alias="FIELD_TYPE"),
                 column(d, "RDB$FIELD_SUB_TYPE", "f", alias="FIELD_SUB_TYPE"),
                 column(d, "RDB$FIELD_LENGTH", "f", alias="FIELD_LENGTH"),
@@ -560,13 +554,13 @@ class FirebirdAsyncIntrospectorMixin(IntrospectorMixin):
                 column(d, "RDB$CHARACTER_SET_NAME", "cs", alias="CHARACTER_SET_NAME"),
                 column(d, "RDB$NULL_FLAG", "f", alias="NULL_FLAG"),
                 column(d, "RDB$DEFAULT_SOURCE", "f", alias="DEFAULT_SOURCE"),
-                column(d, "RDB$VALIDATION_SOURCE", "dm", alias="VALIDATION_SOURCE"),
-                column(d, "RDB$SYSTEM_FLAG", "dm", alias="SYSTEM_FLAG"),
-                column(d, "RDB$DESCRIPTION", "dm", alias="DESCRIPTION"),
+                column(d, "RDB$VALIDATION_SOURCE", "f", alias="VALIDATION_SOURCE"),
+                column(d, "RDB$SYSTEM_FLAG", "f", alias="SYSTEM_FLAG"),
+                column(d, "RDB$DESCRIPTION", "f", alias="DESCRIPTION"),
             ],
-            from_=joined,
-            where=conjunction(d, *conditions),
-            order_by=[column(d, "RDB$DOMAIN_NAME", "dm")],
+            from_=source,
+            where=conjunction(d, *conditions) if conditions else None,
+            order_by=[column(d, "RDB$FIELD_NAME", "f")],
         )
 
     def _make_view_list_sql(self, schema: Optional[str] = None) -> str:

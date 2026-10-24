@@ -119,12 +119,25 @@ def null_test(dialect: "SQLDialectBase", operand, is_not: bool = False):
     return IsNullPredicate(dialect, operand, is_not=is_not)
 
 
-def like(dialect: "SQLDialectBase", operand, pattern: str):
-    """``operand LIKE '<pattern>'`` with the pattern inline, as the text had it."""
+def like(
+    dialect: "SQLDialectBase",
+    operand,
+    pattern: str,
+    negated: bool = False,
+):
+    """``operand LIKE '<pattern>'`` with the pattern inline, as the text had it.
+
+    ``negated`` renders ``NOT LIKE``. The pattern is a string constant that
+    says which names belong to the engine, so it rides the tree inline rather
+    than becoming a bind parameter.
+    """
     from rhosocial.activerecord.backend.expression import LikeOperator, LikePredicate
 
     return LikePredicate(
-        dialect, LikeOperator.LIKE, operand, literal(dialect, pattern, inline=True)
+        dialect,
+        LikeOperator.NOT_LIKE if negated else LikeOperator.LIKE,
+        operand,
+        literal(dialect, pattern, inline=True),
     )
 
 

@@ -71,11 +71,11 @@ class FirebirdDomainInfo:
         "not null", not "nullable", so a missing flag means nullable).
 
     ``default_source`` / ``check_source``
-        The ``DEFAULT`` and ``CHECK`` clause text as the catalogue keeps it
+        The ``DEFAULT`` and ``CHECK`` clause text as the catalogue keeps it,
+        both read from the domain's own ``RDB$FIELDS`` row
         (``RDB$FIELDS.RDB$DEFAULT_SOURCE`` and
-        ``RDB$DOMAINS.RDB$VALIDATION_SOURCE``). Firebird stores a domain's
-        default on its ``RDB$FIELDS`` descriptor, where a column's default
-        also lives, not on the domain row.
+        ``RDB$FIELDS.RDB$VALIDATION_SOURCE``). Firebird keeps a domain's
+        default where a column's default also lives, on the same descriptor.
     """
 
     name: str

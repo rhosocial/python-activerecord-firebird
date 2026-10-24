@@ -102,27 +102,57 @@ class TestGeneratorStatements:
 
 
 class TestDomainStatements:
-    def test_reads_both_catalogue_rows(self, probe):
+    def test_reads_the_one_catalogue_row(self, probe):
+        """``RDB$FIELDS`` is the whole answer; there is no ``RDB$DOMAINS``.
+
+        The earlier version of this query joined ``RDB$DOMAINS``, which does
+        not exist -- the server refused it with "Table unknown". Firebird keeps
+        domain and column definitions on ``RDB$FIELDS`` (language reference
+        D.11), name and type descriptor together, so the read is one relation
+        and the join that used to split it across two is gone.
+        """
         sql, params = probe._make_domain_list_sql()
-        assert '"RDB$DOMAINS" AS "DM"' in sql
-        assert '"RDB$FIELDS" AS "F"' in sql
-        assert '"DM"."RDB$FIELD_NAME" = "F"."RDB$FIELD_NAME"' in sql
+        assert '"RDB$FIELDS"' in sql
+        assert "RDB$DOMAINS" not in sql
         assert params == ()
+
+    def test_the_named_domain_filter_is_on_the_name(self, probe):
+        """``NOT LIKE 'RDB$%'`` -- the discriminator the docs state.
+
+        ``RDB$FIELDS`` also holds the row Firebird generates for every
+        inline-declared column, and those are not objects a caller created.
+        The language reference notes that system-created domain names start
+        with ``RDB$``, so the filter is on the name.
+        """
+        sql, _ = probe._make_domain_list_sql()
+        assert "NOT LIKE" in sql
+        assert "RDB$%" in sql
+
+    def test_system_rows_are_filtered_unless_asked_for(self, probe):
+        filtered, _ = probe._make_domain_list_sql()
+        everything, _ = probe._make_domain_list_sql(include_system=True)
+        assert "NOT LIKE" in filtered
+        assert "NOT LIKE" not in everything
 
     def test_charset_is_a_left_join(self, probe):
         """An inner join would drop every non-character domain."""
         sql, _ = probe._make_domain_list_sql()
         assert 'LEFT JOIN "RDB$CHARACTER_SETS" AS "CS"' in sql
 
-    def test_nameless_rows_are_never_domains(self, probe):
-        sql, _ = probe._make_domain_list_sql()
-        assert '"DM"."RDB$DOMAIN_NAME" IS NOT NULL' in sql
+    def test_the_projection_carries_what_the_parser_reads(self, probe):
+        """Every alias ``_parse_domains`` looks up is projected.
 
-    def test_system_rows_are_filtered_unless_asked_for(self, probe):
-        filtered, _ = probe._make_domain_list_sql()
-        everything, _ = probe._make_domain_list_sql(include_system=True)
-        assert '"DM"."RDB$SYSTEM_FLAG" = 0' in filtered
-        assert '"DM"."RDB$SYSTEM_FLAG" = 0' not in everything
+        A missing one is a silent ``None`` rather than a failure, which is the
+        worse of the two ways for this to be wrong.
+        """
+        sql, _ = probe._make_domain_list_sql()
+        for alias in (
+            "DOMAIN_NAME", "FIELD_TYPE", "FIELD_SUB_TYPE", "FIELD_LENGTH",
+            "CHARACTER_LENGTH", "PRECISION", "SCALE", "CHARACTER_SET_NAME",
+            "NULL_FLAG", "DEFAULT_SOURCE", "VALIDATION_SOURCE", "SYSTEM_FLAG",
+            "DESCRIPTION",
+        ):
+            assert 'AS "%s"' % alias in sql, alias
 
 
 # ---------------------------------------------------------------------------
