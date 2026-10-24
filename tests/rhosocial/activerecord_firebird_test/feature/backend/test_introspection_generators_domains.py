@@ -131,8 +131,21 @@ class TestDomainStatements:
     def test_system_rows_are_filtered_unless_asked_for(self, probe):
         filtered, _ = probe._make_domain_list_sql()
         everything, _ = probe._make_domain_list_sql(include_system=True)
-        assert "NOT LIKE" in filtered
+        # Both filters say something different, so both are pinned: the flag
+        # is what ``is_system`` on the result is read from, and the name is
+        # what removes the engine's implicit column descriptors.
+        assert '"RDB$SYSTEM_FLAG" = 0' in filtered
         assert "NOT LIKE" not in everything
+
+    def test_the_flag_filter_matches_what_the_result_reports(self, probe):
+        """The filter and ``is_system`` read the same column.
+
+        A listing that returned system rows while reporting ``is_system``
+        False on each of them would be lying in the field the caller reads.
+        """
+        sql, _ = probe._make_domain_list_sql()
+        assert 'AS "SYSTEM_FLAG"' in sql
+        assert '"RDB$SYSTEM_FLAG" = 0' in sql
 
     def test_charset_is_a_left_join(self, probe):
         """An inner join would drop every non-character domain."""

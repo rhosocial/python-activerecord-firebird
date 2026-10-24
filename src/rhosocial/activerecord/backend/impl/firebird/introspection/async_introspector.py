@@ -511,6 +511,7 @@ class FirebirdAsyncIntrospectorMixin(IntrospectorMixin):
             conjunction,
             join,
             like,
+            literal,
             relation,
             select_sql,
         )
@@ -532,12 +533,30 @@ class FirebirdAsyncIntrospectorMixin(IntrospectorMixin):
         )
         conditions = []
         if not include_system:
-            # NOT LIKE 'RDB$%' is the documented discriminator for a
-            # system-generated name. It is a string test rather than a flag
-            # because RDB$FIELDS has no flag saying "this row is a named
-            # domain" -- RDB$SYSTEM_FLAG means something else ("the domain is
-            # automatically created by the system"), which is the
-            # implicit-column rows this same filter removes.
+            # Two filters, because they say different things.
+            #
+            # ``RDB$SYSTEM_FLAG`` is what the caller means by "not system":
+            # it is the column the ``is_system`` field on the result is read
+            # from, so filtering on it is what keeps the answer honest. On a
+            # live server there are named domains the engine owns, and a
+            # listing that returned them would contradict ``is_system is
+            # False`` on every row.
+            #
+            # ``NOT LIKE 'RDB$%'`` removes the *implicit* descriptors
+            # Firebird writes for every inline-declared column. Those are not
+            # domains a caller created, and the language reference notes that
+            # system-created domain names start with ``RDB$``. The flag alone
+            # does not catch them: they are marked as created by the system
+            # only when the column type was written inline, which is the same
+            # population but reached by a different route.
+            conditions.append(
+                compare(
+                    d,
+                    "eq",
+                    column(d, "RDB$SYSTEM_FLAG", "f"),
+                    literal(d, 0, inline=True),
+                )
+            )
             conditions.append(
                 like(d, column(d, "RDB$FIELD_NAME", "f"), "RDB$%", negated=True)
             )
