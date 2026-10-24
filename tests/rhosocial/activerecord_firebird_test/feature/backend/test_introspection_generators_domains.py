@@ -273,9 +273,14 @@ def demo_objects(live_backend):
 
     live_backend.execute(f"CREATE GENERATOR {generator}", fetch=False)
     live_backend.execute(f"SET GENERATOR {generator} TO 7", fetch=False)
+    # The clause order is Firebird's, not free: ``DEFAULT`` must precede
+    # ``NOT NULL``. Writing them the other way round parses up to the word
+    # DEFAULT and then fails with "Token unknown", which is what CI reported.
+    # This is the order the project's own domain renderer emits
+    # (firebird/types.py: type, CHARACTER SET, DEFAULT, NOT NULL, CHECK).
     live_backend.execute(
         f"CREATE DOMAIN {domain} AS VARCHAR(24) CHARACTER SET UTF8 "
-        f"NOT NULL DEFAULT 'n/a' CHECK (VALUE <> '')",
+        f"DEFAULT 'n/a' NOT NULL CHECK (VALUE <> '')",
         fetch=False,
     )
     try:
