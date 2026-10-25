@@ -44,8 +44,8 @@ from rhosocial.activerecord.backend.impl.firebird.dialect import FirebirdDialect
 from rhosocial.activerecord.backend.impl.firebird.expression.dml import (
     UpdateOrInsertStatement,
 )
-from rhosocial.activerecord.backend.impl.firebird.introspection.async_introspector import (
-    FirebirdAsyncIntrospectorMixin,
+from rhosocial.activerecord.backend.impl.firebird.introspection.introspector import (
+    SyncFirebirdIntrospector,
 )
 from rhosocial.activerecord.backend.impl.firebird.mixins.identifier import (
     FirebirdIdentifierMixin,
@@ -433,36 +433,52 @@ class TestNamespaceDeclaration:
 class TestIntrospectionNamespace:
     """Introspection takes the core's ``schema`` argument and refuses it."""
 
-    class _Probe(FirebirdAsyncIntrospectorMixin):
+    class _Probe(SyncFirebirdIntrospector):
         def __init__(self, dialect):
             self._backend = type("_B", (), {"dialect": dialect})()
 
     @pytest.mark.parametrize("schema", [None, ""])
     def test_absent_namespace_is_fine(self, dialect, schema):
         probe = self._Probe(dialect)
-        assert probe._make_table_list_sql(schema, False, True, None)[1] == ()
-        assert probe._make_column_list_sql("orders", schema)[1] == ("orders",)
-        assert probe._make_index_list_sql("orders", schema)[1] == ("orders",)
-        assert probe._make_foreign_key_sql("orders", schema)[1] == ("orders",)
-        assert probe._make_view_list_sql(schema)[1] == ()
-        assert probe._build_primary_key_sql("orders", schema)[1] == ("orders",)
+        assert (
+            probe.table_list_statement(
+                schema=schema, include_system=False, include_views=True, table_type=None
+            ).to_sql()[1]
+            == ()
+        )
+        assert (
+            probe.column_info_statement(table_name="orders", schema=schema).to_sql()[1]
+            == ("orders",)
+        )
+        assert (
+            probe.index_info_statement(table_name="orders", schema=schema).to_sql()[1]
+            == ("orders",)
+        )
+        assert (
+            probe.foreign_key_statement(table_name="orders", schema=schema).to_sql()[1]
+            == ("orders",)
+        )
+        assert (
+            probe.view_list_statement(schema=schema, include_system=False).to_sql()[1]
+            == ()
+        )
 
     @pytest.mark.parametrize(
         "call",
         [
-            lambda p: p._make_table_list_sql("sales", False, True, None),
-            lambda p: p._make_column_list_sql("orders", "sales"),
-            lambda p: p._make_index_list_sql("orders", "sales"),
-            lambda p: p._make_foreign_key_sql("orders", "sales"),
-            lambda p: p._make_view_list_sql("sales"),
-            lambda p: p._build_primary_key_sql("orders", "sales"),
-            lambda p: p._build_table_list_sql("sales", False, True, None),
+            lambda p: p.table_list_statement(
+                schema="sales", include_system=False, include_views=True, table_type=None
+            ),
+            lambda p: p.column_info_statement(table_name="orders", schema="sales"),
+            lambda p: p.index_info_statement(table_name="orders", schema="sales"),
+            lambda p: p.foreign_key_statement(table_name="orders", schema="sales"),
+            lambda p: p.view_list_statement(schema="sales", include_system=False),
         ],
     )
     def test_named_namespace_raises(self, dialect, call):
         probe = self._Probe(dialect)
         with pytest.raises(UnsupportedFeatureError, match="schema-scoped introspection"):
-            call(probe)
+            call(probe).to_sql()
 
     def test_default_schema_is_empty(self, dialect):
         assert self._Probe(dialect).default_schema == ""

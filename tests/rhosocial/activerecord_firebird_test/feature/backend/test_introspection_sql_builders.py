@@ -18,15 +18,15 @@ Both forms name the same catalogue object, and the quoted one is what
 import pytest
 
 from rhosocial.activerecord.backend.impl.firebird.dialect import FirebirdDialect
-from rhosocial.activerecord.backend.impl.firebird.introspection.async_introspector import (
-    FirebirdAsyncIntrospectorMixin,
+from rhosocial.activerecord.backend.impl.firebird.introspection.introspector import (
+    SyncFirebirdIntrospector,
 )
 from rhosocial.activerecord.backend.impl.firebird.introspection.status_introspector import (
     FirebirdStatusIntrospectorMixin,
 )
 
 
-class IntrospectionProbe(FirebirdAsyncIntrospectorMixin):
+class IntrospectionProbe(SyncFirebirdIntrospector):
     def __init__(self, dialect):
         self._backend = type("_B", (), {"dialect": dialect})()
 
@@ -53,14 +53,16 @@ def status(dialect):
 
 class TestDatabaseInfo:
     def test_reads_the_attachment_name(self, probe):
-        sql, params = probe._build_database_info_sql()
+        sql, params = probe.database_info_statement().to_sql()
         assert sql == 'SELECT "MON$DATABASE_NAME" FROM "MON$DATABASE"'
         assert params == ()
 
 
 class TestTableList:
     def test_default_excludes_system_relations(self, probe):
-        sql, params = probe._build_table_list_sql(None, False, True, None)
+        sql, params = probe.table_list_statement(
+            schema=None, include_system=False, include_views=True, table_type=None
+        ).to_sql()
         assert sql == (
             'SELECT "RDB$RELATION_NAME", "RDB$VIEW_BLR" FROM "RDB$RELATIONS" '
             'WHERE "RDB$SYSTEM_FLAG" = 0 ORDER BY "RDB$RELATION_NAME"'
@@ -68,12 +70,16 @@ class TestTableList:
         assert params == ()
 
     def test_without_views_adds_the_blr_test(self, probe):
-        sql, _ = probe._build_table_list_sql(None, False, False, None)
+        sql, _ = probe.table_list_statement(
+            schema=None, include_system=False, include_views=False, table_type=None
+        ).to_sql()
         assert 'AND "RDB$VIEW_BLR" IS NULL' in sql
 
     def test_with_system_relations_has_no_where(self, probe):
         """The old statement's bare ``1=1`` was clause assembly, not a condition."""
-        sql, _ = probe._build_table_list_sql(None, True, True, None)
+        sql, _ = probe.table_list_statement(
+            schema=None, include_system=True, include_views=True, table_type=None
+        ).to_sql()
         assert "WHERE" not in sql
         assert "1=1" not in sql
         assert sql == (
@@ -84,7 +90,9 @@ class TestTableList:
 
 class TestColumnList:
     def test_projection_order_and_aliases(self, probe):
-        sql, params = probe._build_column_list_sql("orders", None)
+        sql, params = probe.column_info_statement(
+            table_name="orders", schema=None
+        ).to_sql()
         # The parsers read these names, in this order.
         expected_aliases = [
             "COLUMN_NAME",
@@ -104,7 +112,7 @@ class TestColumnList:
         assert "?" in sql and "'orders'" not in sql
 
     def test_joins_the_domain_the_column_was_declared_from(self, probe):
-        sql, _ = probe._build_column_list_sql("orders", None)
+        sql, _ = probe.column_info_statement(table_name="orders", schema=None).to_sql()
         assert (
             'FROM "RDB$RELATION_FIELDS" AS "RF" JOIN "RDB$FIELDS" AS "F" '
             'ON "RF"."RDB$FIELD_SOURCE" = "F"."RDB$FIELD_NAME"' in sql
@@ -114,30 +122,59 @@ class TestColumnList:
 
 class TestIndexList:
     def test_projection_and_binding(self, probe):
-        sql, params = probe._build_index_list_sql("orders", None)
+        sql, params = probe.index_info_statement(
+            table_name="orders", schema=None
+        ).to_sql()
         assert 'AS "INDEX_NAME"' in sql and 'AS "FIELD_POSITION"' in sql
         assert params == ("orders",)
         assert sql.endswith('ORDER BY "I"."RDB$INDEX_NAME", "ISG"."RDB$FIELD_POSITION"')
 
 
 class TestPrimaryKey:
-    def test_unique_flag_and_name_pattern_are_literals(self, probe):
-        sql, params = probe._build_primary_key_sql("orders", None)
-        assert '"I"."RDB$UNIQUE_FLAG" = 1' in sql
-        assert "\"I\".\"RDB$INDEX_NAME\" LIKE 'RDB$PRIMARY%'" in sql
-        assert params == ("orders",)
+    def test_the_primary_key_is_the_index_the_parser_names(self, probe):
+        """``get_primary_key`` reads ``is_primary`` off the index listing.
+
+        There is no separate primary-key query: Firebird keeps a key in
+        ``RDB$INDICES`` under a name beginning ``RDB$PRIMARY``, so the
+        derivation belongs to the parser. The two rows differ only in the
+        name, which is what decides.
+        """
+        indexes = probe.parse_indexes(
+            [
+                {
+                    "INDEX_NAME": "RDB$PRIMARY7",
+                    "UNIQUE_FLAG": 1,
+                    "FIELD_NAME": "ID",
+                    "FIELD_POSITION": 1,
+                },
+                {
+                    "INDEX_NAME": "IDX_ORDERS_PLACED_AT",
+                    "UNIQUE_FLAG": 0,
+                    "FIELD_NAME": "PLACED_AT",
+                    "FIELD_POSITION": 1,
+                },
+            ],
+            "orders",
+            "",
+        )
+        by_name = {index.name: index for index in indexes}
+        assert by_name["RDB$PRIMARY7"].is_primary is True
+        assert by_name["RDB$PRIMARY7"].is_unique is True
+        assert by_name["IDX_ORDERS_PLACED_AT"].is_primary is False
 
 
 class TestForeignKey:
     def test_six_relation_reads_are_stated(self, probe):
-        sql, params = probe._build_foreign_key_sql("orders", None)
+        sql, params = probe.foreign_key_statement(
+            table_name="orders", schema=None
+        ).to_sql()
         for alias in ("RC", "SEG", "I", "REF_SEG", "REF_I", "REF"):
             assert f'AS "{alias}"' in sql
         assert params == ("orders",)
 
     def test_referencing_and_referenced_segments_stay_apart(self, probe):
         """Two reads of ``RDB$INDEX_SEGMENTS`` under different joins."""
-        sql, _ = probe._build_foreign_key_sql("orders", None)
+        sql, _ = probe.foreign_key_statement(table_name="orders", schema=None).to_sql()
         assert 'AS "SEG"' in sql and 'AS "REF_SEG"' in sql
         assert '"RC"."RDB$INDEX_NAME" = "SEG"."RDB$INDEX_NAME"' in sql
         assert '"RC"."RDB$CONSTRAINT_NAME_UQ" = "REF_SEG"."RDB$INDEX_NAME"' in sql
@@ -145,38 +182,15 @@ class TestForeignKey:
 
 class TestViewList:
     def test_blr_test_is_not_null(self, probe):
-        sql, params = probe._build_view_list_sql(None)
+        sql, params = probe.view_list_statement(
+            schema=None, include_system=False
+        ).to_sql()
         assert sql == (
             'SELECT "RDB$RELATION_NAME", "RDB$VIEW_SOURCE" FROM "RDB$RELATIONS" '
             'WHERE "RDB$SYSTEM_FLAG" = 0 AND "RDB$VIEW_BLR" IS NOT NULL '
             'ORDER BY "RDB$RELATION_NAME"'
         )
         assert params == ()
-
-
-class TestIntrospectionQueriesMapping:
-    """The dialect-level mapping names the same questions as the introspector."""
-
-    def test_every_entry_is_a_rendered_pair(self, dialect):
-        queries = dialect.INTROSPECTION_QUERIES
-        assert set(queries) == {
-            "tables",
-            "columns",
-            "indices",
-            "triggers",
-            "generators",
-            "procedures",
-        }
-        for name, (sql, params) in queries.items():
-            assert sql.startswith("SELECT "), name
-            assert params == (), name
-
-    def test_the_mapping_carries_no_text_template(self, dialect):
-        """No ``self.p()`` marker survives into the shape view."""
-        for name, (sql, params) in dialect.INTROSPECTION_QUERIES.items():
-            assert "?" not in sql, name
-            assert "%s" not in sql, name
-            assert params == (), name
 
 
 class TestStatusQueries:

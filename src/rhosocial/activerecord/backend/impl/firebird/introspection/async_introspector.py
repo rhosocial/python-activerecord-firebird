@@ -337,7 +337,7 @@ class FirebirdAsyncIntrospectorMixin(IntrospectorMixin):
         a view, which is exactly what ``None`` already says.
 
         ``RDB$VIEW_SOURCE`` is the definition and ``RDB$VIEW_BLR`` is what
-        marks a relation as a view (see ``_make_view_list_sql``); a view has
+        marks a relation as a view (see ``view_list_statement``); a view has
         no ``CHECK OPTION`` in Firebird and is not updatable through the
         catalogue, so both stay absent rather than guessed.
         """
