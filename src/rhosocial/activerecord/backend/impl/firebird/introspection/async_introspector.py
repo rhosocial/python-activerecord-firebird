@@ -6,6 +6,9 @@ from rhosocial.activerecord.backend.introspection.base import (
     IntrospectorMixin,
     AsyncAbstractIntrospector,
 )
+from rhosocial.activerecord.backend.introspection.cache import (
+    IntrospectionCache,
+)
 from rhosocial.activerecord.backend.introspection.types import (
     IntrospectionDatabaseInfo,
     IntrospectionTableInfo,
@@ -18,8 +21,10 @@ from rhosocial.activerecord.backend.introspection.types import (
     ReferentialAction,
     IntrospectionViewInfo,
     IntrospectionTriggerInfo,
+    IntrospectionScope,
 )
-from rhosocial.activerecord.backend.dialect.exceptions import UnsupportedFeatureError
+
+from .types import FirebirdDomainInfo, FirebirdGeneratorInfo
 
 # Firebird field types mapping (shared with sync introspector)
 FB_FIELD_TYPES = {
@@ -74,27 +79,56 @@ FB_BLOB_SUB_TYPES = {
     1: "TEXT",
 }
 
+# The table-trigger values of ``RDB$TRIGGER_TYPE`` (language reference D.32.1).
+# It is a closed list, not a bitmask a caller can decode by shifting: the same
+# integer means a different combination at each magnitude (17 is INSERT|UPDATE,
+# 25 is INSERT|DELETE, 113 is all three). Database-level triggers carry values
+# in the thousands and are excluded by the question itself, which requires a
+# relation name.
+FB_TRIGGER_TYPES = {
+    1: ("BEFORE", ("INSERT",)),
+    2: ("AFTER", ("INSERT",)),
+    3: ("BEFORE", ("UPDATE",)),
+    4: ("AFTER", ("UPDATE",)),
+    5: ("BEFORE", ("DELETE",)),
+    6: ("AFTER", ("DELETE",)),
+    17: ("BEFORE", ("INSERT", "UPDATE")),
+    18: ("AFTER", ("INSERT", "UPDATE")),
+    25: ("BEFORE", ("INSERT", "DELETE")),
+    26: ("AFTER", ("INSERT", "DELETE")),
+    27: ("BEFORE", ("UPDATE", "DELETE")),
+    28: ("AFTER", ("UPDATE", "DELETE")),
+    113: ("BEFORE", ("INSERT", "UPDATE", "DELETE")),
+    114: ("AFTER", ("INSERT", "UPDATE", "DELETE")),
+}
+
 
 class FirebirdAsyncIntrospectorMixin(IntrospectorMixin):
-    """Shared build/parse logic for Firebird introspection (async path).
+    """Shared parse logic for Firebird introspection, used by both I/O halves.
 
     Namespaces
     ----------
-    Firebird has one namespace, so every SQL builder here takes the ``schema``
-    argument the core ``IntrospectorMixin`` passes down and **rejects a
-    non-empty one** rather than ignoring it. The parameter exists because the
-    core base declares it; Firebird has nothing to put in it. Silently
-    discarding it would return the whole database's tables for a request that
-    asked for one schema's tables -- an answer that looks successful and is
-    about the wrong objects, which is the failure this layer exists to prevent.
+    Firebird has one namespace per database file, so the dialect refuses a
+    non-empty ``schema`` when it renders a statement
+    (:meth:`FirebirdIntrospectionMixin.reject_namespace`) rather than
+    ignoring it. Silently discarding it would return the whole database's
+    tables for a request that asked for one schema's tables -- an answer that
+    looks successful and is about the wrong objects, which is the failure
+    this layer exists to prevent.
 
-    The system tables these queries read (``RDB$RELATIONS``,
+    The system tables these questions read (``RDB$RELATIONS``,
     ``RDB$RELATION_FIELDS``, ``RDB$INDICES``, ``RDB$REF_CONSTRAINTS``) are
     ordinary relations reached unqualified and filtered with
     ``RDB$SYSTEM_FLAG``; ``RDB$`` is a naming convention, not a schema.
+
+    The SQL belongs to the dialect. This mixin constructs a statement, hands
+    it to the executor and parses the rows; the sync and async introspectors
+    are separate classes that cannot coexist, and they share every parser and
+    every Firebird-specific statement factory through this mixin.
     """
 
-    def _get_default_schema(self) -> str:
+    @property
+    def default_schema(self) -> str:
         """The namespace every Firebird object lives in -- there is only one.
 
         Empty rather than ``None`` because callers treat the empty string as
@@ -102,370 +136,45 @@ class FirebirdAsyncIntrospectorMixin(IntrospectorMixin):
         """
         return ""
 
-    def _reject_namespace(self, schema: Optional[str]) -> Optional[str]:
-        """Accept the empty namespace; refuse any other.
-
-        Args:
-            schema: The namespace a caller asked to introspect, or ``None`` /
-                ``""`` for "the whole database".
-
-        Returns:
-            ``None``, so callers can write ``schema = self._reject_namespace(schema)``.
-
-        Raises:
-            UnsupportedFeatureError: ``schema`` names something Firebird has.
-        """
-        if schema:
-            raise UnsupportedFeatureError(
-                self.dialect.name,
-                "schema-scoped introspection",
-                suggestion=(
-                    f"Firebird has a single unnamed namespace, so {schema!r} "
-                    f"cannot be selected from: the whole database is the only "
-                    f"scope. Pass schema=None."
-                ),
-            )
-        return None
-
     def _get_version(self) -> tuple:
         dialect_ver = getattr(self._backend.dialect, 'version', None)
         if dialect_ver:
             return dialect_ver
         return (3, 0, 0)
 
-    def _make_database_info_sql(self) -> str:
-        """Return SQL to query basic database info."""
-        from ..query_nodes import column, relation, select_sql
+    # ------------------------------------------------------------------
+    # Firebird-specific statement factories
+    #
+    # Generators and domains have no core entry point: the core's scopes name
+    # them (SEQUENCE; and SCHEMA for a database-wide type catalogue), but the
+    # questions and their results are Firebird's own. Each factory returns a
+    # statement with every parameter already collected; the dialect renders
+    # it, the executor runs it, and the parser below reads the rows.
+    # ------------------------------------------------------------------
 
-        d = self.dialect
-        return select_sql(
-            d, [column(d, "MON$DATABASE_NAME")], from_=relation(d, "MON$DATABASE")
-        )
+    def generator_list_statement(self, include_system: bool = False):
+        """Return the statement that lists this database's generators."""
+        from ..expression.introspection import FirebirdGeneratorListQueryStatement
 
-    def _make_table_list_sql(self, schema: Optional[str] = None,
-                              include_system: bool = False,
-                              include_views: bool = True,
-                              table_type: Optional[str] = None) -> str:
-        """Tables (and views) of the database, by relation name.
+        return FirebirdGeneratorListQueryStatement(self.dialect, include_system)
 
-        ``RDB$SYSTEM_FLAG = 0`` drops the catalogue's own relations and
-        ``RDB$VIEW_BLR IS NULL`` drops views; both are conditions of the
-        question, not data, so they stay inline exactly as the text had them.
-        The old statement also opened its WHERE with a bare ``1=1`` to make
-        the optional clauses append cleanly -- that was clause assembly
-        mechanics, not a condition, and the tree makes it unnecessary.
-        """
-        from ..query_nodes import (
-            column,
-            compare,
-            conjunction,
-            literal,
-            null_test,
-            relation,
-            select_sql,
-        )
+    def generator_value_statement(self, generator_name: str):
+        """Return the statement that reads one generator's current value."""
+        from ..expression.introspection import FirebirdGeneratorValueQueryStatement
 
-        self._reject_namespace(schema)
-        d = self.dialect
-        conditions = []
-        if not include_system:
-            conditions.append(
-                compare(d, "eq", column(d, "RDB$SYSTEM_FLAG"), literal(d, 0, inline=True))
-            )
-        if not include_views:
-            conditions.append(null_test(d, column(d, "RDB$VIEW_BLR")))
-        return select_sql(
-            d,
-            [column(d, "RDB$RELATION_NAME"), column(d, "RDB$VIEW_BLR")],
-            from_=relation(d, "RDB$RELATIONS"),
-            where=conjunction(d, *conditions) if conditions else None,
-            order_by=[column(d, "RDB$RELATION_NAME")],
-        )
+        return FirebirdGeneratorValueQueryStatement(self.dialect, generator_name)
 
-    def _make_column_list_sql(self, table_name: str, schema: Optional[str] = None) -> str:
-        """The columns of one relation, with the domain each is built on.
+    def domain_list_statement(self, include_system: bool = False):
+        """Return the statement that lists this database's domains."""
+        from ..expression.introspection import FirebirdDomainListQueryStatement
 
-        ``RDB$RELATION_FIELDS`` holds the per-column facts and ``RDB$FIELDS``
-        the domain the column was declared from, so the two are joined through
-        ``RDB$FIELD_SOURCE``. The relation name is a bind position.
-        """
-        from ..query_nodes import (
-            column,
-            compare,
-            join,
-            literal,
-            relation,
-            select_sql,
-        )
-
-        self._reject_namespace(schema)
-        d = self.dialect
-        joined = join(
-            d,
-            relation(d, "RDB$RELATION_FIELDS", alias="rf"),
-            relation(d, "RDB$FIELDS", alias="f"),
-            condition=compare(
-                d,
-                "eq",
-                column(d, "RDB$FIELD_SOURCE", "rf"),
-                column(d, "RDB$FIELD_NAME", "f"),
-            ),
-        )
-        return select_sql(
-            d,
-            [
-                column(d, "RDB$FIELD_NAME", "rf", alias="COLUMN_NAME"),
-                column(d, "RDB$FIELD_TYPE", "f", alias="FIELD_TYPE"),
-                column(d, "RDB$FIELD_SUB_TYPE", "f", alias="FIELD_SUB_TYPE"),
-                column(d, "RDB$CHARACTER_LENGTH", "f", alias="CHAR_LENGTH"),
-                column(d, "RDB$FIELD_PRECISION", "f", alias="PRECISION"),
-                column(d, "RDB$FIELD_SCALE", "f", alias="SCALE"),
-                column(d, "RDB$NULL_FLAG", "rf", alias="NULL_FLAG"),
-                column(d, "RDB$DEFAULT_SOURCE", "rf", alias="DEFAULT_SOURCE"),
-                column(d, "RDB$POSITION", "rf", alias="POSITION"),
-                column(d, "RDB$COMPUTED_SOURCE", "rf", alias="COMPUTED_SOURCE"),
-            ],
-            from_=joined,
-            where=compare(
-                d,
-                "eq",
-                column(d, "RDB$RELATION_NAME", "rf"),
-                literal(d, table_name),
-            ),
-            order_by=[column(d, "RDB$POSITION", "rf")],
-        )
-
-    def _make_index_list_sql(self, table_name: str, schema: Optional[str] = None) -> str:
-        """The indexes of one relation with their key columns, in key order."""
-        from ..query_nodes import (
-            column,
-            compare,
-            join,
-            literal,
-            relation,
-            select_sql,
-        )
-
-        self._reject_namespace(schema)
-        d = self.dialect
-        joined = join(
-            d,
-            relation(d, "RDB$INDICES", alias="i"),
-            relation(d, "RDB$INDEX_SEGMENTS", alias="isg"),
-            condition=compare(
-                d,
-                "eq",
-                column(d, "RDB$INDEX_NAME", "i"),
-                column(d, "RDB$INDEX_NAME", "isg"),
-            ),
-        )
-        return select_sql(
-            d,
-            [
-                column(d, "RDB$INDEX_NAME", "i", alias="INDEX_NAME"),
-                column(d, "RDB$UNIQUE_FLAG", "i", alias="UNIQUE_FLAG"),
-                column(d, "RDB$INDEX_INACTIVE", "i", alias="INACTIVE"),
-                column(d, "RDB$INDEX_TYPE", "i", alias="INDEX_TYPE"),
-                column(d, "RDB$FIELD_NAME", "isg", alias="FIELD_NAME"),
-                column(d, "RDB$FIELD_POSITION", "isg", alias="FIELD_POSITION"),
-            ],
-            from_=joined,
-            where=compare(
-                d,
-                "eq",
-                column(d, "RDB$RELATION_NAME", "i"),
-                literal(d, table_name),
-            ),
-            order_by=[
-                column(d, "RDB$INDEX_NAME", "i"),
-                column(d, "RDB$FIELD_POSITION", "isg"),
-            ],
-        )
-
-    def _make_primary_key_sql(self, table_name: str) -> str:
-        """The primary key's columns: the relation's unique ``RDB$PRIMARY%`` index.
-
-        Firebird names a primary key's backing index ``RDB$PRIMARY<n>``, so the
-        index name is matched by a LIKE pattern -- a literal of the question,
-        not data, and inline exactly as the text had it.
-        """
-        from ..query_nodes import (
-            column,
-            compare,
-            conjunction,
-            join,
-            like,
-            literal,
-            relation,
-            select_sql,
-        )
-
-        d = self.dialect
-        joined = join(
-            d,
-            relation(d, "RDB$INDICES", alias="i"),
-            relation(d, "RDB$INDEX_SEGMENTS", alias="isg"),
-            condition=compare(
-                d,
-                "eq",
-                column(d, "RDB$INDEX_NAME", "i"),
-                column(d, "RDB$INDEX_NAME", "isg"),
-            ),
-        )
-        return select_sql(
-            d,
-            [column(d, "RDB$FIELD_NAME", "isg")],
-            from_=joined,
-            where=conjunction(
-                d,
-                compare(
-                    d,
-                    "eq",
-                    column(d, "RDB$RELATION_NAME", "i"),
-                    literal(d, table_name),
-                ),
-                compare(
-                    d,
-                    "eq",
-                    column(d, "RDB$UNIQUE_FLAG", "i"),
-                    literal(d, 1, inline=True),
-                ),
-                like(d, column(d, "RDB$INDEX_NAME", "i"), "RDB$PRIMARY%"),
-            ),
-            order_by=[column(d, "RDB$FIELD_POSITION", "isg")],
-        )
-
-    def _make_foreign_key_sql(self, table_name: str, schema: Optional[str] = None) -> str:
-        """The outgoing foreign keys of one relation, with their targets.
-
-        Six relation reads: the constraint and its referencing index, that
-        index's own segments, the unique index the constraint points at and
-        that index's segments, and finally the target relation itself. Each
-        join is stated where it belongs rather than in one flat FROM list, so
-        which relation reads to which is visible in the tree.
-        """
-        from ..query_nodes import (
-            column,
-            compare,
-            join,
-            literal,
-            relation,
-            select_sql,
-        )
-
-        self._reject_namespace(schema)
-        d = self.dialect
-        # seg reads the referencing index's columns; ref_seg the referenced
-        # index's. Both join on an index name, so they are kept apart by the
-        # distinct relations they hang from, not by name alone.
-        joined = join(
-            d,
-            join(
-                d,
-                join(
-                    d,
-                    join(
-                        d,
-                        join(
-                            d,
-                            relation(d, "RDB$REF_CONSTRAINTS", alias="rc"),
-                            relation(d, "RDB$INDEX_SEGMENTS", alias="seg"),
-                            condition=compare(
-                                d,
-                                "eq",
-                                column(d, "RDB$INDEX_NAME", "rc"),
-                                column(d, "RDB$INDEX_NAME", "seg"),
-                            ),
-                        ),
-                        relation(d, "RDB$INDICES", alias="i"),
-                        condition=compare(
-                            d,
-                            "eq",
-                            column(d, "RDB$INDEX_NAME", "rc"),
-                            column(d, "RDB$INDEX_NAME", "i"),
-                        ),
-                    ),
-                    relation(d, "RDB$INDEX_SEGMENTS", alias="ref_seg"),
-                    condition=compare(
-                        d,
-                        "eq",
-                        column(d, "RDB$CONSTRAINT_NAME_UQ", "rc"),
-                        column(d, "RDB$INDEX_NAME", "ref_seg"),
-                    ),
-                ),
-                relation(d, "RDB$INDICES", alias="ref_i"),
-                condition=compare(
-                    d,
-                    "eq",
-                    column(d, "RDB$CONSTRAINT_NAME_UQ", "rc"),
-                    column(d, "RDB$INDEX_NAME", "ref_i"),
-                ),
-            ),
-            relation(d, "RDB$RELATIONS", alias="ref"),
-            condition=compare(
-                d,
-                "eq",
-                column(d, "RDB$RELATION_NAME", "ref_i"),
-                column(d, "RDB$RELATION_NAME", "ref"),
-            ),
-        )
-        return select_sql(
-            d,
-            [
-                column(d, "RDB$CONSTRAINT_NAME", "rc", alias="CONSTRAINT_NAME"),
-                column(d, "RDB$INDEX_NAME", "rc", alias="INDEX_NAME"),
-                column(d, "RDB$FIELD_NAME", "seg", alias="COLUMN_NAME"),
-                column(d, "RDB$RELATION_NAME", "ref", alias="REF_TABLE"),
-                column(d, "RDB$FIELD_NAME", "ref_seg", alias="REF_COLUMN"),
-                column(d, "RDB$DELETE_RULE", "rc", alias="DELETE_RULE"),
-            ],
-            from_=joined,
-            where=compare(
-                d,
-                "eq",
-                column(d, "RDB$RELATION_NAME", "i"),
-                literal(d, table_name),
-            ),
-            order_by=[column(d, "RDB$FIELD_POSITION", "seg")],
-        )
-
-    def _make_view_list_sql(self, schema: Optional[str] = None) -> str:
-        """The database's views: relations that are neither system nor baseless.
-
-        ``RDB$VIEW_BLR IS NOT NULL`` is what makes a relation a view;
-        ``RDB$VIEW_SOURCE`` carries its text.
-        """
-        from ..query_nodes import (
-            column,
-            compare,
-            conjunction,
-            literal,
-            null_test,
-            relation,
-            select_sql,
-        )
-
-        self._reject_namespace(schema)
-        d = self.dialect
-        return select_sql(
-            d,
-            [column(d, "RDB$RELATION_NAME"), column(d, "RDB$VIEW_SOURCE")],
-            from_=relation(d, "RDB$RELATIONS"),
-            where=conjunction(
-                d,
-                compare(
-                    d, "eq", column(d, "RDB$SYSTEM_FLAG"), literal(d, 0, inline=True)
-                ),
-                null_test(d, column(d, "RDB$VIEW_BLR"), is_not=True),
-            ),
-            order_by=[column(d, "RDB$RELATION_NAME")],
-        )
+        return FirebirdDomainListQueryStatement(self.dialect, include_system)
 
     # ------------------------------------------------------------------
     # Parse methods
     # ------------------------------------------------------------------
 
-    def _parse_database_info(self, rows: List[Dict[str, Any]]) -> IntrospectionDatabaseInfo:
+    def parse_database_info(self, rows: List[Dict[str, Any]]) -> IntrospectionDatabaseInfo:
         version = self._get_version()
         return IntrospectionDatabaseInfo(
             name=str(rows[0].get("MON$DATABASE_NAME", "")) if rows else "",
@@ -474,7 +183,7 @@ class FirebirdAsyncIntrospectorMixin(IntrospectorMixin):
             vendor="Firebird",
         )
 
-    def _parse_tables(self, rows: List[Dict[str, Any]],
+    def parse_tables(self, rows: List[Dict[str, Any]],
                        schema: Optional[str]) -> List[IntrospectionTableInfo]:
         tables = []
         for row in rows:
@@ -491,7 +200,7 @@ class FirebirdAsyncIntrospectorMixin(IntrospectorMixin):
             )
         return tables
 
-    def _parse_columns(self, rows: List[Dict[str, Any]],
+    def parse_columns(self, rows: List[Dict[str, Any]],
                         table_name: str,
                         schema: str) -> List[IntrospectionColumnInfo]:
         from rhosocial.activerecord.backend.expression.types._base import DataType
@@ -538,7 +247,7 @@ class FirebirdAsyncIntrospectorMixin(IntrospectorMixin):
             )
         return columns
 
-    def _parse_indexes(self, rows: List[Dict[str, Any]],
+    def parse_indexes(self, rows: List[Dict[str, Any]],
                         table_name: str,
                         schema: str) -> List[IndexInfo]:
         indexes: Dict[str, IndexInfo] = {}
@@ -568,7 +277,7 @@ class FirebirdAsyncIntrospectorMixin(IntrospectorMixin):
                 )
         return list(indexes.values())
 
-    def _parse_foreign_keys(self, rows: List[Dict[str, Any]],
+    def parse_foreign_keys(self, rows: List[Dict[str, Any]],
                              table_name: str,
                              schema: str) -> List[IntrospectionForeignKeyInfo]:
         action_map = {
@@ -603,7 +312,7 @@ class FirebirdAsyncIntrospectorMixin(IntrospectorMixin):
                 fk_map[name].referenced_columns.append(ref_col)
         return list(fk_map.values())
 
-    def _parse_views(self, rows: List[Dict[str, Any]],
+    def parse_views(self, rows: List[Dict[str, Any]],
                       schema: str) -> List[IntrospectionViewInfo]:
         return [
             IntrospectionViewInfo(
@@ -616,9 +325,194 @@ class FirebirdAsyncIntrospectorMixin(IntrospectorMixin):
             for row in rows if row.get("RDB$RELATION_NAME")
         ]
 
-    def _parse_triggers(self, rows: List[Dict[str, Any]],
+    def parse_view_info(self, rows: List[Dict[str, Any]],
+                         view_name: str,
+                         schema: str) -> Optional[IntrospectionViewInfo]:
+        """One view from the rows a single-view query returned, or ``None``.
+
+        The core manager asks this after ``_build_view_info_sql`` narrows the
+        catalogue to one view, so the shape is ``parse_views`` on at most one
+        row. ``list_views`` then does the filtering for the list question, and
+        this parser does not repeat it: an empty row set means the name is not
+        a view, which is exactly what ``None`` already says.
+
+        ``RDB$VIEW_SOURCE`` is the definition and ``RDB$VIEW_BLR`` is what
+        marks a relation as a view (see ``_make_view_list_sql``); a view has
+        no ``CHECK OPTION`` in Firebird and is not updatable through the
+        catalogue, so both stay absent rather than guessed.
+        """
+        matches = self.parse_views(rows, schema)
+        return matches[0] if matches else None
+
+    def parse_triggers(self, rows: List[Dict[str, Any]],
                          schema: str) -> List[IntrospectionTriggerInfo]:
-        return []
+        """Decode each trigger's timing and events from ``RDB$TRIGGER_TYPE``.
+
+        The type integer is looked up in :data:`FB_TRIGGER_TYPES` rather than
+        bit-shifted: Firebird's fourteen table-trigger values are a closed
+        list, and the same bit at two magnitudes means two different event
+        sets. A value outside the list (a DDL trigger, or a future addition)
+        yields empty timing and events rather than a guess -- the question
+        already excludes database-level rows, so reporting nothing is honest
+        about the one case this decoder does not know.
+
+        Firebird's table triggers are row-level only, and a trigger has no
+        ``WHEN`` clause of its own (the condition lives in its PSQL body), so
+        ``level`` is ``ROW`` and ``condition`` stays ``None``.
+        """
+        triggers: List[IntrospectionTriggerInfo] = []
+        for row in rows:
+            name = self._row_name(row, "TRIGGER_NAME")
+            table_name = self._row_name(row, "TABLE_NAME")
+            if not name or not table_name:
+                continue
+            timing, events = FB_TRIGGER_TYPES.get(
+                row.get("TRIGGER_TYPE"), ("", ())
+            )
+            triggers.append(
+                IntrospectionTriggerInfo(
+                    name=name,
+                    table_name=table_name,
+                    schema=schema,
+                    timing=timing,
+                    events=list(events),
+                    level="ROW",
+                    definition=self._text_or_none(row.get("SOURCE")),
+                    status="DISABLED" if row.get("INACTIVE") else "ENABLED",
+                    extra={
+                        "trigger_type": row.get("TRIGGER_TYPE"),
+                        "sequence": row.get("SEQUENCE"),
+                    },
+                )
+            )
+        return triggers
+
+    # ------------------------------------------------------------------
+    # Generators and domains
+    #
+    # These two families are Firebird's own, so they have no ``_build_*``
+    # entry point on the core mixin: the core has no question to ask about
+    # them. What is shared here is what both directions need -- the row shape
+    # a parser reads and the names a caller looks objects up by.
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _row_name(row: Dict[str, Any], key: str) -> str:
+        """One catalogue name, stripped, or ``""`` when the row has none.
+
+        Firebird's ``CHAR`` columns come back space-padded, and a name that is
+        only padding is not an object.
+        """
+        raw = row.get(key)
+        return str(raw).strip() if raw else ""
+
+    @staticmethod
+    def _text_or_none(value: Any) -> Optional[str]:
+        """A catalogue text column as a stripped string, or ``None``.
+
+        ``DEFAULT``/``CHECK``/description are ``BLOB TEXT``; the driver hands
+        them back as ``str``, and an all-space body is the catalogue's way of
+        saying "no source".
+        """
+        if value is None:
+            return None
+        text = str(value).strip()
+        return text or None
+
+    @staticmethod
+    def _find_by_name(items: List[Any], name: str) -> Optional[Any]:
+        """The item named *name*, or ``None``.
+
+        Firebird folds unquoted identifiers to upper case, so ``my_gen`` names
+        ``MY_GEN`` unless it was created quoted. An exact match is tried first
+        (so two names differing only by case stay distinguishable), then a
+        case-insensitive one.
+        """
+        for item in items:
+            if item.name == name:
+                return item
+        folded = name.upper()
+        for item in items:
+            if item.name.upper() == folded:
+                return item
+        return None
+
+    @staticmethod
+    def _describe_domain_type(
+        field_type: Optional[int],
+        sub_type: Optional[int],
+        scale: Optional[int],
+    ) -> str:
+        """The domain's base type, from the catalogue's type codes.
+
+        ``NUMERIC`` and ``DECIMAL`` are named from the pair Firebird records
+        for them -- an integer field type with sub type 1 or 2 and a negative
+        scale -- rather than from the integer type underneath, which is what
+        the column parser reports. A domain's whole purpose is the attributes
+        it attaches to a type, so naming the storage integer here would lose
+        the one a caller declared.
+        """
+        if (
+            field_type in (7, 8, 16, 26)
+            and sub_type in (1, 2)
+            and scale is not None
+            and scale < 0
+        ):
+            return "NUMERIC" if sub_type == 1 else "DECIMAL"
+        type_name = FB_FIELD_TYPES.get(field_type, f"UNKNOWN({field_type})")
+        if type_name == "BLOB":
+            blob_sub = FB_BLOB_SUB_TYPES.get(sub_type, str(sub_type))
+            return f"BLOB SUB_TYPE {blob_sub}"
+        return type_name
+
+    def parse_generators(
+        self,
+        rows: List[Dict[str, Any]],
+        values: Dict[str, int],
+    ) -> List[FirebirdGeneratorInfo]:
+        """Pair each generator row with the value read for that generator."""
+        generators: List[FirebirdGeneratorInfo] = []
+        for row in rows:
+            name = self._row_name(row, "GENERATOR_NAME")
+            if not name:
+                continue
+            generators.append(
+                FirebirdGeneratorInfo(
+                    name=name,
+                    value=values[name],
+                    is_system=bool(row.get("SYSTEM_FLAG")),
+                )
+            )
+        return generators
+
+    def parse_domains(self, rows: List[Dict[str, Any]]) -> List[FirebirdDomainInfo]:
+        domains: List[FirebirdDomainInfo] = []
+        for row in rows:
+            name = self._row_name(row, "DOMAIN_NAME")
+            if not name:
+                continue
+            charset = self._text_or_none(row.get("CHARACTER_SET_NAME"))
+            domains.append(
+                FirebirdDomainInfo(
+                    name=name,
+                    base_type=self._describe_domain_type(
+                        row.get("FIELD_TYPE"),
+                        row.get("FIELD_SUB_TYPE"),
+                        row.get("SCALE"),
+                    ),
+                    length=row.get("FIELD_LENGTH"),
+                    character_length=row.get("CHARACTER_LENGTH"),
+                    numeric_precision=row.get("PRECISION"),
+                    numeric_scale=row.get("SCALE"),
+                    charset=charset,
+                    nullable=row.get("NULL_FLAG") is None,
+                    default_source=self._text_or_none(row.get("DEFAULT_SOURCE")),
+                    check_source=self._text_or_none(row.get("VALIDATION_SOURCE")),
+                    is_system=bool(row.get("SYSTEM_FLAG")),
+                    description=self._text_or_none(row.get("DESCRIPTION")),
+                )
+            )
+        return domains
 
     # ------------------------------------------------------------------
     # Core ``IntrospectorMixin`` entry points
@@ -626,36 +520,9 @@ class FirebirdAsyncIntrospectorMixin(IntrospectorMixin):
     # Each of these is the method the core base class calls; the ``_make_*``
     # helpers above hold the SQL. Every one of them routes ``schema`` through
     # ``_reject_namespace`` before the SQL is built, so the core's habit of
-    # substituting ``_get_default_schema()`` for a missing schema cannot turn
+    # substituting ``default_schema`` for a missing schema cannot turn
     # into a silently accepted namespace.
     # ------------------------------------------------------------------
-
-    def _build_database_info_sql(self):
-        return self._make_database_info_sql()
-
-    def _build_table_list_sql(self, schema, include_system, include_views, table_type):
-        return self._make_table_list_sql(schema, include_system, include_views, table_type)
-
-    def _build_column_list_sql(self, table_name, schema):
-        return self._make_column_list_sql(table_name, schema)
-
-    def _build_index_list_sql(self, table_name, schema):
-        return self._make_index_list_sql(table_name, schema)
-
-    def _build_primary_key_sql(self, table_name, schema):
-        # A primary key is found from the table's unique RDB$PRIMARY% index,
-        # so there is nothing for a namespace to narrow -- but the argument is
-        # still refused rather than dropped, so this entry point behaves like
-        # its siblings instead of being the one that quietly ignores it.
-        self._reject_namespace(schema)
-        return self._make_primary_key_sql(table_name)
-
-    def _build_foreign_key_sql(self, table_name, schema):
-        return self._make_foreign_key_sql(table_name, schema)
-
-    def _build_view_list_sql(self, schema, include_system: bool = False):
-        return self._make_view_list_sql(schema)
-
 
 class AsyncFirebirdIntrospector(FirebirdAsyncIntrospectorMixin, AsyncAbstractIntrospector):
     """Asynchronous Firebird schema introspector.
@@ -664,8 +531,13 @@ class AsyncFirebirdIntrospector(FirebirdAsyncIntrospectorMixin, AsyncAbstractInt
     run sync fdb cursor operations in a background thread.
     """
 
-    def __init__(self, backend, executor):
-        super().__init__(backend, executor)
+    def __init__(
+        self,
+        backend,
+        executor,
+        cache: Optional[IntrospectionCache] = None,
+    ):
+        super().__init__(backend, executor, cache)
         self._status_instance = None
 
     @property
@@ -689,3 +561,83 @@ class AsyncFirebirdIntrospector(FirebirdAsyncIntrospectorMixin, AsyncAbstractInt
         table.indexes = await self.list_indexes(table_name, schema)
         table.foreign_keys = await self.list_foreign_keys(table_name, schema)
         return table
+
+    # ------------------------------------------------------------------
+    # Firebird-specific object families
+    #
+    # Generators and domains have no core entry point: the core's scopes name
+    # them (SEQUENCE; and SCHEMA for a database-wide type catalogue), but the
+    # questions and their results are Firebird's own. These methods are the
+    # async half of the pair the sync introspector declares -- same names,
+    # same signatures, same returns.
+    # ------------------------------------------------------------------
+
+    async def list_generators(self, include_system: bool = False) -> List[FirebirdGeneratorInfo]:
+        """List the generators (sequences) of this database with their values.
+
+        One ``GEN_ID(<name>, 0)`` per generator: a generator name cannot be
+        bound as a parameter, so the catalogue read and the value reads cannot
+        be one statement. The result is cached, so the cost is paid once per
+        cache generation rather than once per call.
+        """
+        key = self._cache.key(
+            IntrospectionScope.SEQUENCE, extra=f"generators:{include_system}"
+        )
+        cached = self._cache.get(key)
+        if cached is not None:
+            return cached
+
+        sql, params = self.generator_list_statement(include_system).to_sql()
+        rows = await self._executor.execute(sql, params)
+        values: Dict[str, int] = {}
+        for row in rows:
+            name = self._row_name(row, "GENERATOR_NAME")
+            if not name:
+                continue
+            value_sql, value_params = self.generator_value_statement(name).to_sql()
+            value_rows = await self._executor.execute(value_sql, value_params)
+            values[name] = int(value_rows[0]["GENERATOR_VALUE"])
+
+        result = self.parse_generators(rows, values)
+        self._cache.set(key, result)
+        return result
+
+    async def get_generator_info(self, name: str) -> Optional[FirebirdGeneratorInfo]:
+        """Return the named generator (sequence), or ``None``.
+
+        The default list answers first, so looking up a generator the user
+        created never reads the system's own rows -- and never pays their
+        ``GEN_ID`` calls. Only a name that list does not contain falls back to
+        ``include_system=True``.
+        """
+        found = self._find_by_name(await self.list_generators(), name)
+        if found is not None:
+            return found
+        return self._find_by_name(
+            await self.list_generators(include_system=True), name
+        )
+
+    async def list_domains(self, include_system: bool = False) -> List[FirebirdDomainInfo]:
+        """List the domains of this database with their declared attributes."""
+        key = self._cache.key(
+            IntrospectionScope.SCHEMA, extra=f"domains:{include_system}"
+        )
+        cached = self._cache.get(key)
+        if cached is not None:
+            return cached
+
+        sql, params = self.domain_list_statement(include_system).to_sql()
+        result = self.parse_domains(await self._executor.execute(sql, params))
+        self._cache.set(key, result)
+        return result
+
+    async def get_domain_info(self, name: str) -> Optional[FirebirdDomainInfo]:
+        """Return the named domain, or ``None``.
+
+        The default list answers first; only a system domain's name needs the
+        ``include_system=True`` pass.
+        """
+        found = self._find_by_name(await self.list_domains(), name)
+        if found is not None:
+            return found
+        return self._find_by_name(await self.list_domains(include_system=True), name)

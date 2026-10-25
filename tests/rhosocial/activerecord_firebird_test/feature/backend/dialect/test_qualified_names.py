@@ -465,4 +465,4 @@ class TestIntrospectionNamespace:
             call(probe)
 
     def test_default_schema_is_empty(self, dialect):
-        assert self._Probe(dialect)._get_default_schema() == ""
+        assert self._Probe(dialect).default_schema == ""

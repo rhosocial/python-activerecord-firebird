@@ -8,4 +8,11 @@ try:
 except ImportError:
     SyncFirebirdIntrospector = None
 
-__all__ = ["SyncFirebirdIntrospector", "AsyncFirebirdIntrospector"]
+from .types import FirebirdDomainInfo, FirebirdGeneratorInfo
+
+__all__ = [
+    "SyncFirebirdIntrospector",
+    "AsyncFirebirdIntrospector",
+    "FirebirdDomainInfo",
+    "FirebirdGeneratorInfo",
+]

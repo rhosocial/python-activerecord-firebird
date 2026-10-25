@@ -22,6 +22,16 @@ if TYPE_CHECKING:
 
 class FirebirdSequenceMixin:
 
+    def supports_generator_introspection(self) -> bool:
+        """Firebird answers for its generators from ``RDB$GENERATORS``.
+
+        The capability for the ``introspect generators`` family. Declared here
+        because a caller asking "can I read a generator's value" should not
+        have to try the question to find out -- the switch is the answer, and
+        it belongs beside the statements that render the family.
+        """
+        return True
+
     def format_create_sequence_statement(
         self,
         expr: "CreateSequenceStatement",
