@@ -64,7 +64,7 @@ def probe():
 
 class TestGeneratorStatements:
     def test_list_asks_the_catalogue_by_name(self, probe):
-        sql, params = probe._make_generator_list_sql()
+        sql, params = probe.generator_list_statement().to_sql()
         assert sql == (
             'SELECT "RDB$GENERATOR_NAME" AS "GENERATOR_NAME", '
             '"RDB$SYSTEM_FLAG" AS "SYSTEM_FLAG" FROM "RDB$GENERATORS" '
@@ -73,7 +73,7 @@ class TestGeneratorStatements:
         assert params == ()
 
     def test_include_system_drops_the_filter(self, probe):
-        sql, params = probe._make_generator_list_sql(include_system=True)
+        sql, params = probe.generator_list_statement(include_system=True).to_sql()
         assert "WHERE" not in sql
         assert params == ()
 
@@ -87,7 +87,7 @@ class TestGeneratorStatements:
         the call text, not pushed into the parameter tuple. The next test pins
         what that means when the name cannot be spelled as one identifier.
         """
-        sql, params = probe._make_generator_value_sql("my_gen")
+        sql, params = probe.generator_value_statement("my_gen").to_sql()
         assert "GEN_ID(" in sql
         assert '"' in sql.split("GEN_ID(", 1)[1].split(")", 1)[0]
         assert params == ()
@@ -96,7 +96,7 @@ class TestGeneratorStatements:
 
     def test_value_name_is_quoted_not_bound(self, probe):
         """A bind marker in GEN_ID's first argument is a syntax error."""
-        sql, _ = probe._make_generator_value_sql('odd "name')
+        sql, _ = probe.generator_value_statement('odd "name').to_sql()
         assert '?' not in sql
         assert '"ODD ""NAME"' in sql or "odd" in sql.lower()
 
@@ -111,7 +111,7 @@ class TestDomainStatements:
         D.11), name and type descriptor together, so the read is one relation
         and the join that used to split it across two is gone.
         """
-        sql, params = probe._make_domain_list_sql()
+        sql, params = probe.domain_list_statement().to_sql()
         assert '"RDB$FIELDS"' in sql
         assert "RDB$DOMAINS" not in sql
         assert params == ()
@@ -124,13 +124,13 @@ class TestDomainStatements:
         The language reference notes that system-created domain names start
         with ``RDB$``, so the filter is on the name.
         """
-        sql, _ = probe._make_domain_list_sql()
+        sql, _ = probe.domain_list_statement().to_sql()
         assert "NOT LIKE" in sql
         assert "RDB$%" in sql
 
     def test_system_rows_are_filtered_unless_asked_for(self, probe):
-        filtered, _ = probe._make_domain_list_sql()
-        everything, _ = probe._make_domain_list_sql(include_system=True)
+        filtered, _ = probe.domain_list_statement().to_sql()
+        everything, _ = probe.domain_list_statement(include_system=True).to_sql()
         # Both filters say something different, so both are pinned: the flag
         # is what ``is_system`` on the result is read from, and the name is
         # what removes the engine's implicit column descriptors.
@@ -143,13 +143,13 @@ class TestDomainStatements:
         A listing that returned system rows while reporting ``is_system``
         False on each of them would be lying in the field the caller reads.
         """
-        sql, _ = probe._make_domain_list_sql()
+        sql, _ = probe.domain_list_statement().to_sql()
         assert 'AS "SYSTEM_FLAG"' in sql
         assert '"RDB$SYSTEM_FLAG" = 0' in sql
 
     def test_charset_is_a_left_join(self, probe):
         """An inner join would drop every non-character domain."""
-        sql, _ = probe._make_domain_list_sql()
+        sql, _ = probe.domain_list_statement().to_sql()
         assert 'LEFT JOIN "RDB$CHARACTER_SETS" AS "CS"' in sql
 
     def test_the_projection_carries_what_the_parser_reads(self, probe):
@@ -158,7 +158,7 @@ class TestDomainStatements:
         A missing one is a silent ``None`` rather than a failure, which is the
         worse of the two ways for this to be wrong.
         """
-        sql, _ = probe._make_domain_list_sql()
+        sql, _ = probe.domain_list_statement().to_sql()
         for alias in (
             "DOMAIN_NAME", "FIELD_TYPE", "FIELD_SUB_TYPE", "FIELD_LENGTH",
             "CHARACTER_LENGTH", "PRECISION", "SCALE", "CHARACTER_SET_NAME",
