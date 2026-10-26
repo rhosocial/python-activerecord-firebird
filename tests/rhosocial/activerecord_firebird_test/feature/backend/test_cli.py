@@ -91,11 +91,11 @@ class TestFirebirdCLIIntrospect:
         assert args.command == "introspect"
         assert args.type == "tables"
 
-    def test_introspect_table_with_name(self):
-        with patch.object(sys, "argv", ["firebird", "introspect", "table", "users"]):
+    def test_introspect_columns_with_name(self):
+        with patch.object(sys, "argv", ["firebird", "introspect", "columns", "users"]):
             args = _build_parser().parse_args()
         assert args.command == "introspect"
-        assert args.type == "table"
+        assert args.type == "columns"
         assert args.name == "users"
 
     def test_introspect_all_valid_types(self):
