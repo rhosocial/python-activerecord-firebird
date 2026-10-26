@@ -117,7 +117,10 @@ class TestColumnList:
             'FROM "RDB$RELATION_FIELDS" AS "RF" JOIN "RDB$FIELDS" AS "F" '
             'ON "RF"."RDB$FIELD_SOURCE" = "F"."RDB$FIELD_NAME"' in sql
         )
-        assert sql.endswith('ORDER BY "RF"."RDB$POSITION"')
+        # RDB$RELATION_FIELDS has no RDB$POSITION; the ordinal column is
+        # RDB$FIELD_POSITION. The old assertion pinned the name that made the
+        # statement fail with "-206 Column unknown" on every server.
+        assert sql.endswith('ORDER BY "RF"."RDB$FIELD_POSITION"')
 
 
 class TestIndexList:
@@ -173,11 +176,30 @@ class TestForeignKey:
         assert params == ("orders",)
 
     def test_referencing_and_referenced_segments_stay_apart(self, probe):
-        """Two reads of ``RDB$INDEX_SEGMENTS`` under different joins."""
+        """Two reads of ``RDB$INDEX_SEGMENTS`` under different joins.
+
+        ``SEG`` hangs off the referencing index, which
+        ``RDB$RELATION_CONSTRAINTS`` names directly. ``REF_SEG`` hangs off the
+        referenced index, which is only reachable through the hop the earlier
+        version was missing: ``RDB$REF_CONSTRAINTS.RDB$CONST_NAME_UQ`` names a
+        *constraint*, not an index, so it must be resolved through a second
+        ``RDB$RELATION_CONSTRAINTS`` read (``REFRC``) before an index name
+        exists to join on.
+        """
         sql, _ = probe.foreign_key_statement(table_name="orders", schema=None).to_sql()
         assert 'AS "SEG"' in sql and 'AS "REF_SEG"' in sql
-        assert '"RC"."RDB$INDEX_NAME" = "SEG"."RDB$INDEX_NAME"' in sql
-        assert '"RC"."RDB$CONSTRAINT_NAME_UQ" = "REF_SEG"."RDB$INDEX_NAME"' in sql
+        assert '"SEG"."RDB$INDEX_NAME" = "RC"."RDB$INDEX_NAME"' in sql
+        assert '"REFRC"."RDB$CONSTRAINT_NAME" = "REFC"."RDB$CONST_NAME_UQ"' in sql
+        assert '"REF_SEG"."RDB$INDEX_NAME" = "REFRC"."RDB$INDEX_NAME"' in sql
+        # Two-column keys pair column with column, not every column with every
+        # column: the segments are matched by their position in the key.
+        assert (
+            '"REF_SEG"."RDB$FIELD_POSITION" = "SEG"."RDB$FIELD_POSITION"' in sql
+        )
+        # RDB$REF_CONSTRAINTS has no RDB$INDEX_NAME; reading one from it was the
+        # "-206 Column unknown" this shape replaces.
+        assert '"RC"."RDB$INDEX_NAME" = "REF_SEG"' not in sql
+        assert '"RC"."RDB$CONSTRAINT_NAME_UQ"' not in sql
 
 
 class TestViewList:
