@@ -24,7 +24,24 @@ from rhosocial.activerecord.backend.introspection.types import (
     IntrospectionScope,
 )
 
-from .types import FirebirdDomainInfo, FirebirdGeneratorInfo
+from .types import (
+    FirebirdCharsetInfo,
+    FirebirdCollationInfo,
+    FirebirdConstraintInfo,
+    FirebirdDependencyInfo,
+    FirebirdDomainInfo,
+    FirebirdExceptionInfo,
+    FirebirdFunctionArgumentInfo,
+    FirebirdFunctionInfo,
+    FirebirdGeneratorInfo,
+    FirebirdProcedureInfo,
+    FirebirdProcedureParameterInfo,
+    FirebirdPublicationInfo,
+    FirebirdPrivilegeInfo,
+    FirebirdRoleInfo,
+    FirebirdViewRelationInfo,
+    object_type_name,
+)
 
 # Firebird field types mapping (shared with sync introspector)
 FB_FIELD_TYPES = {
@@ -256,7 +273,13 @@ class FirebirdAsyncIntrospectorMixin(IntrospectorMixin):
             if not name:
                 continue
             if name not in indexes:
-                is_primary = "PRIMARY" in name.upper()
+                # The constraint join says which kind an index is; the name only
+                # says it when Firebird generated the name itself
+                # (RDB$PRIMARYn). A primary key the user named PK_ORDERS carries
+                # no such word, so the column is read first and the name is only
+                # the fallback for a row that arrives without it.
+                constraint_type = str(row.get("CONSTRAINT_TYPE") or "").strip().upper()
+                is_primary = constraint_type == "PRIMARY KEY" or "PRIMARY" in name.upper()
                 indexes[name] = IndexInfo(
                     name=name,
                     table_name=table_name,
@@ -524,6 +547,455 @@ class FirebirdAsyncIntrospectorMixin(IntrospectorMixin):
     # into a silently accepted namespace.
     # ------------------------------------------------------------------
 
+    # ------------------------------------------------------------------
+    # Firebird-specific statement factories (schema objects)
+    #
+    # One factory per family the catalogue reports independently, which is
+    # also one CLI dimension each: an item Firebird answers as its own row set
+    # is not folded into a neighbour, and a family is not split into types the
+    # server does not distinguish.
+    #
+    # Every factory takes the whole question -- the system filter, the object
+    # name, the type filter -- so the statement is complete before it is
+    # rendered and the formatter never has to guess a default.
+    # ------------------------------------------------------------------
+
+    def exception_list_statement(self, include_system: bool = False):
+        """Return the statement that lists this database's exceptions."""
+        from ..expression.introspection import FirebirdExceptionListQueryStatement
+
+        return FirebirdExceptionListQueryStatement(self.dialect, include_system)
+
+    def exception_info_statement(self, exception_name: str):
+        """Return the statement that reads one exception."""
+        from ..expression.introspection import FirebirdExceptionInfoQueryStatement
+
+        return FirebirdExceptionInfoQueryStatement(self.dialect, exception_name)
+
+    def procedure_list_statement(
+        self, include_system: bool = False, include_source: bool = False
+    ):
+        """Return the statement that lists stored procedures."""
+        from ..expression.introspection import FirebirdProcedureListQueryStatement
+
+        return FirebirdProcedureListQueryStatement(
+            self.dialect, include_system, include_source
+        )
+
+    def procedure_parameter_statement(self, procedure_name: str):
+        """Return the statement that reads one procedure's parameters."""
+        from ..expression.introspection import FirebirdProcedureParameterQueryStatement
+
+        return FirebirdProcedureParameterQueryStatement(self.dialect, procedure_name)
+
+    def function_list_statement(
+        self, include_system: bool = False, include_source: bool = False
+    ):
+        """Return the statement that lists functions, PSQL and legacy alike."""
+        from ..expression.introspection import FirebirdFunctionListQueryStatement
+
+        return FirebirdFunctionListQueryStatement(
+            self.dialect, include_system, include_source
+        )
+
+    def function_argument_statement(self, function_name: str):
+        """Return the statement that reads one function's arguments."""
+        from ..expression.introspection import FirebirdFunctionArgumentQueryStatement
+
+        return FirebirdFunctionArgumentQueryStatement(self.dialect, function_name)
+
+    def constraint_list_statement(
+        self,
+        table_name: Optional[str] = None,
+        constraint_type: Optional[str] = None,
+        include_system: bool = False,
+    ):
+        """Return the statement that lists constraints of every kind."""
+        from ..expression.introspection import FirebirdConstraintListQueryStatement
+
+        return FirebirdConstraintListQueryStatement(
+            self.dialect, table_name, constraint_type, include_system
+        )
+
+    def role_list_statement(self, include_system: bool = False):
+        """Return the statement that lists roles."""
+        from ..expression.introspection import FirebirdRoleListQueryStatement
+
+        return FirebirdRoleListQueryStatement(self.dialect, include_system)
+
+    def privilege_statement(
+        self,
+        object_name: Optional[str] = None,
+        user_name: Optional[str] = None,
+        include_system: bool = False,
+    ):
+        """Return the statement that lists grants, optionally narrowed."""
+        from ..expression.introspection import FirebirdPrivilegeQueryStatement
+
+        return FirebirdPrivilegeQueryStatement(
+            self.dialect, object_name, user_name, include_system
+        )
+
+    def charset_list_statement(self):
+        """Return the statement that lists character sets."""
+        from ..expression.introspection import FirebirdCharsetListQueryStatement
+
+        return FirebirdCharsetListQueryStatement(self.dialect)
+
+    def collation_list_statement(self, charset_name: Optional[str] = None):
+        """Return the statement that lists collations, optionally of one charset."""
+        from ..expression.introspection import FirebirdCollationListQueryStatement
+
+        return FirebirdCollationListQueryStatement(self.dialect, charset_name)
+
+    def dependency_statement(self, object_name: Optional[str] = None):
+        """Return the statement that lists dependency edges."""
+        from ..expression.introspection import FirebirdDependencyQueryStatement
+
+        return FirebirdDependencyQueryStatement(self.dialect, object_name)
+
+    def view_relation_statement(self, view_name: Optional[str] = None):
+        """Return the statement that lists the relations a view reads."""
+        from ..expression.introspection import FirebirdViewRelationQueryStatement
+
+        return FirebirdViewRelationQueryStatement(self.dialect, view_name)
+
+    def publication_list_statement(self, include_system: bool = False):
+        """Return the statement that lists publications (Firebird 4 and later)."""
+        from ..expression.introspection import FirebirdPublicationListQueryStatement
+
+        return FirebirdPublicationListQueryStatement(self.dialect, include_system)
+
+    # ------------------------------------------------------------------
+    # Parsers for the schema-object families
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _blob_truthy(value: Any) -> bool:
+        """Read a flag kept as a blob, without calling any non-empty blob true.
+
+        ``RDB$ROLES.RDB$SYSTEM_PRIVILEGES`` is a bitmap: a role without system
+        privileges still stores a row of zero bytes, and ``bool(b"\\x00")`` is
+        True. Only a non-zero byte means the flag is set.
+        """
+        if value is None:
+            return False
+        if isinstance(value, (bytes, bytearray)):
+            return any(value)
+        return bool(str(value).strip())
+
+    def parse_exceptions(
+        self, rows: List[Dict[str, Any]]
+    ) -> List[FirebirdExceptionInfo]:
+        """Build the exception list from ``RDB$EXCEPTIONS`` rows."""
+        result: List[FirebirdExceptionInfo] = []
+        for row in rows:
+            name = self._row_name(row, "EXCEPTION_NAME")
+            if not name:
+                continue
+            result.append(
+                FirebirdExceptionInfo(
+                    name=name,
+                    number=row.get("EXCEPTION_NUMBER"),
+                    message=self._text_or_none(row.get("MESSAGE")),
+                    owner=self._text_or_none(row.get("OWNER_NAME")),
+                    is_system=bool(row.get("SYSTEM_FLAG")),
+                    description=self._text_or_none(row.get("DESCRIPTION")),
+                )
+            )
+        return result
+
+    def parse_procedures(
+        self, rows: List[Dict[str, Any]]
+    ) -> List[FirebirdProcedureInfo]:
+        """Build the procedure list from ``RDB$PROCEDURES`` rows."""
+        result: List[FirebirdProcedureInfo] = []
+        for row in rows:
+            name = self._row_name(row, "PROCEDURE_NAME")
+            if not name:
+                continue
+            result.append(
+                FirebirdProcedureInfo(
+                    name=name,
+                    procedure_id=row.get("PROCEDURE_ID"),
+                    inputs=row.get("INPUTS"),
+                    outputs=row.get("OUTPUTS"),
+                    procedure_type=row.get("PROCEDURE_TYPE"),
+                    owner=self._text_or_none(row.get("OWNER_NAME")),
+                    valid_blr=row.get("VALID_BLR"),
+                    private_flag=row.get("PRIVATE_FLAG"),
+                    sql_security=row.get("SQL_SECURITY"),
+                    description=self._text_or_none(row.get("DESCRIPTION")),
+                    is_system=bool(row.get("SYSTEM_FLAG")),
+                    source=self._text_or_none(row.get("PROCEDURE_SOURCE")),
+                )
+            )
+        return result
+
+    def parse_procedure_parameters(
+        self, rows: List[Dict[str, Any]]
+    ) -> List[FirebirdProcedureParameterInfo]:
+        """Build one procedure's parameter list.
+
+        Inputs and outputs arrive in one ordered read; ``kind`` keeps them apart
+        without the caller having to re-read the numeric type code.
+        """
+        result: List[FirebirdProcedureParameterInfo] = []
+        for row in rows:
+            parameter_type = row.get("PARAMETER_TYPE")
+            result.append(
+                FirebirdProcedureParameterInfo(
+                    name=self._row_name(row, "PARAMETER_NAME") or None,
+                    position=row.get("PARAMETER_NUMBER"),
+                    kind={0: "input", 1: "output"}.get(
+                        parameter_type, str(parameter_type)
+                    ),
+                    data_type=self._describe_domain_type(
+                        row.get("FIELD_TYPE"),
+                        row.get("FIELD_SUB_TYPE"),
+                        row.get("SCALE"),
+                    ),
+                    character_length=row.get("CHARACTER_LENGTH"),
+                    numeric_precision=row.get("PRECISION"),
+                    numeric_scale=row.get("SCALE"),
+                    nullable=row.get("NULL_FLAG") is None,
+                    default_source=self._text_or_none(row.get("DEFAULT_SOURCE")),
+                    description=self._text_or_none(row.get("DESCRIPTION")),
+                )
+            )
+        return result
+
+    def parse_functions(
+        self, rows: List[Dict[str, Any]]
+    ) -> List[FirebirdFunctionInfo]:
+        """Build the function list from ``RDB$FUNCTIONS`` rows."""
+        result: List[FirebirdFunctionInfo] = []
+        for row in rows:
+            name = self._row_name(row, "FUNCTION_NAME")
+            if not name:
+                continue
+            result.append(
+                FirebirdFunctionInfo(
+                    name=name,
+                    function_type=row.get("FUNCTION_TYPE"),
+                    is_legacy=bool(row.get("LEGACY_FLAG")),
+                    is_deterministic=bool(row.get("DETERMINISTIC_FLAG")),
+                    return_argument=row.get("RETURN_ARGUMENT"),
+                    owner=self._text_or_none(row.get("OWNER_NAME")),
+                    valid_blr=row.get("VALID_BLR"),
+                    engine_name=self._text_or_none(row.get("ENGINE_NAME")),
+                    module_name=self._text_or_none(row.get("MODULE_NAME")),
+                    entrypoint=self._text_or_none(row.get("ENTRYPOINT")),
+                    private_flag=row.get("PRIVATE_FLAG"),
+                    sql_security=row.get("SQL_SECURITY"),
+                    description=self._text_or_none(row.get("DESCRIPTION")),
+                    is_system=bool(row.get("SYSTEM_FLAG")),
+                    source=self._text_or_none(row.get("FUNCTION_SOURCE")),
+                )
+            )
+        return result
+
+    def parse_function_arguments(
+        self, rows: List[Dict[str, Any]]
+    ) -> List[FirebirdFunctionArgumentInfo]:
+        """Build one function's argument list, return slot included."""
+        result: List[FirebirdFunctionArgumentInfo] = []
+        for row in rows:
+            result.append(
+                FirebirdFunctionArgumentInfo(
+                    position=row.get("ARGUMENT_POSITION"),
+                    name=self._row_name(row, "ARGUMENT_NAME") or None,
+                    mechanism=row.get("MECHANISM"),
+                    data_type=self._describe_domain_type(
+                        row.get("FIELD_TYPE"),
+                        row.get("FIELD_SUB_TYPE"),
+                        row.get("SCALE"),
+                    ),
+                    character_length=row.get("CHARACTER_LENGTH"),
+                    numeric_precision=row.get("PRECISION"),
+                    numeric_scale=row.get("SCALE"),
+                    nullable=row.get("NULL_FLAG") is None,
+                    default_source=self._text_or_none(row.get("DEFAULT_SOURCE")),
+                    description=self._text_or_none(row.get("DESCRIPTION")),
+                )
+            )
+        return result
+
+    def parse_constraints(
+        self, rows: List[Dict[str, Any]]
+    ) -> List[FirebirdConstraintInfo]:
+        """Build the constraint list, CHECK text included when the row has one."""
+        result: List[FirebirdConstraintInfo] = []
+        for row in rows:
+            name = self._row_name(row, "CONSTRAINT_NAME")
+            if not name:
+                continue
+            result.append(
+                FirebirdConstraintInfo(
+                    name=name,
+                    constraint_type=self._text_or_none(row.get("CONSTRAINT_TYPE")),
+                    table_name=self._text_or_none(row.get("RELATION_NAME")),
+                    deferrable=self._text_or_none(row.get("DEFERRABLE")),
+                    initially_deferred=self._text_or_none(
+                        row.get("INITIALLY_DEFERRED")
+                    ),
+                    index_name=self._text_or_none(row.get("INDEX_NAME")),
+                    check_trigger=self._text_or_none(row.get("CHECK_TRIGGER")),
+                    check_source=self._text_or_none(row.get("CHECK_SOURCE")),
+                )
+            )
+        return result
+
+    def parse_roles(self, rows: List[Dict[str, Any]]) -> List[FirebirdRoleInfo]:
+        """Build the role list from ``RDB$ROLES`` rows."""
+        result: List[FirebirdRoleInfo] = []
+        for row in rows:
+            name = self._row_name(row, "ROLE_NAME")
+            if not name:
+                continue
+            result.append(
+                FirebirdRoleInfo(
+                    name=name,
+                    owner=self._text_or_none(row.get("OWNER_NAME")),
+                    has_system_privileges=self._blob_truthy(
+                        row.get("SYSTEM_PRIVILEGES")
+                    ),
+                    is_system=bool(row.get("SYSTEM_FLAG")),
+                    description=self._text_or_none(row.get("DESCRIPTION")),
+                )
+            )
+        return result
+
+    def parse_privileges(
+        self, rows: List[Dict[str, Any]]
+    ) -> List[FirebirdPrivilegeInfo]:
+        """Build the grant list from ``RDB$USER_PRIVILEGES`` rows.
+
+        ``privilege`` is left as the catalogue's letter: the SQL privileges are
+        ``S``/``I``/``U``/``D``/``R``, while Firebird 4's system privileges use
+        other letters, and inventing a translation for the ones no release
+        documents would be worse than passing them through.
+        """
+        result: List[FirebirdPrivilegeInfo] = []
+        for row in rows:
+            result.append(
+                FirebirdPrivilegeInfo(
+                    grantee=self._text_or_none(row.get("GRANTEE")),
+                    grantee_type=object_type_name(row.get("GRANTEE_TYPE")),
+                    grantor=self._text_or_none(row.get("GRANTOR")),
+                    privilege=self._text_or_none(row.get("PRIVILEGE")),
+                    grant_option=row.get("GRANT_OPTION"),
+                    object_name=self._text_or_none(row.get("OBJECT_NAME")),
+                    object_type=object_type_name(row.get("OBJECT_TYPE")),
+                    field_name=self._text_or_none(row.get("FIELD_NAME")),
+                )
+            )
+        return result
+
+    def parse_charsets(self, rows: List[Dict[str, Any]]) -> List[FirebirdCharsetInfo]:
+        """Build the character-set list."""
+        result: List[FirebirdCharsetInfo] = []
+        for row in rows:
+            name = self._row_name(row, "CHARACTER_SET_NAME")
+            if not name:
+                continue
+            result.append(
+                FirebirdCharsetInfo(
+                    name=name,
+                    charset_id=row.get("CHARACTER_SET_ID"),
+                    form_of_use=self._text_or_none(row.get("FORM_OF_USE")),
+                    number_of_characters=row.get("NUMBER_OF_CHARACTERS"),
+                    bytes_per_character=row.get("BYTES_PER_CHARACTER"),
+                    default_collation=self._text_or_none(
+                        row.get("DEFAULT_COLLATION_NAME")
+                    ),
+                    function_name=self._text_or_none(row.get("FUNCTION_NAME")),
+                    is_system=bool(row.get("SYSTEM_FLAG")),
+                    description=self._text_or_none(row.get("DESCRIPTION")),
+                )
+            )
+        return result
+
+    def parse_collations(
+        self, rows: List[Dict[str, Any]]
+    ) -> List[FirebirdCollationInfo]:
+        """Build the collation list."""
+        result: List[FirebirdCollationInfo] = []
+        for row in rows:
+            name = self._row_name(row, "COLLATION_NAME")
+            if not name:
+                continue
+            result.append(
+                FirebirdCollationInfo(
+                    name=name,
+                    charset=self._text_or_none(row.get("CHARACTER_SET_NAME")),
+                    collation_id=row.get("COLLATION_ID"),
+                    base_collation=self._text_or_none(row.get("BASE_COLLATION_NAME")),
+                    specific_attributes=self._text_or_none(
+                        row.get("SPECIFIC_ATTRIBUTES")
+                    ),
+                    function_name=self._text_or_none(row.get("FUNCTION_NAME")),
+                    is_system=bool(row.get("SYSTEM_FLAG")),
+                    description=self._text_or_none(row.get("DESCRIPTION")),
+                )
+            )
+        return result
+
+    def parse_dependencies(
+        self, rows: List[Dict[str, Any]]
+    ) -> List[FirebirdDependencyInfo]:
+        """Build the dependency edge list."""
+        result: List[FirebirdDependencyInfo] = []
+        for row in rows:
+            result.append(
+                FirebirdDependencyInfo(
+                    dependent_name=self._text_or_none(row.get("DEPENDENT_NAME")),
+                    dependent_type=object_type_name(row.get("DEPENDENT_TYPE")),
+                    depended_on_name=self._text_or_none(row.get("DEPENDED_ON_NAME")),
+                    depended_on_type=object_type_name(row.get("DEPENDED_ON_TYPE")),
+                    field_name=self._text_or_none(row.get("FIELD_NAME")),
+                )
+            )
+        return result
+
+    def parse_view_relations(
+        self, rows: List[Dict[str, Any]]
+    ) -> List[FirebirdViewRelationInfo]:
+        """Build the view-relation list."""
+        result: List[FirebirdViewRelationInfo] = []
+        for row in rows:
+            result.append(
+                FirebirdViewRelationInfo(
+                    view_name=self._text_or_none(row.get("VIEW_NAME")),
+                    relation_name=self._text_or_none(row.get("RELATION_NAME")),
+                    view_context=row.get("VIEW_CONTEXT"),
+                    context_name=self._text_or_none(row.get("CONTEXT_NAME")),
+                    context_type=object_type_name(row.get("CONTEXT_TYPE")),
+                )
+            )
+        return result
+
+    def parse_publications(
+        self, rows: List[Dict[str, Any]]
+    ) -> List[FirebirdPublicationInfo]:
+        """Build the publication list."""
+        result: List[FirebirdPublicationInfo] = []
+        for row in rows:
+            name = self._row_name(row, "PUBLICATION_NAME")
+            if not name:
+                continue
+            result.append(
+                FirebirdPublicationInfo(
+                    name=name,
+                    owner=self._text_or_none(row.get("OWNER_NAME")),
+                    active=bool(row.get("ACTIVE_FLAG")),
+                    auto_enable=bool(row.get("AUTO_ENABLE")),
+                    is_system=bool(row.get("SYSTEM_FLAG")),
+                )
+            )
+        return result
+
+
 class AsyncFirebirdIntrospector(FirebirdAsyncIntrospectorMixin, AsyncAbstractIntrospector):
     """Asynchronous Firebird schema introspector.
 
@@ -641,3 +1113,255 @@ class AsyncFirebirdIntrospector(FirebirdAsyncIntrospectorMixin, AsyncAbstractInt
         if found is not None:
             return found
         return self._find_by_name(await self.list_domains(include_system=True), name)
+
+    # ------------------------------------------------------------------
+    # Schema-object families
+    #
+    # One list method per family, one get method where a single object makes
+    # sense, each cached under the schema scope with a discriminating key.
+    # ------------------------------------------------------------------
+
+    async def list_exceptions(
+        self, include_system: bool = False
+    ) -> List[FirebirdExceptionInfo]:
+        """List the exceptions (named PSQL messages) of this database."""
+        key = self._cache.key(
+            IntrospectionScope.SCHEMA, extra=f"exceptions:{include_system}"
+        )
+        cached = self._cache.get(key)
+        if cached is not None:
+            return cached
+        sql, params = self.exception_list_statement(include_system).to_sql()
+        result = self.parse_exceptions(await self._executor.execute(sql, params))
+        self._cache.set(key, result)
+        return result
+
+    async def get_exception_info(
+        self, name: str
+    ) -> Optional[FirebirdExceptionInfo]:
+        """Return the named exception, or ``None``."""
+        found = self._find_by_name(await self.list_exceptions(), name)
+        if found is not None:
+            return found
+        return self._find_by_name(
+            await self.list_exceptions(include_system=True), name
+        )
+
+    async def list_procedures(
+        self, include_system: bool = False, include_source: bool = False
+    ) -> List[FirebirdProcedureInfo]:
+        """List stored procedures, their signatures and optionally their bodies."""
+        key = self._cache.key(
+            IntrospectionScope.SCHEMA,
+            extra=f"procedures:{include_system}:{include_source}",
+        )
+        cached = self._cache.get(key)
+        if cached is not None:
+            return cached
+        sql, params = self.procedure_list_statement(
+            include_system, include_source
+        ).to_sql()
+        result = self.parse_procedures(await self._executor.execute(sql, params))
+        self._cache.set(key, result)
+        return result
+
+    async def get_procedure_info(
+        self, name: str
+    ) -> Optional[FirebirdProcedureInfo]:
+        """Return the named procedure, or ``None``."""
+        found = self._find_by_name(await self.list_procedures(), name)
+        if found is not None:
+            return found
+        return self._find_by_name(
+            await self.list_procedures(include_system=True), name
+        )
+
+    async def list_procedure_parameters(
+        self, procedure_name: str
+    ) -> List[FirebirdProcedureParameterInfo]:
+        """List one procedure's parameters, inputs then outputs."""
+        key = self._cache.key(
+            IntrospectionScope.SCHEMA,
+            extra=f"procedure-parameters:{procedure_name}",
+        )
+        cached = self._cache.get(key)
+        if cached is not None:
+            return cached
+        sql, params = self.procedure_parameter_statement(procedure_name).to_sql()
+        result = self.parse_procedure_parameters(
+            await self._executor.execute(sql, params)
+        )
+        self._cache.set(key, result)
+        return result
+
+    async def list_functions(
+        self, include_system: bool = False, include_source: bool = False
+    ) -> List[FirebirdFunctionInfo]:
+        """List functions, PSQL and legacy UDF alike."""
+        key = self._cache.key(
+            IntrospectionScope.SCHEMA,
+            extra=f"functions:{include_system}:{include_source}",
+        )
+        cached = self._cache.get(key)
+        if cached is not None:
+            return cached
+        sql, params = self.function_list_statement(
+            include_system, include_source
+        ).to_sql()
+        result = self.parse_functions(await self._executor.execute(sql, params))
+        self._cache.set(key, result)
+        return result
+
+    async def get_function_info(self, name: str) -> Optional[FirebirdFunctionInfo]:
+        """Return the named function, or ``None``."""
+        found = self._find_by_name(await self.list_functions(), name)
+        if found is not None:
+            return found
+        return self._find_by_name(
+            await self.list_functions(include_system=True), name
+        )
+
+    async def list_function_arguments(
+        self, function_name: str
+    ) -> List[FirebirdFunctionArgumentInfo]:
+        """List one function's arguments, the return slot included."""
+        key = self._cache.key(
+            IntrospectionScope.SCHEMA, extra=f"function-arguments:{function_name}"
+        )
+        cached = self._cache.get(key)
+        if cached is not None:
+            return cached
+        sql, params = self.function_argument_statement(function_name).to_sql()
+        result = self.parse_function_arguments(
+            await self._executor.execute(sql, params)
+        )
+        self._cache.set(key, result)
+        return result
+
+    async def list_constraints(
+        self,
+        table_name: Optional[str] = None,
+        constraint_type: Optional[str] = None,
+        include_system: bool = False,
+    ) -> List[FirebirdConstraintInfo]:
+        """List constraints of every kind, optionally of one table or type."""
+        key = self._cache.key(
+            IntrospectionScope.TABLE,
+            extra=f"constraints:{table_name}:{constraint_type}:{include_system}",
+        )
+        cached = self._cache.get(key)
+        if cached is not None:
+            return cached
+        sql, params = self.constraint_list_statement(
+            table_name, constraint_type, include_system
+        ).to_sql()
+        result = self.parse_constraints(await self._executor.execute(sql, params))
+        self._cache.set(key, result)
+        return result
+
+    async def list_roles(
+        self, include_system: bool = False
+    ) -> List[FirebirdRoleInfo]:
+        """List roles."""
+        key = self._cache.key(
+            IntrospectionScope.SCHEMA, extra=f"roles:{include_system}"
+        )
+        cached = self._cache.get(key)
+        if cached is not None:
+            return cached
+        sql, params = self.role_list_statement(include_system).to_sql()
+        result = self.parse_roles(await self._executor.execute(sql, params))
+        self._cache.set(key, result)
+        return result
+
+    async def list_privileges(
+        self,
+        object_name: Optional[str] = None,
+        user_name: Optional[str] = None,
+        include_system: bool = False,
+    ) -> List[FirebirdPrivilegeInfo]:
+        """List grants, optionally of one object and/or to one grantee."""
+        key = self._cache.key(
+            IntrospectionScope.SCHEMA,
+            extra=f"privileges:{object_name}:{user_name}:{include_system}",
+        )
+        cached = self._cache.get(key)
+        if cached is not None:
+            return cached
+        sql, params = self.privilege_statement(
+            object_name, user_name, include_system
+        ).to_sql()
+        result = self.parse_privileges(await self._executor.execute(sql, params))
+        self._cache.set(key, result)
+        return result
+
+    async def list_charsets(self) -> List[FirebirdCharsetInfo]:
+        """List character sets."""
+        key = self._cache.key(IntrospectionScope.SCHEMA, extra="charsets")
+        cached = self._cache.get(key)
+        if cached is not None:
+            return cached
+        sql, params = self.charset_list_statement().to_sql()
+        result = self.parse_charsets(await self._executor.execute(sql, params))
+        self._cache.set(key, result)
+        return result
+
+    async def list_collations(
+        self, charset_name: Optional[str] = None
+    ) -> List[FirebirdCollationInfo]:
+        """List collations, optionally of one character set."""
+        key = self._cache.key(
+            IntrospectionScope.SCHEMA, extra=f"collations:{charset_name}"
+        )
+        cached = self._cache.get(key)
+        if cached is not None:
+            return cached
+        sql, params = self.collation_list_statement(charset_name).to_sql()
+        result = self.parse_collations(await self._executor.execute(sql, params))
+        self._cache.set(key, result)
+        return result
+
+    async def list_dependencies(
+        self, object_name: Optional[str] = None
+    ) -> List[FirebirdDependencyInfo]:
+        """List dependency edges, optionally those naming one object."""
+        key = self._cache.key(
+            IntrospectionScope.SCHEMA, extra=f"dependencies:{object_name}"
+        )
+        cached = self._cache.get(key)
+        if cached is not None:
+            return cached
+        sql, params = self.dependency_statement(object_name).to_sql()
+        result = self.parse_dependencies(await self._executor.execute(sql, params))
+        self._cache.set(key, result)
+        return result
+
+    async def list_view_relations(
+        self, view_name: Optional[str] = None
+    ) -> List[FirebirdViewRelationInfo]:
+        """List the relations a view reads, optionally of one view."""
+        key = self._cache.key(
+            IntrospectionScope.VIEW, extra=f"view-relations:{view_name}"
+        )
+        cached = self._cache.get(key)
+        if cached is not None:
+            return cached
+        sql, params = self.view_relation_statement(view_name).to_sql()
+        result = self.parse_view_relations(await self._executor.execute(sql, params))
+        self._cache.set(key, result)
+        return result
+
+    async def list_publications(
+        self, include_system: bool = False
+    ) -> List[FirebirdPublicationInfo]:
+        """List publications (Firebird 4 and later)."""
+        key = self._cache.key(
+            IntrospectionScope.SCHEMA, extra=f"publications:{include_system}"
+        )
+        cached = self._cache.get(key)
+        if cached is not None:
+            return cached
+        sql, params = self.publication_list_statement(include_system).to_sql()
+        result = self.parse_publications(await self._executor.execute(sql, params))
+        self._cache.set(key, result)
+        return result
