@@ -56,9 +56,13 @@ class FirebirdFunctionMixin:
         if version_range is None:
             return True
         min_version, max_version = version_range
-        if min_version is not None and _norm_version(self.version) < min_version:
+        version = self.version_or_none
+        if version is None:
+            # A capability nobody has confirmed is not claimed.
             return False
-        if max_version is not None and _norm_version(self.version) > max_version:
+        if min_version is not None and _norm_version(version) < min_version:
+            return False
+        if max_version is not None and _norm_version(version) > max_version:
             return False
         return True
 

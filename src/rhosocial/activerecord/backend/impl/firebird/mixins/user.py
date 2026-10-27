@@ -21,13 +21,13 @@ if TYPE_CHECKING:
 class FirebirdUserMixin:
 
     def supports_create_user(self) -> bool:
-        return _norm_version(self.version) >= (3, 0, 0)
+        return self.version_at_least((3, 0, 0))
 
     def supports_alter_user(self) -> bool:
-        return _norm_version(self.version) >= (3, 0, 0)
+        return self.version_at_least((3, 0, 0))
 
     def supports_drop_user(self) -> bool:
-        return _norm_version(self.version) >= (3, 0, 0)
+        return self.version_at_least((3, 0, 0))
 
     def format_create_user_statement(self, expr: "FirebirdCreateUserStatement") -> Tuple[str, tuple]:
         """Format CREATE USER name PASSWORD '...' [FIRSTNAME ...] [MIDDLENAME ...]

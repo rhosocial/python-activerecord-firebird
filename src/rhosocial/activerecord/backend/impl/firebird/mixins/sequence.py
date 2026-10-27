@@ -13,7 +13,7 @@ from typing import Tuple, TYPE_CHECKING
 from rhosocial.activerecord.backend.dialect.exceptions import UnsupportedFeatureError
 from rhosocial.activerecord.backend.expression.objects import Sequence
 
-from .version_boundaries import FIREBIRD_VERSION_BOUNDARIES, _norm_version
+from .version_boundaries import FIREBIRD_VERSION_BOUNDARIES
 
 if TYPE_CHECKING:
     from rhosocial.activerecord.backend.expression.statements.ddl_sequence import CreateSequenceStatement
@@ -210,16 +210,16 @@ class FirebirdSequenceMixin:
         ``CREATE GENERATOR`` -- so the gate tracks the declared floor rather than
         the grammar.
         """
-        return _norm_version(self.version) >= FIREBIRD_VERSION_BOUNDARIES["SEQUENCE"]
+        return self.version_at_least(FIREBIRD_VERSION_BOUNDARIES["SEQUENCE"])
 
     def supports_create_sequence(self) -> bool:
-        return _norm_version(self.version) >= FIREBIRD_VERSION_BOUNDARIES["SEQUENCE"]
+        return self.version_at_least(FIREBIRD_VERSION_BOUNDARIES["SEQUENCE"])
 
     def supports_drop_sequence(self) -> bool:
-        return _norm_version(self.version) >= FIREBIRD_VERSION_BOUNDARIES["SEQUENCE"]
+        return self.version_at_least(FIREBIRD_VERSION_BOUNDARIES["SEQUENCE"])
 
     def supports_alter_sequence(self) -> bool:
-        return _norm_version(self.version) >= FIREBIRD_VERSION_BOUNDARIES["SEQUENCE"]
+        return self.version_at_least(FIREBIRD_VERSION_BOUNDARIES["SEQUENCE"])
 
     def supports_sequence_if_not_exists(self) -> bool:
         """Firebird's ``CREATE SEQUENCE`` grammar has no ``IF NOT EXISTS``."""

@@ -10,8 +10,6 @@ Protocol stub.
 
 from typing import Tuple, TYPE_CHECKING
 
-from .version_boundaries import _norm_version
-
 if TYPE_CHECKING:
     from rhosocial.activerecord.backend.expression.query_parts import ForUpdateClause
 
@@ -20,7 +18,7 @@ class FirebirdLockingMixin:
 
     def supports_for_update(self) -> bool:
         """Row-level FOR UPDATE locking requires Firebird 3.0+."""
-        return _norm_version(getattr(self, 'version', (3, 0, 0))) >= (3, 0, 0)
+        return self.version_at_least((3, 0, 0))
 
     def format_for_update_clause(self, clause: "ForUpdateClause") -> Tuple[str, tuple]:
         from rhosocial.activerecord.backend.dialect.exceptions import UnsupportedFeatureError
@@ -68,4 +66,4 @@ class FirebirdLockingMixin:
 
     def supports_lateral_join(self) -> bool:
         """Firebird 4.0 introduced joins with LATERAL derived tables."""
-        return _norm_version(getattr(self, 'version', (4, 0, 0))) >= (4, 0, 0)
+        return self.version_at_least((4, 0, 0))

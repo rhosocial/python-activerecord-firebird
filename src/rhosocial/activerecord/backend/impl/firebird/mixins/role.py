@@ -24,16 +24,16 @@ if TYPE_CHECKING:
 class FirebirdRoleMixin:
 
     def supports_roles(self) -> bool:
-        return _norm_version(self.version) >= (2, 5, 0)
+        return self.version_at_least((2, 5, 0))
 
     def supports_create_role(self) -> bool:
-        return _norm_version(self.version) >= (2, 5, 0)
+        return self.version_at_least((2, 5, 0))
 
     def supports_alter_role(self) -> bool:
-        return _norm_version(self.version) >= (3, 0, 0)
+        return self.version_at_least((3, 0, 0))
 
     def supports_drop_role(self) -> bool:
-        return _norm_version(self.version) >= (2, 5, 0)
+        return self.version_at_least((2, 5, 0))
 
     def format_create_role_statement(self, expr: "FirebirdCreateRoleStatement") -> Tuple[str, tuple]:
         """Format CREATE ROLE name."""

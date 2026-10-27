@@ -54,7 +54,7 @@ class FirebirdCommentMixin:
     }
 
     def supports_comment_on(self) -> bool:
-        return _norm_version(self.version) >= (2, 5, 0)
+        return self.version_at_least((2, 5, 0))
 
     def format_comment_on_statement(self, expr) -> Tuple[str, tuple]:
         """Format COMMENT ON <object> IS 'text' (or IS NULL to remove).

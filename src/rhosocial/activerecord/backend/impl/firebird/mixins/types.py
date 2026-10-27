@@ -858,11 +858,12 @@ class FirebirdTypeSupportMixin(DDLTypeMixin, DDLTypeSupport):
         and the zoned spellings :meth:`parse_type` recognises — so parsing and
         rendering cannot disagree about whether the type exists.
 
-        The default is 4.0 because a dialect built with no version at all is
-        the "latest this backend knows about" case; FirebirdDialect only sets
-        ``version`` when one is passed.
+        A dialect that has not been adapted answers ``False``: the 4.0 types
+        are a capability nobody has confirmed yet, and the renderer's refusal
+        names the version it needs rather than surfacing a bare "not adapted"
+        from a probe.
         """
-        return _norm_version(getattr(self, 'version', (4, 0, 0))) >= (4, 0, 0)
+        return self.version_at_least((4, 0, 0))
 
     def _check_fb4_type(self, feature: str) -> None:
         """Raise unless the dialect targets Firebird 4.0 or later.
@@ -908,7 +909,7 @@ class FirebirdTypeSupportMixin(DDLTypeMixin, DDLTypeSupport):
         return True
 
     def supports_data_type_boolean(self) -> bool:
-        return _norm_version(getattr(self, 'version', (3, 0, 0))) >= (3, 0, 0)
+        return self.version_at_least((3, 0, 0))
 
     def supports_data_type_varchar(self) -> bool:
         return True
@@ -964,19 +965,19 @@ class FirebirdTypeSupportMixin(DDLTypeMixin, DDLTypeSupport):
         return True
 
     def supports_data_type_firebird_timestamptz(self) -> bool:
-        return _norm_version(getattr(self, 'version', (4, 0, 0))) >= (4, 0, 0)
+        return self.version_at_least((4, 0, 0))
 
     def supports_data_type_firebird_timetz(self) -> bool:
-        return _norm_version(getattr(self, 'version', (4, 0, 0))) >= (4, 0, 0)
+        return self.version_at_least((4, 0, 0))
 
     def supports_data_type_firebird_time_without_time_zone(self) -> bool:
-        return _norm_version(getattr(self, 'version', (4, 0, 0))) >= (4, 0, 0)
+        return self.version_at_least((4, 0, 0))
 
     def supports_data_type_firebird_decfloat(self) -> bool:
-        return _norm_version(getattr(self, 'version', (4, 0, 0))) >= (4, 0, 0)
+        return self.version_at_least((4, 0, 0))
 
     def supports_data_type_firebird_int128(self) -> bool:
-        return _norm_version(getattr(self, 'version', (4, 0, 0))) >= (4, 0, 0)
+        return self.version_at_least((4, 0, 0))
 
     # ------------------------------------------------------------------
     # suggested_data_types() — D9

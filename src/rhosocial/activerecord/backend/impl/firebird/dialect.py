@@ -123,7 +123,6 @@ from rhosocial.activerecord.backend.dialect.mixins import (
     TypeNameMixin,
     DatabaseNameMixin,
     SchemaNameMixin,
-    NamespaceMixin,
     # Core infrastructure mixins (shared by all modern backends)
     PredicateMixin,
     ExpressionMixin,
@@ -553,11 +552,24 @@ class FirebirdDialect(
 
     # region Version-based feature detection
 
+    def version_at_least(self, floor: Tuple[int, int, int]) -> bool:
+        """Whether the server version reaches *floor*, without raising.
+
+        Firebird's capability questions are answered from versions that can
+        name only two components (``FirebirdDialect((4, 0))``), and a shorter
+        tuple compares less than the longer one it is a prefix of. The floor
+        and the version are therefore padded to three components first; an
+        unknown version answers ``False``, because a capability nobody
+        confirmed is not claimed.
+        """
+        version = _norm_version(self.version_or_none)
+        return version is not None and version >= _norm_version(floor)
+
     def supports_window_functions(self) -> bool:
-        return _norm_version(self.version) >= (3, 0, 0)
+        return self.version_at_least((3, 0, 0))
 
     def supports_window_frame_clause(self) -> bool:
-        return _norm_version(self.version) >= (3, 0, 0)
+        return self.version_at_least((3, 0, 0))
 
     def supports_merge_statement(self) -> bool:
         return True
@@ -568,11 +580,11 @@ class FirebirdDialect(
     def supports_skip_locked(self) -> bool:
         """SKIP LOCKED was introduced in Firebird 4.0; single source of
         truth for both this gate and FirebirdLockingMixin's rendering."""
-        return _norm_version(self.version) >= (4, 0, 0)
+        return self.version_at_least((4, 0, 0))
 
     def supports_lateral_join(self) -> bool:
         """Firebird 4.0 introduced joins with LATERAL derived tables."""
-        return _norm_version(self.version) >= (4, 0, 0)
+        return self.version_at_least((4, 0, 0))
 
 
 
@@ -659,22 +671,22 @@ class FirebirdDialect(
         return True
 
     def supports_boolean_type(self) -> bool:
-        return _norm_version(self.version) >= (3, 0, 0)
+        return self.version_at_least((3, 0, 0))
 
     def supports_decfloat(self) -> bool:
-        return _norm_version(self.version) >= (4, 0, 0)
+        return self.version_at_least((4, 0, 0))
 
     def supports_rows_syntax(self) -> bool:
         return True
 
     def supports_offset_fetch(self) -> bool:
-        return _norm_version(self.version) >= (3, 0, 0)
+        return self.version_at_least((3, 0, 0))
 
     def supports_database_triggers(self) -> bool:
-        return _norm_version(self.version) >= (3, 0, 0)
+        return self.version_at_least((3, 0, 0))
 
     def supports_cte(self) -> bool:
-        return _norm_version(self.version) >= (3, 0, 0)
+        return self.version_at_least((3, 0, 0))
 
     # Set operations (SetOperationSupport). Firebird spells UNION / UNION ALL
     # with the SQL-standard keywords, and both operators predate Firebird --
@@ -715,13 +727,13 @@ class FirebirdDialect(
         return True
 
     def supports_packages(self) -> bool:
-        return _norm_version(self.version) >= (3, 0, 0)
+        return self.version_at_least((3, 0, 0))
 
     def supports_create_package(self) -> bool:
-        return _norm_version(self.version) >= (3, 0, 0)
+        return self.version_at_least((3, 0, 0))
 
     def supports_create_package_body(self) -> bool:
-        return _norm_version(self.version) >= (3, 0, 0)
+        return self.version_at_least((3, 0, 0))
 
     def supports_global_temporary_table(self) -> bool:
         return True
@@ -738,13 +750,13 @@ class FirebirdDialect(
 
 
     def supports_autonomous_transaction(self) -> bool:
-        return _norm_version(self.version) >= (3, 0, 0)
+        return self.version_at_least((3, 0, 0))
 
     def supports_for_cursor(self) -> bool:
         return True
 
     def supports_as_cursor(self) -> bool:
-        return _norm_version(self.version) >= (3, 0, 0)
+        return self.version_at_least((3, 0, 0))
 
     def supports_collation(self) -> bool:
         return True

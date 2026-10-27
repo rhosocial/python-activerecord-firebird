@@ -18,6 +18,7 @@ Both forms name the same catalogue object, and the quoted one is what
 import pytest
 
 from rhosocial.activerecord.backend.impl.firebird.dialect import FirebirdDialect
+from rhosocial.activerecord.backend.introspection.types import TableType
 from rhosocial.activerecord.backend.impl.firebird.introspection.introspector import (
     SyncFirebirdIntrospector,
 )
@@ -27,8 +28,15 @@ from rhosocial.activerecord.backend.impl.firebird.introspection.status_introspec
 
 
 class IntrospectionProbe(SyncFirebirdIntrospector):
-    def __init__(self, dialect):
-        self._backend = type("_B", (), {"dialect": dialect})()
+    def __init__(self, dialect, cached_version=None):
+        self._backend = type(
+            "_B",
+            (),
+            {
+                "dialect": dialect,
+                "get_cached_server_version": staticmethod(lambda: cached_version),
+            },
+        )()
 
 
 class StatusProbe(FirebirdStatusIntrospectorMixin):
@@ -64,7 +72,8 @@ class TestTableList:
             schema=None, include_system=False, include_views=True, table_type=None
         ).to_sql()
         assert sql == (
-            'SELECT "RDB$RELATION_NAME", "RDB$VIEW_BLR" FROM "RDB$RELATIONS" '
+            'SELECT "RDB$RELATION_NAME", "RDB$VIEW_BLR", "RDB$RELATION_TYPE" '
+            'FROM "RDB$RELATIONS" '
             'WHERE "RDB$SYSTEM_FLAG" = 0 ORDER BY "RDB$RELATION_NAME"'
         )
         assert params == ()
@@ -83,9 +92,72 @@ class TestTableList:
         assert "WHERE" not in sql
         assert "1=1" not in sql
         assert sql == (
-            'SELECT "RDB$RELATION_NAME", "RDB$VIEW_BLR" FROM "RDB$RELATIONS" '
+            'SELECT "RDB$RELATION_NAME", "RDB$VIEW_BLR", "RDB$RELATION_TYPE" '
+            'FROM "RDB$RELATIONS" '
             'ORDER BY "RDB$RELATION_NAME"'
         )
+
+
+class TestTableKinds:
+    """``RDB$RELATION_TYPE`` becomes the shared table-kind vocabulary.
+
+    Firebird's catalogue has five relation kinds (language reference,
+    appendix D.30 ``RDB$RELATIONS``): ``0`` persistent table, ``1`` view,
+    ``2`` external table, ``4`` connection-level GTT and ``5``
+    transaction-level GTT. The two GTT codes differ only in their ``ON
+    COMMIT`` clause, so both report ``TEMPORARY``. Firebird has no
+    materialized views, and none is claimed here.
+    """
+
+    @staticmethod
+    def _parse(row):
+        row.setdefault("RDB$RELATION_NAME", "REL")
+        return IntrospectionProbe(FirebirdDialect(version=(5, 0, 0))).parse_tables(
+            [row], ""
+        )[0].table_type
+
+    def test_persistent_table(self):
+        assert self._parse({"RDB$RELATION_TYPE": 0}) == TableType.BASE_TABLE
+
+    def test_view(self):
+        assert self._parse({"RDB$RELATION_TYPE": 1}) == TableType.VIEW
+
+    def test_external_table(self):
+        assert self._parse({"RDB$RELATION_TYPE": 2}) == TableType.EXTERNAL
+
+    def test_connection_level_gtt_is_temporary(self):
+        assert self._parse({"RDB$RELATION_TYPE": 4}) == TableType.TEMPORARY
+
+    def test_transaction_level_gtt_is_temporary(self):
+        assert self._parse({"RDB$RELATION_TYPE": 5}) == TableType.TEMPORARY
+
+    def test_a_row_without_the_kind_falls_back_to_the_blr(self):
+        assert self._parse({"RDB$VIEW_BLR": None}) == TableType.BASE_TABLE
+        assert self._parse({"RDB$VIEW_BLR": "blr"}) == TableType.VIEW
+
+
+class TestParseDatabaseInfo:
+    """The reported version never depends on a strict, raising property."""
+
+    def test_adapted_version_is_reported(self):
+        info = IntrospectionProbe(FirebirdDialect(version=(5, 0, 4))).parse_database_info(
+            [{"MON$DATABASE_NAME": "/db/test.fdb"}]
+        )
+        assert info.version == "5.0.4"
+        assert info.version_tuple == (5, 0, 4)
+        assert info.name == "/db/test.fdb"
+
+    def test_cached_version_answers_before_adaptation(self):
+        info = IntrospectionProbe(
+            FirebirdDialect(), cached_version=(4, 0, 2)
+        ).parse_database_info([])
+        assert info.version == "4.0.2"
+        assert info.version_tuple == (4, 0, 2)
+
+    def test_unknown_version_is_spelled_out(self):
+        info = IntrospectionProbe(FirebirdDialect()).parse_database_info([])
+        assert info.version == "unknown"
+        assert info.version_tuple == (0, 0, 0)
 
 
 class TestColumnList:

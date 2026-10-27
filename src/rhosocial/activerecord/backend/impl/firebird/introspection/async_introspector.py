@@ -1,3 +1,4 @@
+# src/rhosocial/activerecord/backend/impl/firebird/introspection/async_introspector.py
 """Firebird async introspector — wraps sync cursor ops in a thread pool."""
 
 from typing import Any, Dict, List, Optional
@@ -96,6 +97,22 @@ FB_BLOB_SUB_TYPES = {
     1: "TEXT",
 }
 
+#: ``RDB$RELATIONS.RDB$RELATION_TYPE`` -> ``TableType``, per the language
+#: reference's ``RDB$RELATIONS`` appendix: ``0`` persistent table, ``1`` view,
+#: ``2`` external table, ``3`` monitoring table, ``4`` connection-level GTT
+#: (``ON COMMIT PRESERVE ROWS``) and ``5`` transaction-level GTT (``ON COMMIT
+#: DELETE ROWS``). Both GTT kinds are *temporary*: the ``4``/``5`` difference is
+#: the ``ON COMMIT`` clause, not the kind of relation, so both report
+#: ``TableType.TEMPORARY``. Firebird has no materialized views, so no entry
+#: claims one -- a materialized view is not a relation kind its catalogue has.
+_RELATION_TYPE_KINDS = {
+    0: TableType.BASE_TABLE,
+    1: TableType.VIEW,
+    2: TableType.EXTERNAL,
+    4: TableType.TEMPORARY,
+    5: TableType.TEMPORARY,
+}
+
 # The table-trigger values of ``RDB$TRIGGER_TYPE`` (language reference D.32.1).
 # It is a closed list, not a bitmask a caller can decode by shifting: the same
 # integer means a different combination at each magnitude (17 is INSERT|UPDATE,
@@ -153,12 +170,6 @@ class FirebirdAsyncIntrospectorMixin(IntrospectorMixin):
         """
         return ""
 
-    def _get_version(self) -> tuple:
-        dialect_ver = getattr(self._backend.dialect, 'version', None)
-        if dialect_ver:
-            return dialect_ver
-        return (3, 0, 0)
-
     # ------------------------------------------------------------------
     # Firebird-specific statement factories
     #
@@ -192,27 +203,52 @@ class FirebirdAsyncIntrospectorMixin(IntrospectorMixin):
     # ------------------------------------------------------------------
 
     def parse_database_info(self, rows: List[Dict[str, Any]]) -> IntrospectionDatabaseInfo:
-        version = self._get_version()
+        """Read the database row, with the version taken from the server.
+
+        ``server_version`` is the adapted dialect's version, or the one the
+        backend cached from its last handshake; reading it never raises. A
+        database with no known version reports ``"unknown"`` and
+        ``(0, 0, 0)`` rather than failing: refusing to describe a database
+        because nothing adapted yet tells the caller nothing useful.
+        """
+        version = self.server_version
         return IntrospectionDatabaseInfo(
             name=str(rows[0].get("MON$DATABASE_NAME", "")) if rows else "",
-            version=".".join(str(v) for v in version),
-            version_tuple=version,
+            version=".".join(str(part) for part in version) if version else "unknown",
+            version_tuple=version or (0, 0, 0),
             vendor="Firebird",
         )
 
     def parse_tables(self, rows: List[Dict[str, Any]],
                        schema: Optional[str]) -> List[IntrospectionTableInfo]:
+        """Map ``RDB$RELATION_TYPE`` onto the shared table-kind vocabulary.
+
+        Firebird's catalogue distinguishes five relation kinds: ``0`` a
+        persistent table, ``1`` a view, ``2`` an external table, ``4`` a
+        connection-level GTT (``ON COMMIT PRESERVE ROWS``) and ``5`` a
+        transaction-level GTT (``ON COMMIT DELETE ROWS``). Both GTT kinds are
+        ``TableType.TEMPORARY`` -- what separates them is the ``ON COMMIT``
+        clause, not the kind of relation. Firebird has no materialized views,
+        so none is reported.
+
+        A row without a recognised kind falls back to ``VIEW`` when it carries
+        a ``RDB$VIEW_BLR`` and to ``BASE_TABLE`` otherwise, which is how this
+        parser read rows before the kind was projected.
+        """
         tables = []
         for row in rows:
             name = str(row.get("RDB$RELATION_NAME", "")).strip()
             if not name:
                 continue
             is_view = row.get("RDB$VIEW_BLR") is not None
+            kind = _RELATION_TYPE_KINDS.get(row.get("RDB$RELATION_TYPE"))
+            if kind is None:
+                kind = TableType.VIEW if is_view else TableType.BASE_TABLE
             tables.append(
                 IntrospectionTableInfo(
                     name=name,
                     schema=schema or "",
-                    table_type=TableType.VIEW if is_view else TableType.BASE_TABLE,
+                    table_type=kind,
                 )
             )
         return tables

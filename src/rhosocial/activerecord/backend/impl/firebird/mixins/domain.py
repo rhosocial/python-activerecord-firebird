@@ -22,7 +22,7 @@ from rhosocial.activerecord.backend.expression.statements.ddl_domain import (
 )
 
 from ..expression.ddl.domain import FirebirdSetDomainDataTypeAction, _bind_data_type
-from .version_boundaries import FIREBIRD_VERSION_BOUNDARIES, _norm_version
+from .version_boundaries import FIREBIRD_VERSION_BOUNDARIES
 
 
 class FirebirdDomainMixin(DomainMixin):
@@ -32,8 +32,7 @@ class FirebirdDomainMixin(DomainMixin):
         version: Optional[Tuple[int, ...]]
 
     def supports_domains(self) -> bool:
-        version = _norm_version(self.version)
-        return version is not None and version >= FIREBIRD_VERSION_BOUNDARIES["DOMAIN"]
+        return self.version_at_least(FIREBIRD_VERSION_BOUNDARIES["DOMAIN"])
 
     def supports_domain(self) -> bool:
         return self.supports_domains()
@@ -76,10 +75,8 @@ class FirebirdDomainMixin(DomainMixin):
                 action_type,
                 (SetDomainNotNullAction, DropDomainNotNullAction),
             ):
-                version = _norm_version(self.version)
-                return (
-                    version is not None
-                    and version >= FIREBIRD_VERSION_BOUNDARIES["DOMAIN_NOT_NULL_ACTION"]
+                return self.version_at_least(
+                    FIREBIRD_VERSION_BOUNDARIES["DOMAIN_NOT_NULL_ACTION"]
                 )
             return issubclass(
                 action_type,

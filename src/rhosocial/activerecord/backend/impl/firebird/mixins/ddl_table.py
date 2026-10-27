@@ -19,8 +19,6 @@ if TYPE_CHECKING:  # pragma: no cover
 from rhosocial.activerecord.backend.dialect.mixins.ddl_table import TableMixin
 from rhosocial.activerecord.backend.expression.objects import Table
 
-from .version_boundaries import _norm_version
-
 
 class FirebirdTableMixin:
 
@@ -35,7 +33,7 @@ class FirebirdTableMixin:
         ``WITH DATA`` / ``WITH NO DATA`` on it. The gate is therefore the
         version the measurement found, not a flat answer.
         """
-        return _norm_version(self.version) >= (6, 0, 0)
+        return self.version_at_least((6, 0, 0))
 
     def supports_with_data_clause(self) -> bool:
         """Whether the ``WITH [NO] DATA`` population clause is supported.
@@ -47,7 +45,7 @@ class FirebirdTableMixin:
         Firebird version has materialized views, so the clause answers with the
         same version gate as the CTAS statement.
         """
-        return _norm_version(self.version) >= (6, 0, 0)
+        return self.version_at_least((6, 0, 0))
 
     def supports_drop_table_cascade(self) -> bool:
         """Firebird has no CASCADE keyword on DROP TABLE."""

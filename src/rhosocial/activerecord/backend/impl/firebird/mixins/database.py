@@ -19,10 +19,10 @@ if TYPE_CHECKING:
 class FirebirdDatabaseMixin:
 
     def supports_create_database(self) -> bool:
-        return _norm_version(self.version) >= (2, 5, 0)
+        return self.version_at_least((2, 5, 0))
 
     def supports_drop_database(self) -> bool:
-        return _norm_version(self.version) >= (2, 5, 0)
+        return self.version_at_least((2, 5, 0))
 
     def format_create_database_statement(self, expr: "FirebirdCreateDatabaseStatement") -> Tuple[str, tuple]:
         """Format CREATE DATABASE 'file' with the configured options."""

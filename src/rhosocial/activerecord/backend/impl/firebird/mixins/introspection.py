@@ -179,11 +179,10 @@ class FirebirdIntrospectionMixin:
 
         ``RDB$PUBLICATIONS`` does not exist before that, so asking an older
         server would be a ``-204`` relation-unknown rather than an empty list.
-        The version is read off the backend, which is adapted before the
-        question is built.
+        The version is read off the dialect, which answers ``False`` when it
+        has not been adapted yet rather than raising mid-probe.
         """
-        version = getattr(self, "version", None) or ()
-        return bool(version) and tuple(version[:1]) >= (4,)
+        return self.version_at_least((4, 0, 0))
 
     # ------------------------------------------------------------------ #
     # Namespace
@@ -249,6 +248,12 @@ class FirebirdIntrospectionMixin:
         question, not data, so they stay inline. ``table_type`` narrows the
         relation kind when the caller names one; the core's table API passes
         ``None`` and the question is then the unfiltered one.
+
+        ``RDB$RELATION_TYPE`` is projected because it is the column that tells
+        a persistent table from a global temporary or an external one, and a
+        list that dropped it would leave the parser unable to name the kind --
+        Firebird's GTTs are ordinary relations with ``RDB$SYSTEM_FLAG = 0``,
+        so nothing else in the row betrays them.
         """
         params = expr.get_params()
         self.reject_namespace(params.get("schema"))
@@ -276,7 +281,11 @@ class FirebirdIntrospectionMixin:
 
         return select_sql(
             self,
-            [column(self, "RDB$RELATION_NAME"), column(self, "RDB$VIEW_BLR")],
+            [
+                column(self, "RDB$RELATION_NAME"),
+                column(self, "RDB$VIEW_BLR"),
+                column(self, "RDB$RELATION_TYPE"),
+            ],
             from_=relation(self, "RDB$RELATIONS"),
             where=conjunction(self, *conditions) if conditions else None,
             order_by=[column(self, "RDB$RELATION_NAME")],

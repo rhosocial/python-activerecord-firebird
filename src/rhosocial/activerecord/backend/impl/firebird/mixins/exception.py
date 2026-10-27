@@ -23,7 +23,7 @@ class FirebirdExceptionMixin:
 
     def supports_exception(self) -> bool:
         """Whether EXCEPTION statements are supported (Firebird 2.5+)."""
-        return _norm_version(getattr(self, 'version', (2, 5, 0))) >= (2, 5, 0)
+        return self.version_at_least((2, 5, 0))
 
     def supports_create_exception(self) -> bool:
         """Whether CREATE EXCEPTION is supported (Firebird 2.5+)."""
