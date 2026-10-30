@@ -20,7 +20,7 @@ throughout:
   here" and "here is everything" are different answers.
 """
 
-from typing import Optional, TYPE_CHECKING
+from typing import List, Optional, TYPE_CHECKING
 
 from rhosocial.activerecord.backend.dialect.exceptions import UnsupportedFeatureError
 
@@ -39,6 +39,8 @@ from ..query_nodes import (
 )
 
 if TYPE_CHECKING:  # pragma: no cover
+    from rhosocial.activerecord.backend.introspection.types import IntrospectionScope
+
     from rhosocial.activerecord.backend.expression.introspection import (
         ColumnInfoQueryStatement,
         DatabaseInfoQueryStatement,
@@ -183,6 +185,32 @@ class FirebirdIntrospectionMixin:
         has not been adapted yet rather than raising mid-probe.
         """
         return self.version_at_least((4, 0, 0))
+
+    def get_supported_introspection_scopes(self) -> List["IntrospectionScope"]:
+        """The scopes this backend answers for, in core's own vocabulary.
+
+        Only eight of the twenty-two families have a scope here: the enum has
+        no member for domains, exceptions, routines, roles, privileges,
+        charsets, collations, dependencies, view relations or publications. The
+        list below is therefore what core can *express*, not the whole of what
+        this backend can answer -- ``_TYPE_CAPABILITIES`` in the CLI is the
+        longer list. Adding members to ``IntrospectionScope`` is a core decision
+        (the enum keys the introspection cache), not one this backend can make.
+        """
+        from rhosocial.activerecord.backend.introspection.types import (
+            IntrospectionScope,
+        )
+
+        return [
+            IntrospectionScope.DATABASE,
+            IntrospectionScope.TABLE,
+            IntrospectionScope.COLUMN,
+            IntrospectionScope.INDEX,
+            IntrospectionScope.FOREIGN_KEY,
+            IntrospectionScope.VIEW,
+            IntrospectionScope.TRIGGER,
+            IntrospectionScope.SEQUENCE,
+        ]
 
     # ------------------------------------------------------------------ #
     # Namespace
