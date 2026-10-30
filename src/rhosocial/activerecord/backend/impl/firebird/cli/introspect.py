@@ -255,9 +255,16 @@ def _handle_introspect_sync(args, backend: FirebirdBackend, provider):
             provider.display_results(data, title="Tables")
 
         elif args.type == "views":
-            views = introspector.list_views(schema=None)
-            data = _serialize_for_output(views)
-            provider.display_results(data, title="Views")
+            if args.name:
+                view = introspector.get_view_info(args.name)
+                if view is None:
+                    print(f"Error: View '{args.name}' not found", file=sys.stderr)
+                    sys.exit(1)
+                provider.display_results(_serialize_for_output([view]), title=f"View {args.name}")
+            else:
+                views = introspector.list_views(schema=None)
+                data = _serialize_for_output(views)
+                provider.display_results(data, title="Views")
 
         elif args.type == "columns":
             if not args.name:
@@ -488,9 +495,16 @@ async def _handle_introspect_async(args, backend: AsyncFirebirdBackend, provider
             provider.display_results(data, title="Tables")
 
         elif args.type == "views":
-            views = await introspector.list_views(schema=None)
-            data = _serialize_for_output(views)
-            provider.display_results(data, title="Views")
+            if args.name:
+                view = await introspector.get_view_info(args.name)
+                if view is None:
+                    print(f"Error: View '{args.name}' not found", file=sys.stderr)
+                    sys.exit(1)
+                provider.display_results(_serialize_for_output([view]), title=f"View {args.name}")
+            else:
+                views = await introspector.list_views(schema=None)
+                data = _serialize_for_output(views)
+                provider.display_results(data, title="Views")
 
         elif args.type == "columns":
             if not args.name:

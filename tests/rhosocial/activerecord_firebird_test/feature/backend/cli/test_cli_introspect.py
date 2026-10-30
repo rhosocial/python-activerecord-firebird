@@ -34,6 +34,15 @@ class FakeIntrospector:
         self.calls.append(("list_views", schema))
         return ["ACTIVE_USERS"]
 
+    def get_view_info(self, name, schema=None):
+        self.calls.append(("get_view_info", name))
+        if name.upper() != "ACTIVE_USERS":
+            return None
+        return {
+            "name": "ACTIVE_USERS",
+            "definition": "SELECT ID, NAME FROM USERS WHERE ACTIVE = 1",
+        }
+
     def list_columns(self, name, schema=None):
         self.calls.append(("list_columns", name, schema))
         return [{"name": "ID", "type": "INTEGER"}, {"name": "NAME", "type": "VARCHAR"}]
@@ -303,6 +312,28 @@ class TestIntrospectHandleHappyPaths:
         assert marker in out
         assert FakeBackend.last_instance.introspector.calls[0][0] == call_prefix
         assert FakeBackend.last_instance.disconnect_calls == 1
+
+    def test_one_view_answered_by_name(self, monkeypatch, capsys):
+        """``views NAME`` asks for that one view instead of listing the family."""
+        monkeypatch.setattr(introspect_mod, "FirebirdBackend", FakeBackend)
+        args = parse_introspect_args([
+            "introspect", "views", "ACTIVE_USERS", "--database", "/tmp/x.fdb", "-o", "json",
+        ])
+        introspect_mod.handle(args)
+        out = capsys.readouterr().out
+        assert "ACTIVE_USERS" in out
+        assert "SELECT ID, NAME FROM USERS" in out
+        assert FakeBackend.last_instance.introspector.calls[0][0] == "get_view_info"
+
+    def test_an_unknown_view_exits_one(self, monkeypatch, capsys):
+        monkeypatch.setattr(introspect_mod, "FirebirdBackend", FakeBackend)
+        args = parse_introspect_args([
+            "introspect", "views", "NO_SUCH_VIEW", "--database", "/tmp/x.fdb",
+        ])
+        with pytest.raises(SystemExit) as excinfo:
+            introspect_mod.handle(args)
+        assert excinfo.value.code == 1
+        assert "not found" in capsys.readouterr().err
 
     def test_include_system_forwarded(self, monkeypatch):
         monkeypatch.setattr(introspect_mod, "FirebirdBackend", FakeBackend)
