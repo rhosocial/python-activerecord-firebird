@@ -121,6 +121,22 @@ class FirebirdIntrospectionMixin:
         """``RDB$TRIGGERS`` carries the timing, the events and the source."""
         return True
 
+    def supports_table_storage_introspection(self) -> bool:
+        """Firebird's catalogue keeps no per-table storage fact to answer.
+
+        The ``RDB$`` relations that mention pages -- ``RDB$PAGES`` above all
+        -- describe the database file, not the objects in it: the module
+        docstring of :mod:`...expression.introspection` classifies them as
+        status material, and a per-relation page count is what the external
+        ``gstat`` tool exists to produce rather than a catalogue question.
+        So the family answers False here, and the slots of
+        ``IntrospectionTableInfo`` stay ``None``: an engine that cannot
+        answer says so, and a caller gating on the switch is offered
+        "not supported here" rather than an empty list that looks like
+        storage of zero (``.claude/rules/introspection.md`` §2, §5).
+        """
+        return False
+
     def supports_domain_introspection(self) -> bool:
         """Firebird answers for its domains from ``RDB$FIELDS``.
 

@@ -604,3 +604,33 @@ class TestUnnamedRows:
     @pytest.mark.parametrize("family,parse,column", NAMED_PARSERS)
     def test_an_empty_answer_is_an_empty_list(self, probe, family, parse, column):
         assert parse(probe, []) == []
+
+class TestTableStorageFamily:
+    """Per-table storage: the honest refusal, and what the slots keep.
+
+    Firebird's catalogue describes the database file (``RDB$PAGES`` and
+    friends) rather than the objects in it, and a per-relation page count is
+    the external ``gstat`` tool's job. The family therefore answers False,
+    and the slots of ``IntrospectionTableInfo`` stay ``None`` -- a caller
+    gating on the switch is told "not supported here" rather than shown
+    storage of zero.
+    """
+
+    def test_the_probe_refuses_plainly(self, probe):
+        assert probe.dialect.supports_table_storage_introspection() is False
+
+    def test_table_rows_keep_every_storage_slot_none(self, probe):
+        rows = [
+            {
+                "RDB$RELATION_NAME": "CUSTOMERS",
+                "RDB$SYSTEM_FLAG": 0,
+                "RDB$VIEW_BLR": None,
+            }
+        ]
+        tables = probe.parse_tables(rows, None)
+        table = tables[0]
+        assert table.size_bytes is None
+        assert table.data_size_bytes is None
+        assert table.index_size_bytes is None
+        assert table.row_count is None
+
