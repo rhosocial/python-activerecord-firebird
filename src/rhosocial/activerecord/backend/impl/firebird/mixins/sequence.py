@@ -13,22 +13,32 @@ from typing import Tuple, TYPE_CHECKING
 from rhosocial.activerecord.backend.dialect.exceptions import UnsupportedFeatureError
 from rhosocial.activerecord.backend.expression.objects import Sequence
 
-from .version_boundaries import FIREBIRD_VERSION_BOUNDARIES, _norm_version
+from .version_boundaries import FIREBIRD_VERSION_BOUNDARIES
 
 if TYPE_CHECKING:
-    from rhosocial.activerecord.backend.expression.statements.ddl_sequence import CreateSequenceExpression
+    from rhosocial.activerecord.backend.expression.statements.ddl_sequence import CreateSequenceStatement
     from ..expression.generator import GenIdExpression, NextValueForExpression
 
 
 class FirebirdSequenceMixin:
 
+    def supports_generator_introspection(self) -> bool:
+        """Firebird answers for its generators from ``RDB$GENERATORS``.
+
+        The capability for the ``introspect generators`` family. Declared here
+        because a caller asking "can I read a generator's value" should not
+        have to try the question to find out -- the switch is the answer, and
+        it belongs beside the statements that render the family.
+        """
+        return True
+
     def format_create_sequence_statement(
         self,
-        expr: "CreateSequenceExpression",
+        expr: "CreateSequenceStatement",
     ) -> Tuple[str, tuple]:
         """Render ``CREATE SEQUENCE`` / ``CREATE GENERATOR`` for Firebird.
 
-        This is the dispatched formatter: ``CreateSequenceExpression.format_method``
+        This is the dispatched formatter: ``CreateSequenceStatement.format_method``
         returns ``"format_create_sequence_statement"``, and ``FirebirdSequenceMixin``
         precedes ``SequenceMixin`` in the dialect bases, so a ``CREATE SEQUENCE``
         reaches this method rather than the core one. An earlier spelling of this
@@ -63,8 +73,9 @@ class FirebirdSequenceMixin:
 
         ``CREATE GENERATOR`` is Firebird's documented legacy synonym for
         ``CREATE SEQUENCE``; both name the same object and accept the same
-        ``START WITH`` / ``INCREMENT BY`` clauses. It is reached through the
-        ``use_generator`` attribute, and the core formatter has no way to produce
+        ``START WITH`` / ``INCREMENT BY`` clauses. The spelling is a field of
+        this backend's own :class:`FirebirdCreateSequenceStatement`
+        (``use_generator``), and the core formatter has no way to produce
         that spelling, which is why it stays here.
 
         Version notes (language reference, 3.0 vs 4.0+): in 3.0 ``START WITH``
@@ -77,7 +88,7 @@ class FirebirdSequenceMixin:
         interpretation of the values differs.
 
         Raises:
-            TypeError: ``CreateSequenceExpression.sequence`` is not a Sequence. A
+            TypeError: ``CreateSequenceStatement.sequence`` is not a Sequence. A
                 table would render as a well-formed CREATE SEQUENCE over that
                 table's name, because the object carries its own format method and
                 the dialect would reach ``format_table_object`` and get valid SQL
@@ -87,7 +98,7 @@ class FirebirdSequenceMixin:
         """
         if not isinstance(expr.sequence, Sequence):
             raise TypeError(
-                f"CreateSequenceExpression.sequence must be a Sequence, "
+                f"CreateSequenceStatement.sequence must be a Sequence, "
                 f"got {type(expr.sequence).__name__}"
             )
         if not self.supports_sequence():
@@ -147,7 +158,14 @@ class FirebirdSequenceMixin:
                     f"{self.name} does not support the OWNED BY sequence option."
                 )
 
-        use_generator = getattr(expr, 'use_generator', False)
+        # ``use_generator`` belongs to this backend's own derived statement;
+        # the generic node declares no such field, so the kind decides
+        # whether the question exists, then the field is read.
+        from ..expression.ddl.sequence import FirebirdCreateSequenceStatement
+
+        use_generator = (
+            isinstance(expr, FirebirdCreateSequenceStatement) and expr.use_generator
+        )
         # The Sequence object renders itself, so the DDL form and the reference
         # forms below agree on how the name is quoted.
         sequence_sql = expr.sequence.to_sql()[0]
@@ -175,12 +193,12 @@ class FirebirdSequenceMixin:
                 parts.append(f"INCREMENT BY {expr.increment}")
         return ' '.join(parts), ()
 
-    def format_gen_id(self, expr: "GenIdExpression") -> Tuple[str, tuple]:
-        generator_sql = Sequence(self, expr._generator_name).to_sql()[0]
-        return f"GEN_ID({generator_sql}, {expr._step})", ()
+    def format_gen_id_expression(self, expr: "GenIdExpression") -> Tuple[str, tuple]:
+        generator_sql = Sequence(self, expr.generator_name).to_sql()[0]
+        return f"GEN_ID({generator_sql}, {expr.step})", ()
 
-    def format_next_value_for(self, expr: "NextValueForExpression") -> Tuple[str, tuple]:
-        sequence_sql = Sequence(self, expr._sequence_name).to_sql()[0]
+    def format_next_value_for_expression(self, expr: "NextValueForExpression") -> Tuple[str, tuple]:
+        sequence_sql = Sequence(self, expr.sequence_name).to_sql()[0]
         return f"NEXT VALUE FOR {sequence_sql}", ()
 
     def supports_sequence(self) -> bool:
@@ -192,16 +210,16 @@ class FirebirdSequenceMixin:
         ``CREATE GENERATOR`` -- so the gate tracks the declared floor rather than
         the grammar.
         """
-        return _norm_version(self.version) >= FIREBIRD_VERSION_BOUNDARIES["SEQUENCE"]
+        return self.version_at_least(FIREBIRD_VERSION_BOUNDARIES["SEQUENCE"])
 
     def supports_create_sequence(self) -> bool:
-        return _norm_version(self.version) >= FIREBIRD_VERSION_BOUNDARIES["SEQUENCE"]
+        return self.version_at_least(FIREBIRD_VERSION_BOUNDARIES["SEQUENCE"])
 
     def supports_drop_sequence(self) -> bool:
-        return _norm_version(self.version) >= FIREBIRD_VERSION_BOUNDARIES["SEQUENCE"]
+        return self.version_at_least(FIREBIRD_VERSION_BOUNDARIES["SEQUENCE"])
 
     def supports_alter_sequence(self) -> bool:
-        return _norm_version(self.version) >= FIREBIRD_VERSION_BOUNDARIES["SEQUENCE"]
+        return self.version_at_least(FIREBIRD_VERSION_BOUNDARIES["SEQUENCE"])
 
     def supports_sequence_if_not_exists(self) -> bool:
         """Firebird's ``CREATE SEQUENCE`` grammar has no ``IF NOT EXISTS``."""

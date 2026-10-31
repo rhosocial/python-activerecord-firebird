@@ -30,6 +30,30 @@ class FirebirdAlterTableModifierMixin:
         return False
 
     def supports_drop_constraint_if_exists(self) -> bool:
+        """False: Firebird has no ``DROP CONSTRAINT IF EXISTS``.
+
+        Measured on Firebird 5.0.4, against a real constraint on
+        ``ALTER TABLE ... DROP CONSTRAINT IF EXISTS <name>``::
+
+            -104: Token unknown - line 1, column 39 -EXISTS
+
+        Refused at the ``EXISTS`` token, so there is nothing to catch and no
+        idempotent spelling of the drop at all -- a caller that wants one has
+        to pre-check ``RDB$RELATION_CONSTRAINTS`` or use ``EXECUTE STATEMENT``.
+
+        Worth keeping in view next to the 2026-10-11 cross-backend table:
+        MariaDB, PostgreSQL, SQL Server and ClickHouse all have this form and
+        all turn a missing constraint into a silent success; MySQL has neither
+        the form nor a catchable code.  Firebird is in the MySQL position -- the
+        statement never parses -- which is why ``format_drop_table_constraint_
+        action`` below raises by name instead of letting the statement fail at
+        the server.
+
+        The same value is repeated on
+        :class:`~.FirebirdConstraintMixin.supports_drop_constraint_if_exists`, so
+        the whole constraint contract can be read in one place; the two are
+        asserted to agree in ``test_firebird_constraint_switches.py``.
+        """
         return False
 
     def format_add_column_action(self, action: Any) -> Tuple[str, tuple]:
@@ -39,7 +63,9 @@ class FirebirdAlterTableModifierMixin:
         Guard the modifier and delegate the plain form to the base
         implementation.
         """
-        if getattr(action, "if_not_exists", None) is True:
+        # ``if_not_exists`` is AddColumnAction's declared field; the guard
+        # reads it under its own name rather than probing for it.
+        if action.if_not_exists is True:
             raise UnsupportedFeatureError(
                 self.name,
                 "ADD COLUMN IF NOT EXISTS",
@@ -57,7 +83,9 @@ class FirebirdAlterTableModifierMixin:
         Guard the modifier and delegate the plain form to the base
         implementation.
         """
-        if getattr(action, "if_exists", None) is True:
+        # ``if_exists`` is DropColumnAction's declared field; the guard
+        # reads it under its own name rather than probing for it.
+        if action.if_exists is True:
             raise UnsupportedFeatureError(
                 self.name,
                 "DROP COLUMN IF EXISTS",
@@ -73,7 +101,9 @@ class FirebirdAlterTableModifierMixin:
         Guard the modifier and delegate the plain form to the base
         implementation.
         """
-        if getattr(action, "if_exists", None) is True:
+        # ``if_exists`` is DropTableConstraintAction's declared field; the
+        # guard reads it under its own name rather than probing for it.
+        if action.if_exists is True:
             raise UnsupportedFeatureError(
                 self.name,
                 "DROP CONSTRAINT IF EXISTS",
@@ -101,7 +131,9 @@ class FirebirdAlterTableModifierMixin:
         """
         self._check_identity_version("RESTART")
         col = self.format_identifier(action.column_name)
-        if getattr(action, "restart_with", None) is not None:
+        # ``restart_with`` is RestartIdentityAction's declared field; the
+        # renderer reads it under its own name rather than probing for it.
+        if action.restart_with is not None:
             return f"ALTER COLUMN {col} RESTART WITH {action.restart_with}", ()
         return f"ALTER COLUMN {col} RESTART", ()
 

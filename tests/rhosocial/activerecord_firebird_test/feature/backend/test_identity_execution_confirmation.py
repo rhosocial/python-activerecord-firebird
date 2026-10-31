@@ -31,8 +31,8 @@ from rhosocial.activerecord.backend.expression.objects import Table
 from rhosocial.activerecord.backend.expression.statements import (
     AutoIncrementClause,
     ColumnDefinition,
-    CreateTableExpression,
-    DropTableExpression,
+    CreateTableStatement,
+    DropTableStatement,
     IdentityClause,
 )
 from rhosocial.activerecord.backend.expression.types import IntegerType
@@ -73,6 +73,12 @@ REFUSED_OPTIONS = (
     ("cache", {"cache": 10}, "IDENTITY CACHE"),
     ("no_cache", {"no_cache": True}, "IDENTITY CACHE"),
 )
+
+
+# The execution-confirmation classes below open a real connection and create
+# and drop real tables against the one scenario database this run points at.
+# See the reason, once, in this directory's conftest.
+pytestmark = pytest.mark.xdist_group("live_db")
 
 
 class _OptionsDeclaredDialect(FirebirdDialect):
@@ -223,7 +229,7 @@ class TestExecutionConfirmation:
         fb_backend.introspect_and_adapt()
         dialect = fb_backend.dialect
         table = Table(dialect, f"IDENTITY_{case.upper()}")
-        expression = CreateTableExpression(
+        expression = CreateTableStatement(
             dialect,
             table,
             [
@@ -241,7 +247,7 @@ class TestExecutionConfirmation:
         assert clause.strip() in sql, sql
 
         outcome = confirm_expression_execution(
-            fb_backend, expression, teardown=[DropTableExpression(dialect, table)]
+            fb_backend, expression, teardown=[DropTableStatement(dialect, table)]
         )
         assert outcome is ExecutionOutcome.ACCEPTED
 

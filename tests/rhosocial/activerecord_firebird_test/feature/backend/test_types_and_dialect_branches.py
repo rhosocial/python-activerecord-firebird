@@ -15,23 +15,28 @@ from rhosocial.activerecord.backend.expression.objects import Sequence, Table
 from rhosocial.activerecord.backend.expression.query_parts import ForUpdateClause
 from rhosocial.activerecord.backend.expression.statements import (
     ColumnConstraint,
-    ColumnConstraintType,
+    ColumnDefaultConstraint,
     ColumnDefinition,
-    CreateTableExpression,
-    DeleteExpression,
+    ColumnNotNullConstraint,
+    ColumnNullableConstraint,
+    ColumnPrimaryKeyConstraint,
+    CreateTableStatement,
+    DeleteStatement,
     ForeignKeyConstraint,
-    InsertExpression,
+    InsertStatement,
     ReturningClause,
+    TableCheckConstraint,
     TableConstraint,
-    TableConstraintType,
-    UpdateExpression,
+    TablePrimaryKeyConstraint,
+    TableUniqueConstraint,
+    UpdateStatement,
     ValuesSource,
     ReferentialAction,
 )
 from rhosocial.activerecord.backend.expression.statements.ddl_sequence import (
-    AlterSequenceExpression,
-    CreateSequenceExpression,
-    DropSequenceExpression,
+    AlterSequenceStatement,
+    CreateSequenceStatement,
+    DropSequenceStatement,
 )
 from rhosocial.activerecord.backend.expression.types import (
     BigIntType,
@@ -55,17 +60,25 @@ from rhosocial.activerecord.backend.expression.types import (
 import rhosocial.activerecord.backend.expression as E
 
 from rhosocial.activerecord.backend.impl.firebird.dialect import FirebirdDialect
+from rhosocial.activerecord.backend.impl.firebird.expression.column import (
+    FirebirdColumnDefinition,
+)
+from rhosocial.activerecord.backend.impl.firebird.expression.create_table import (
+    FirebirdCreateTableStatement,
+)
+from rhosocial.activerecord.backend.impl.firebird.expression.ddl.sequence import (
+    FirebirdCreateSequenceStatement,
+)
 from rhosocial.activerecord.backend.impl.firebird.expression.dml import (
-    UpdateOrInsertExpression,
+    UpdateOrInsertStatement,
 )
 from rhosocial.activerecord.backend.impl.firebird.expression.generator import (
     GenIdExpression,
     NextValueForExpression,
 )
 from rhosocial.activerecord.backend.impl.firebird.expression.types import (
-    FirebirdBlobSubType,
     FirebirdDecFloatType,
-    FirebirdFloatType,
+    FloatType,
     FirebirdInt128Type,
     FirebirdTimeStampTzType,
     FirebirdTimeTzType,
@@ -488,7 +501,7 @@ class TestFloatAndBlobSubTypeIdentityBranches:
         dialect = FirebirdDialect((4, 0))
         assert dialect.format_data_type(FloatType()) == ("FLOAT", ())
         assert dialect.format_data_type(
-            FirebirdFloatType(precision=24)
+            FloatType(precision=24)
         ) == ("FLOAT(24)", ())
         # 25..53 is the documented double-precision half, not an error:
         # "1 - 24: 32-bit single precision; 25 - 53: 64-bit double precision"
@@ -496,21 +509,20 @@ class TestFloatAndBlobSubTypeIdentityBranches:
         # reject it while this one accepted it.
         assert dialect.format_data_type(FloatType(precision=53)) == ("FLOAT(53)", ())
         assert dialect.format_data_type(
-            FirebirdFloatType(precision=53)
+            FloatType(precision=53)
         ) == ("FLOAT(53)", ())
 
     def test_float_precision_branch_is_closed_below_firebird_4(self):
-        """Both renderers, because the 3.0 ``FLOAT(p)`` counted decimal digits.
+        """The 3.0 ``FLOAT(p)`` counted decimal digits.
 
         CORE-6109: ``FLOAT(p)`` became binary-precision in 4.0, and the 3.0
         reference's declaration syntax is ``FLOAT | DOUBLE PRECISION`` with no
         argument at all — so the same text names different columns either side of
-        that boundary and neither renderer may write it without knowing which
+        that boundary, so the renderer may not write it without knowing which
         server is there.
         """
-        for data_type in (FloatType(precision=24), FirebirdFloatType(precision=24)):
-            with pytest.raises(UnsupportedFeatureError, match="FLOAT"):
-                FirebirdDialect((3, 0)).format_data_type(data_type)
+        with pytest.raises(UnsupportedFeatureError, match="FLOAT"):
+            FirebirdDialect((3, 0)).format_data_type(FloatType(precision=24))
 
     @pytest.mark.parametrize("cls", [TimeType, TimestampType, DateTimeType])
     def test_temporal_precision_branch_is_closed(self, cls):
@@ -529,15 +541,6 @@ class TestFloatAndBlobSubTypeIdentityBranches:
             FirebirdDialect((4, 0)).format_data_type(cls(precision=None))
         )
 
-    def test_blob_sub_type_declares_no_identity(self):
-        assert FirebirdBlobSubType.PARAMETERS == ()
-        assert FirebirdBlobSubType().identity() == ()
-
-    def test_blob_sub_type_unsigned_branch_is_closed(self):
-        dialect = FirebirdDialect((4, 0))
-        with pytest.raises(UnsupportedFeatureError, match="UNSIGNED"):
-            dialect.format_data_type(FirebirdBlobSubType(unsigned=True))
-
     @pytest.mark.parametrize("cls", [
         TinyIntType, SmallIntType, IntegerType, BigIntType,
     ])
@@ -548,16 +551,16 @@ class TestFloatAndBlobSubTypeIdentityBranches:
 
 class TestReturningBranches:
     def test_insert_returning_snapshot(self, dialect):
-        insert = InsertExpression(
+        insert = InsertStatement(
             dialect, Table(dialect, "users"),
-            ValuesSource(dialect, [[E.RawSQLExpression(dialect, "?")]]),
+            ValuesSource(dialect, [[E.RawSQL(dialect, "?")]]),
             columns=["name"],
             returning=ReturningClause(dialect, expressions=[E.Column(dialect, "id"), E.Column(dialect, "name")]),
         )
         assert insert.to_sql() == ('INSERT INTO "USERS" ("NAME") VALUES (?) RETURNING "ID", "NAME"', ())
 
     def test_insert_without_returning_has_no_clause(self, dialect):
-        insert = InsertExpression(
+        insert = InsertStatement(
             dialect, Table(dialect, "users"),
             ValuesSource(dialect, [[E.Literal(dialect, "Bob")]]),
             columns=["name"],
@@ -565,7 +568,7 @@ class TestReturningBranches:
         assert insert.to_sql() == ('INSERT INTO "USERS" ("NAME") VALUES (?)', ("Bob",))
 
     def test_update_returning_snapshot(self, dialect):
-        update = UpdateExpression(
+        update = UpdateStatement(
             dialect, Table(dialect, "users"), {"name": E.Literal(dialect, "Bob")},
             where=E.ComparisonPredicate(dialect, "=", E.Column(dialect, "id"), E.Literal(dialect, 7)),
             returning=ReturningClause(dialect, expressions=[E.Column(dialect, "id")]),
@@ -576,15 +579,15 @@ class TestReturningBranches:
         )
 
     def test_delete_returning_wildcard_snapshot(self, dialect):
-        delete = DeleteExpression(
+        delete = DeleteStatement(
             dialect, Table(dialect, "users"),
             where=E.ComparisonPredicate(dialect, "=", E.Column(dialect, "id"), E.Literal(dialect, 7)),
-            returning=ReturningClause(dialect, expressions=[E.RawSQLExpression(dialect, "*")]),
+            returning=ReturningClause(dialect, expressions=[E.RawSQL(dialect, "*")]),
         )
         assert delete.to_sql() == ('DELETE FROM "USERS" WHERE "ID" = ? RETURNING *', (7,))
 
     def test_update_or_insert_with_matching_and_returning(self, dialect):
-        expr = UpdateOrInsertExpression(
+        expr = UpdateOrInsertStatement(
             dialect,
             Table(dialect, "users"),
             ["name", "age"],
@@ -637,7 +640,7 @@ class TestSkipLockedBranches:
         LockingSupport protocol; now the clause renders positively.
         """
         dialect = FirebirdDialect(version)
-        query = E.QueryExpression(
+        query = E.QueryStatement(
             dialect, select=[E.Column(dialect, "id")], from_="t",
             for_update=ForUpdateClause(dialect, **kwargs),
         )
@@ -650,7 +653,7 @@ class TestSkipLockedBranches:
 
     def test_for_update_of_columns_render_through_query_path(self):
         dialect = FirebirdDialect((3, 0, 0))
-        query = E.QueryExpression(
+        query = E.QueryStatement(
             dialect, select=[E.Column(dialect, "id")], from_="t",
             for_update=ForUpdateClause(
                 dialect,
@@ -675,13 +678,13 @@ class TestSkipLockedBranches:
 
 class TestSequenceBranches:
     def test_create_sequence_defaults(self, dialect):
-        expr = CreateSequenceExpression(dialect, Sequence(dialect, "seq_a"))
+        expr = CreateSequenceStatement(dialect, Sequence(dialect, "seq_a"))
         assert dialect.format_create_sequence_statement(expr) == (
             'CREATE SEQUENCE "SEQ_A"', ()
         )
 
     def test_create_sequence_start_and_increment(self, dialect):
-        expr = CreateSequenceExpression(
+        expr = CreateSequenceStatement(
             dialect, Sequence(dialect, "seq_b"), start=100, increment=5
         )
         assert dialect.format_create_sequence_statement(expr) == (
@@ -690,7 +693,7 @@ class TestSequenceBranches:
 
     def test_create_sequence_explicit_defaults_are_omitted(self, dialect):
         """A request for the defaults is the same SQL as omitting them."""
-        expr = CreateSequenceExpression(
+        expr = CreateSequenceStatement(
             dialect, Sequence(dialect, "seq_d"), start=1, increment=1
         )
         assert dialect.format_create_sequence_statement(expr) == (
@@ -704,24 +707,29 @@ class TestSequenceBranches:
         and silently fell back to the default, which changes the sequence's
         first value.
         """
-        expr = CreateSequenceExpression(dialect, Sequence(dialect, "seq_e"), start=0)
+        expr = CreateSequenceStatement(dialect, Sequence(dialect, "seq_e"), start=0)
         assert dialect.format_create_sequence_statement(expr) == (
             'CREATE SEQUENCE "SEQ_E" START WITH 0', ()
         )
 
     def test_create_generator_form(self, dialect):
-        expr = CreateSequenceExpression(dialect, Sequence(dialect, "gen_c"))
-        expr.use_generator = True
+        expr = FirebirdCreateSequenceStatement(
+            dialect, Sequence(dialect, "gen_c"), use_generator=True
+        )
         assert dialect.format_create_sequence_statement(expr) == (
             'CREATE GENERATOR "GEN_C"', ()
         )
 
     def test_create_generator_accepts_start_and_increment(self, dialect):
-        """The legacy spelling takes the same two clauses as the standard one."""
-        expr = CreateSequenceExpression(
-            dialect, Sequence(dialect, "gen_d"), start=7, increment=3
+        """The legacy spelling takes the same two clauses as the standard one.
+
+        The spelling is a declared field of this backend's own node, not an
+        attribute mounted on the generic statement after construction.
+        """
+        expr = FirebirdCreateSequenceStatement(
+            dialect, Sequence(dialect, "gen_d"), start=7, increment=3,
+            use_generator=True
         )
-        expr.use_generator = True
         assert dialect.format_create_sequence_statement(expr) == (
             'CREATE GENERATOR "GEN_D" START WITH 7 INCREMENT BY 3', ()
         )
@@ -742,7 +750,7 @@ class TestSequenceBranches:
         self, dialect, kwargs, feature
     ):
         """Both spellings of every pair are refused by name, never dropped."""
-        expr = CreateSequenceExpression(
+        expr = CreateSequenceStatement(
             dialect, Sequence(dialect, "seq_f"), **kwargs
         )
         with pytest.raises(UnsupportedFeatureError) as exc_info:
@@ -793,7 +801,7 @@ class TestSequenceBranches:
 
     def test_sequence_version_gate_refuses_the_render(self):
         dialect = FirebirdDialect((2, 5, 0))
-        expr = CreateSequenceExpression(dialect, Sequence(dialect, "seq_g"))
+        expr = CreateSequenceStatement(dialect, Sequence(dialect, "seq_g"))
         with pytest.raises(UnsupportedFeatureError):
             dialect.format_create_sequence_statement(expr)
 
@@ -827,10 +835,10 @@ class TestSequenceBranches:
         SEQUENCE`` takes no options, which is why the ``IF EXISTS`` probe is
         False and a request for it raises rather than being dropped.
         """
-        assert DropSequenceExpression(dialect, Sequence(dialect, "seq_h")).to_sql() == (
+        assert DropSequenceStatement(dialect, Sequence(dialect, "seq_h")).to_sql() == (
             'DROP SEQUENCE "SEQ_H"', ()
         )
-        assert AlterSequenceExpression(
+        assert AlterSequenceStatement(
             dialect, Sequence(dialect, "seq_h"), restart=5, increment=2
         ).to_sql() == (
             'ALTER SEQUENCE "SEQ_H" RESTART WITH 5 INCREMENT BY 2', ()
@@ -839,8 +847,11 @@ class TestSequenceBranches:
 
 class TestCreateTableRebuildSnapshots:
     def test_basic_table(self, dialect):
-        expr = CreateTableExpression(dialect, Table(dialect, "users"), [
-            _column(dialect, "id", IntegerType(dialect), ColumnConstraint(dialect, ColumnConstraintType.PRIMARY_KEY)),
+        expr = CreateTableStatement(dialect, Table(dialect, "users"), [
+            _column(
+                dialect, "id", IntegerType(dialect),
+                ColumnConstraint(dialect, branch=ColumnPrimaryKeyConstraint(dialect)),
+            ),
             _column(dialect, "name", VarCharType(length=100, dialect=dialect)),
         ])
         assert expr.to_sql() == (
@@ -852,8 +863,11 @@ class TestCreateTableRebuildSnapshots:
         (False, 'ON COMMIT PRESERVE ROWS'),
     ])
     def test_global_temporary_table(self, dialect, on_commit_delete, expected_tail):
-        expr = CreateTableExpression(dialect, Table(dialect, "tmp_t"), [_column(dialect, "id", IntegerType(dialect))], temporary=True)
-        expr.on_commit_delete = on_commit_delete
+        expr = FirebirdCreateTableStatement(
+            dialect, Table(dialect, "tmp_t"),
+            [_column(dialect, "id", IntegerType(dialect))],
+            temporary=True, on_commit_delete=on_commit_delete,
+        )
         sql, _ = expr.to_sql()
         assert sql.startswith('CREATE GLOBAL TEMPORARY TABLE "TMP_T"')
         assert expected_tail in sql
@@ -863,9 +877,16 @@ class TestCreateTableRebuildSnapshots:
         (False, 'CREATE GLOBAL TEMPORARY TABLE "GT_A" ON COMMIT PRESERVE ROWS ("ID" INTEGER)'),
     ])
     def test_global_temporary_word_order_snapshot(self, dialect, on_commit_delete, expected):
-        """F5 anchor: exact to_sql() snapshot of the corrected word order."""
-        expr = CreateTableExpression(dialect, Table(dialect, "gt_a"), [_column(dialect, "id", IntegerType(dialect))], temporary=True)
-        expr.on_commit_delete = on_commit_delete
+        """F5 anchor: exact to_sql() snapshot of the corrected word order.
+
+        ``on_commit_delete`` is a declared field of this backend's own node,
+        not an attribute mounted on the generic statement after construction.
+        """
+        expr = FirebirdCreateTableStatement(
+            dialect, Table(dialect, "gt_a"),
+            [_column(dialect, "id", IntegerType(dialect))],
+            temporary=True, on_commit_delete=on_commit_delete,
+        )
         assert expr.to_sql() == (expected, ())
 
     def test_if_not_exists_raises_when_unsupported(self, dialect):
@@ -874,7 +895,7 @@ class TestCreateTableRebuildSnapshots:
         Previously the clause was rendered unconditionally; it must now be
         rejected through supports_if_not_exists_table().
         """
-        expr = CreateTableExpression(
+        expr = CreateTableStatement(
             dialect,
             Table(dialect, "tbl_c"),
             [_column(dialect, "id", IntegerType(dialect))],
@@ -885,7 +906,7 @@ class TestCreateTableRebuildSnapshots:
         assert "IF NOT EXISTS" in str(excinfo.value)
 
     def test_if_not_exists_renders_when_capability_present(self, dialect):
-        expr = CreateTableExpression(
+        expr = CreateTableStatement(
             dialect,
             Table(dialect, "tbl_c"),
             [_column(dialect, "id", IntegerType(dialect))],
@@ -897,14 +918,24 @@ class TestCreateTableRebuildSnapshots:
         assert sql.startswith('CREATE TABLE IF NOT EXISTS "TBL_C"')
 
     def test_external_file_clause(self, dialect):
-        expr = CreateTableExpression(dialect, Table(dialect, "ext_t"), [_column(dialect, "id", IntegerType(dialect))])
-        expr.external_file = "/data/ext.fdb"
+        expr = FirebirdCreateTableStatement(
+            dialect, Table(dialect, "ext_t"),
+            [_column(dialect, "id", IntegerType(dialect))],
+            external_file="/data/ext.fdb",
+        )
         assert expr.to_sql() == ('CREATE TABLE "EXT_T" ("ID" INTEGER) EXTERNAL FILE \'/data/ext.fdb\'', ())
 
     def test_computed_by_column(self, dialect):
-        col = _column(dialect, "full_name", VarCharType(length=200, dialect=dialect))
-        col.computed_by = '"FIRST_NAME" || \' \' || "LAST_NAME"'
-        assert CreateTableExpression(dialect, Table(dialect, "emp"), [col]).to_sql() == (
+        """``computed_by`` is a declared field of this backend's own column
+        definition, not an attribute to mount on the generic one after
+        construction."""
+        col = FirebirdColumnDefinition(
+            dialect,
+            "full_name",
+            VarCharType(length=200, dialect=dialect),
+            computed_by='"FIRST_NAME" || \' \' || "LAST_NAME"',
+        )
+        assert CreateTableStatement(dialect, Table(dialect, "emp"), [col]).to_sql() == (
             'CREATE TABLE "EMP" '
             '("FULL_NAME" VARCHAR(200) COMPUTED BY ("FIRST_NAME" || \' \' || "LAST_NAME"))',
             (),
@@ -915,7 +946,7 @@ class TestCreateTableRebuildSnapshots:
 
         col = _column(dialect, "id", IntegerType(dialect))
         col.attributes = [IdentityAttribute(generation="ALWAYS", start=1000, increment=10)]
-        assert CreateTableExpression(dialect, Table(dialect, "ident_t"), [col]).to_sql() == (
+        assert CreateTableStatement(dialect, Table(dialect, "ident_t"), [col]).to_sql() == (
             'CREATE TABLE "IDENT_T" '
             '("ID" INTEGER GENERATED ALWAYS AS IDENTITY (START WITH 1000 INCREMENT BY 10))',
             (),
@@ -924,44 +955,52 @@ class TestCreateTableRebuildSnapshots:
     def test_auto_increment_constraint_flag(self, dialect):
         col = _column(
             dialect, "id", IntegerType(dialect),
-            ColumnConstraint(dialect, ColumnConstraintType.PRIMARY_KEY, is_auto_increment=True),
+            ColumnConstraint(dialect, branch=ColumnPrimaryKeyConstraint(dialect, is_auto_increment=True)),
         )
-        assert CreateTableExpression(dialect, Table(dialect, "autoinc"), [col]).to_sql() == (
+        assert CreateTableStatement(dialect, Table(dialect, "autoinc"), [col]).to_sql() == (
             'CREATE TABLE "AUTOINC" ("ID" INTEGER GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY)', ()
         )
 
     def test_string_default_escaped_and_ordered_before_not_null(self, dialect):
         col = _column(
             dialect, "status", VarCharType(length=20, dialect=dialect),
-            ColumnConstraint(dialect, ColumnConstraintType.DEFAULT, default_value="O'Brien"),
-            ColumnConstraint(dialect, ColumnConstraintType.NOT_NULL),
+            ColumnConstraint(dialect, branch=ColumnDefaultConstraint(dialect, "O'Brien")),
+            ColumnConstraint(dialect, branch=ColumnNotNullConstraint(dialect)),
         )
-        assert CreateTableExpression(dialect, Table(dialect, "t5"), [col]).to_sql() == (
+        assert CreateTableStatement(dialect, Table(dialect, "t5"), [col]).to_sql() == (
             "CREATE TABLE \"T5\" (\"STATUS\" VARCHAR(20) DEFAULT 'O''Brien' NOT NULL)", ()
         )
 
-    def test_expression_default_contributes_params(self, dialect):
+    def test_expression_default_renders_inline(self, dialect):
+        """A DEFAULT is a DDL position: it accepts no bind parameters, so
+        the expression value renders inline (core refuses a binding literal
+        there by name). The old name asserted the opposite -- that the
+        DEFAULT contributed a parameter -- which the current core model
+        rejects by design.
+        """
         col = _column(
             dialect,
             "created_at",
             DateTimeType(dialect=dialect),
             ColumnConstraint(
                 dialect,
-                ColumnConstraintType.DEFAULT,
-                default_value=E.Literal(dialect, "CURRENT_TIMESTAMP"),
+                branch=ColumnDefaultConstraint(
+                    dialect, E.Literal(dialect, "CURRENT_TIMESTAMP", inline=True)
+                ),
             ),
         )
-        assert CreateTableExpression(dialect, Table(dialect, "t5b"), [col]).to_sql() == (
-            'CREATE TABLE "T5B" ("CREATED_AT" TIMESTAMP DEFAULT ?)', ("CURRENT_TIMESTAMP",)
+        assert CreateTableStatement(dialect, Table(dialect, "t5b"), [col]).to_sql() == (
+            'CREATE TABLE "T5B" ("CREATED_AT" TIMESTAMP DEFAULT \'CURRENT_TIMESTAMP\')',
+            (),
         )
 
     def test_numeric_default_with_explicit_null(self, dialect):
         col = _column(
             dialect, "amount", DecimalType(precision=18, scale=2, dialect=dialect),
-            ColumnConstraint(dialect, ColumnConstraintType.DEFAULT, default_value=0),
-            ColumnConstraint(dialect, ColumnConstraintType.NULL),
+            ColumnConstraint(dialect, branch=ColumnDefaultConstraint(dialect, 0)),
+            ColumnConstraint(dialect, branch=ColumnNullableConstraint(dialect)),
         )
-        assert CreateTableExpression(dialect, Table(dialect, "t5c"), [col]).to_sql() == (
+        assert CreateTableStatement(dialect, Table(dialect, "t5c"), [col]).to_sql() == (
             'CREATE TABLE "T5C" ("AMOUNT" DECIMAL(18, 2) DEFAULT 0 NULL)', ()
         )
 
@@ -971,13 +1010,18 @@ class TestCreateTableRebuildSnapshots:
             foreign_key_table=Table(dialect, "customers"), foreign_key_columns=["id"],
             on_delete=ReferentialAction.CASCADE, on_update=ReferentialAction.SET_NULL,
         )
-        unique = TableConstraint(dialect, TableConstraintType.UNIQUE, name="uq_email", columns=["email"])
-        pk = TableConstraint(dialect, TableConstraintType.PRIMARY_KEY, columns=["id"])
+        unique = TableConstraint(dialect, branch=TableUniqueConstraint(dialect, ["email"]), name="uq_email")
+        pk = TableConstraint(dialect, branch=TablePrimaryKeyConstraint(dialect, ["id"]))
         check = TableConstraint(
-            dialect, TableConstraintType.CHECK,
-            check_condition=E.ComparisonPredicate(dialect, ">=", E.Column(dialect, "amount"), E.Literal(dialect, 0)),
+            dialect,
+            branch=TableCheckConstraint(
+                dialect,
+                E.ComparisonPredicate(
+                    dialect, ">=", E.Column(dialect, "amount"), E.Literal(dialect, 0, inline=True)
+                ),
+            ),
         )
-        expr = CreateTableExpression(
+        expr = CreateTableStatement(
             dialect, Table(dialect, "orders"),
             [
                 _column(dialect, "id", IntegerType(dialect)),
@@ -992,13 +1036,155 @@ class TestCreateTableRebuildSnapshots:
             'CREATE TABLE "ORDERS" ("ID" INTEGER, "CUSTOMER_ID" INTEGER, "EMAIL" VARCHAR(255), '
             '"AMOUNT" DECIMAL(18, 2), PRIMARY KEY ("ID"), CONSTRAINT "UQ_EMAIL" UNIQUE ("EMAIL"), '
             'CONSTRAINT "FK_ORDER_CUSTOMER" FOREIGN KEY ("CUSTOMER_ID") REFERENCES "CUSTOMERS" ("ID") '
-            'ON DELETE CASCADE ON UPDATE SET NULL, CHECK ("AMOUNT" >= ?))'
+            'ON DELETE CASCADE ON UPDATE SET NULL, CHECK ("AMOUNT" >= 0))'
         )
-        assert params == (0,)
+        # The CHECK literal is inlined rather than bound: DDL accepts no bind
+        # parameters, and core's ``format_table_check_constraint`` (which this
+        # backend now delegates to instead of re-spelling the body) inlines a
+        # predicate for exactly that reason. The previous Firebird-only path
+        # emitted ``?`` with the value as a parameter -- SQL no server can
+        # execute as DDL -- so the inline form is the correction, not a
+        # regression.
+        assert params == ()
 
     def test_partition_rejected(self, dialect):
         partition = E.PartitionClause(dialect, method=E.PartitionStrategy.HASH, keys=[E.Column(dialect, "id")])
-        expr = CreateTableExpression(dialect, Table(dialect, "pt"), [_column(dialect, "id", IntegerType(dialect))], partition=partition)
+        expr = CreateTableStatement(dialect, Table(dialect, "pt"), [_column(dialect, "id", IntegerType(dialect))], partition=partition)
         with pytest.raises(UnsupportedFeatureError) as excinfo:
             expr.to_sql()
         assert "PARTITION BY clause" in str(excinfo.value)
+
+
+class TestClassedFunctionEntryPoints:
+    """The core's classed functions reach this backend's own spellings.
+
+    Each entry point below follows a measured Firebird fact the generic
+    renderer could not know: the missing ``LENGTH`` function, and the
+    ``SUM``/``AVG`` result type the server refuses to infer over a
+    ``DECIMAL`` column ("Data type unknown" at prepare time, on Firebird 5
+    and the 6.0 snapshot). The old ``format_function_call`` remap carried
+    both, but the classed nodes stopped dispatching there, so the
+    spellings live on the entry points that do dispatch.
+    """
+
+    def test_char_length_honours_the_declared_unit(self, dialect):
+        name = E.Column(dialect, "name")
+        assert E.CharLengthFunction(dialect, name).to_sql() == ('CHAR_LENGTH("NAME")', ())
+        assert (
+            E.CharLengthFunction(dialect, name, unit="octet").to_sql()
+            == ('OCTET_LENGTH("NAME")', ())
+        )
+        assert (
+            E.CharLengthFunction(dialect, name, unit="bit").to_sql()
+            == ('BIT_LENGTH("NAME")', ())
+        )
+
+    def test_sum_pins_the_result_type(self, dialect):
+        amount = E.Column(dialect, "amount")
+        assert E.SumFunction(dialect, amount).to_sql() == (
+            'CAST(SUM("AMOUNT") AS DECIMAL(18,2))',
+            (),
+        )
+
+    def test_avg_keeps_distinct_inside_the_cast(self, dialect):
+        amount = E.Column(dialect, "amount")
+        assert E.AvgFunction(dialect, amount, distinct=True).to_sql() == (
+            'CAST(AVG(DISTINCT "AMOUNT") AS DECIMAL(18,2))',
+            (),
+        )
+
+    def test_aggregate_alias_sits_outside_the_cast(self, dialect):
+        # The alias is the node's declared field (``as_``), so the CAST
+        # wraps the aggregate and the alias rides outside it.
+        total = E.SumFunction(dialect, E.Column(dialect, "amount")).as_("total")
+        assert total.to_sql() == (
+            'CAST(SUM("AMOUNT") AS DECIMAL(18,2)) AS "TOTAL"',
+            (),
+        )
+
+    def test_plain_sum_call_pins_the_result_type(self, dialect):
+        # The same pin on the plain FunctionCall path: the refusal is a
+        # fact about the aggregate, not about the node class that spelled
+        # it, and this is the node the testsuite's window tests build.
+        call = E.FunctionCall(dialect, "SUM", E.Column(dialect, "amount"))
+        assert call.to_sql() == ('CAST(SUM("AMOUNT") AS DECIMAL(18,2))', ())
+
+    def test_plain_sum_over_pins_the_result_type(self, dialect):
+        # A window clause renders inside the CAST (the aggregate expression
+        # ends there), the alias outside it.
+        from rhosocial.activerecord.backend.expression.advanced_functions import (
+            WindowSpecification,
+        )
+        from rhosocial.activerecord.backend.expression.query_parts import OrderByClause
+
+        order_by = OrderByClause(dialect, [(E.Column(dialect, "amount"), "DESC")])
+        window_spec = WindowSpecification(dialect, order_by=order_by)
+        call = E.FunctionCall(
+            dialect, "SUM", E.Column(dialect, "amount"),
+            window_spec=window_spec, alias="total",
+        )
+        assert call.to_sql() == (
+            'CAST(SUM("AMOUNT") OVER (ORDER BY "AMOUNT" DESC) AS DECIMAL(18,2)) AS "TOTAL"',
+            (),
+        )
+
+    def test_plain_unpinned_call_passes_through(self, dialect):
+        # A user-defined function reaches the core renderer unmodified:
+        # its name is the user's own and none of this backend's business.
+        call = E.FunctionCall(dialect, "MY_UDF", E.Column(dialect, "amount"))
+        assert call.to_sql() == ('MY_UDF("AMOUNT")', ())
+
+    def test_arithmetic_literal_operands_are_cast_for_type_inference(self, dialect):
+        # Firebird answers -804 Data type unknown for a bare ``?`` inside
+        # arithmetic, so the dialect wraps literal operands in an explicit
+        # CAST. The override carrying this used to be named after the old
+        # ``format_binary_arithmetic_expression`` entry point and never
+        # dispatched; the rename is what makes the wrapping reach the SQL.
+        operation = E.ArithmeticOperation(
+            dialect, "add", E.Column(dialect, "qty"), E.Literal(dialect, 1)
+        )
+        assert operation.to_sql() == ('"QTY" + CAST(? AS INTEGER)', (1,))
+
+
+class TestInsertBareHostValues:
+    """A VALUES cell may be a bare host value, and it binds.
+
+    The base's ``format_insert_values_source`` owns the expression-vs-host
+    judgment; this backend's INSERT override used to re-implement the cell
+    loop, which called ``to_sql()`` on every cell and crashed on a bare
+    scalar. The delegation is what lets a plain Python value through as a
+    bound parameter.
+    """
+
+    def test_bare_scalars_bind_behind_placeholders(self, dialect):
+        insert = InsertStatement(
+            dialect,
+            Table(dialect, "users"),
+            ValuesSource(dialect, [["Bob", 30], ["Ann", 41]]),
+            columns=["name", "age"],
+        )
+        assert insert.to_sql() == (
+            'INSERT INTO "USERS" ("NAME", "AGE") VALUES (?, ?), (?, ?)',
+            ("Bob", 30, "Ann", 41),
+        )
+
+    def test_expression_cells_still_render_their_own_sql(self, dialect):
+        insert = InsertStatement(
+            dialect,
+            Table(dialect, "users"),
+            ValuesSource(dialect, [[E.Literal(dialect, "Bob")]]),
+            columns=["name"],
+        )
+        assert insert.to_sql() == ('INSERT INTO "USERS" ("NAME") VALUES (?)', ("Bob",))
+
+    def test_mixed_cells_split_correctly(self, dialect):
+        insert = InsertStatement(
+            dialect,
+            Table(dialect, "users"),
+            ValuesSource(dialect, [["Bob", E.Literal(dialect, 30)]]),
+            columns=["name", "age"],
+        )
+        assert insert.to_sql() == (
+            'INSERT INTO "USERS" ("NAME", "AGE") VALUES (?, ?)',
+            ("Bob", 30),
+        )

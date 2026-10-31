@@ -4,39 +4,40 @@
 from typing import Any, List, Tuple, TYPE_CHECKING
 
 from rhosocial.activerecord.backend.dialect.exceptions import UnsupportedFeatureError
+from rhosocial.activerecord.backend.expression.bases import BaseExpression
 from rhosocial.activerecord.backend.expression.objects import Table
 
 from .version_boundaries import _norm_version
 
 if TYPE_CHECKING:
     from rhosocial.activerecord.backend.expression.statements import (
-        InsertExpression,
-        UpdateExpression,
-        DeleteExpression,
-        MergeExpression,
+        InsertStatement,
+        UpdateStatement,
+        DeleteStatement,
+        MergeStatement,
     )
     from ..expression.dml import (
-        UpdateOrInsertExpression,
-        ExecuteBlockExpression,
+        UpdateOrInsertStatement,
+        ExecuteBlockStatement,
         AutonomousTransactionDoExpression,
     )
-    from ..expression.execute_statement import FirebirdExecuteStatementExpression
+    from ..expression.execute_statement import FirebirdExecuteStatement
 
 
 class FirebirdDMLOperationMixin:
 
-    def format_insert_statement(self, expr: "InsertExpression") -> Tuple[str, tuple]:
+    def format_insert_statement(self, expr: "InsertStatement") -> Tuple[str, tuple]:
         """Render INSERT INTO <target> <columns> <source> [RETURNING ...].
 
         Raises:
-            TypeError: ``InsertExpression.into`` is not a Table. Another object
+            TypeError: ``InsertStatement.into`` is not a Table. Another object
                 kind would have had its own name rendered as the INTO target.
             UnsupportedFeatureError: An ON CONFLICT clause was requested, which
                 Firebird has no syntax for and which would otherwise be dropped.
         """
         if not isinstance(expr.into, Table):
             raise TypeError(
-                f"InsertExpression.into must be a Table, "
+                f"InsertStatement.into must be a Table, "
                 f"got {type(expr.into).__name__}"
             )
         if expr.on_conflict:
@@ -63,16 +64,13 @@ class FirebirdDMLOperationMixin:
         if isinstance(expr.source, DefaultValuesSource):
             source_sql = "DEFAULT VALUES"
         elif isinstance(expr.source, ValuesSource):
-            all_rows_sql = []
-            for row in expr.source.values_list:
-                row_sql, row_params = [], []
-                for val in row:
-                    s, p = val.to_sql()
-                    row_sql.append(s)
-                    row_params.extend(p)
-                all_rows_sql.append(f"({', '.join(row_sql)})")
-                all_params.extend(row_params)
-            source_sql = "VALUES " + ", ".join(all_rows_sql)
+            # The values source is the base's to render: it owns the one
+            # judgment that matters here -- a cell is either an expression
+            # (rendered through its own ``to_sql()``) or a bare host value
+            # (bound behind a placeholder) -- and re-implementing the loop
+            # here is how a bare value used to crash on ``to_sql``.
+            source_sql, source_params = self.format_insert_values_source(expr.source)
+            all_params.extend(source_params)
         elif isinstance(expr.source, SelectSource):
             s_sql, s_params = expr.source.select_query.to_sql()
             source_sql = s_sql
@@ -87,16 +85,16 @@ class FirebirdDMLOperationMixin:
 
         return sql, tuple(all_params)
 
-    def format_update_statement(self, expr: "UpdateExpression") -> Tuple[str, tuple]:
+    def format_update_statement(self, expr: "UpdateStatement") -> Tuple[str, tuple]:
         """Render UPDATE <target> SET ... [WHERE ...] [RETURNING ...].
 
         Raises:
-            TypeError: ``UpdateExpression.table`` is not a Table. Another object
+            TypeError: ``UpdateStatement.table`` is not a Table. Another object
                 kind would have had its own name rendered as the UPDATE target.
         """
         if not isinstance(expr.table, Table):
             raise TypeError(
-                f"UpdateExpression.table must be a Table, "
+                f"UpdateStatement.table must be a Table, "
                 f"got {type(expr.table).__name__}"
             )
         all_params: List[Any] = []
@@ -107,7 +105,10 @@ class FirebirdDMLOperationMixin:
         set_parts = []
         for col, val in expr.assignments.items():
             col_str = self.format_identifier(col)
-            if hasattr(val, 'to_sql'):
+            # The question is what the slot holds, answered by the class
+            # rather than by probing -- the same judgment the core's
+            # ``format_insert_values_source`` makes for a VALUES cell.
+            if isinstance(val, BaseExpression):
                 val_sql, val_params = val.to_sql()
                 set_parts.append(f"{col_str} = {val_sql}")
                 all_params.extend(val_params)
@@ -129,11 +130,11 @@ class FirebirdDMLOperationMixin:
 
         return sql, tuple(all_params)
 
-    def format_delete_statement(self, expr: "DeleteExpression") -> Tuple[str, tuple]:
+    def format_delete_statement(self, expr: "DeleteStatement") -> Tuple[str, tuple]:
         """Render DELETE FROM <target> [WHERE ...] [RETURNING ...].
 
         Raises:
-            TypeError: An entry of ``DeleteExpression.tables`` is not a Table.
+            TypeError: An entry of ``DeleteStatement.tables`` is not a Table.
                 Another object kind would have had its own name rendered after
                 DELETE FROM. Every entry is checked, not just the one this
                 renderer reads, so a bad entry cannot hide behind a good one at
@@ -142,7 +143,7 @@ class FirebirdDMLOperationMixin:
         for position, entry in enumerate(expr.tables):
             if not isinstance(entry, Table):
                 raise TypeError(
-                    f"DeleteExpression.tables must hold Table instances, "
+                    f"DeleteStatement.tables must hold Table instances, "
                     f"got {type(entry).__name__} at position {position}"
                 )
         all_params: List[Any] = []
@@ -164,12 +165,12 @@ class FirebirdDMLOperationMixin:
 
         return sql, tuple(all_params)
 
-    def format_update_or_insert(self, expr: "UpdateOrInsertExpression") -> Tuple[str, tuple]:
-        table_name = expr.table_name
-        insert_columns = expr._insert_columns
-        insert_values = expr._insert_values
-        match_columns = expr._match_columns
-        returning_columns = expr._returning_columns
+    def format_update_or_insert_statement(self, expr: "UpdateOrInsertStatement") -> Tuple[str, tuple]:
+        table_name = expr.table
+        insert_columns = expr.insert_columns
+        insert_values = expr.insert_values
+        match_columns = expr.match_columns
+        returning_columns = expr.returning_columns
 
         all_params = list(insert_values)
 
@@ -190,7 +191,7 @@ class FirebirdDMLOperationMixin:
 
         return ' '.join(parts), tuple(all_params)
 
-    def format_merge_statement(self, expr: "MergeExpression") -> Tuple[str, tuple]:
+    def format_merge_statement(self, expr: "MergeStatement") -> Tuple[str, tuple]:
         """Format MERGE statement using Firebird's supported syntax.
 
         Firebird supports MERGE since 2.1. The ``WHEN MATCHED THEN
@@ -201,7 +202,7 @@ class FirebirdDMLOperationMixin:
         only INSERT.
 
         Raises:
-            TypeError: ``MergeExpression.target_table`` is not a Table. Another
+            TypeError: ``MergeStatement.target_table`` is not a Table. Another
                 object kind would have had its own name rendered as the merge
                 target.
             UnsupportedFeatureError: The branch structure is not one Firebird's
@@ -211,7 +212,7 @@ class FirebirdDMLOperationMixin:
 
         if not isinstance(expr.target_table, Table):
             raise TypeError(
-                f"MergeExpression.target_table must be a Table, "
+                f"MergeStatement.target_table must be a Table, "
                 f"got {type(expr.target_table).__name__}"
             )
 
@@ -319,9 +320,9 @@ class FirebirdDMLOperationMixin:
 
         return " ".join(merge_sql_parts), tuple(all_params)
 
-    def format_execute_block(self, expr: "ExecuteBlockExpression") -> Tuple[str, tuple]:
-        block = expr._block
-        params = expr._params
+    def format_execute_block_statement(self, expr: "ExecuteBlockStatement") -> Tuple[str, tuple]:
+        block = expr.block
+        params = expr.params
 
         all_params = []
         if params:
@@ -334,7 +335,7 @@ class FirebirdDMLOperationMixin:
             sql = f"EXECUTE BLOCK\nAS\nBEGIN\n{block}\nEND"
         return sql, tuple(all_params)
 
-    def format_execute_statement(self, expr: "FirebirdExecuteStatementExpression") -> Tuple[str, tuple]:
+    def format_execute_statement(self, expr: "FirebirdExecuteStatement") -> Tuple[str, tuple]:
         """Format EXECUTE STATEMENT (dynamic SQL) for Firebird.
 
         The bare ``EXECUTE STATEMENT`` form is available since Firebird 1.5,
@@ -354,8 +355,8 @@ class FirebirdDMLOperationMixin:
         all_params: List[Any] = []
         parts = ["EXECUTE STATEMENT"]
 
-        sql_text = expr._sql
-        if hasattr(sql_text, "to_sql"):
+        sql_text = expr.sql
+        if isinstance(sql_text, BaseExpression):
             sql_sql, sql_params = sql_text.to_sql()
             parts.append(sql_sql)
             all_params.extend(sql_params)
@@ -365,12 +366,12 @@ class FirebirdDMLOperationMixin:
             escaped = str(sql_text).replace("'", "''")
             parts.append(f"'{escaped}'")
 
-        if getattr(expr, "_transaction", None):
-            parts.append(f"WITH {expr._transaction.upper()} TRANSACTION")
-        if getattr(expr, "_caller_privileges", False):
+        if expr.transaction:
+            parts.append(f"WITH {expr.transaction.upper()} TRANSACTION")
+        if expr.caller_privileges:
             parts.append("WITH CALLER PRIVILEGES")
 
-        bound_params = getattr(expr, "_params", []) or []
+        bound_params = expr.params
         if bound_params:
             placeholders = ", ".join(self.get_parameter_placeholder() for _ in bound_params)
             parts.append(f"({placeholders})")
@@ -378,13 +379,15 @@ class FirebirdDMLOperationMixin:
 
         return " ".join(parts), tuple(all_params)
 
-    def format_autonomous_transaction_do(self, expr: "AutonomousTransactionDoExpression") -> Tuple[str, tuple]:
+    def format_autonomous_transaction_do_expression(
+        self, expr: "AutonomousTransactionDoExpression"
+    ) -> Tuple[str, tuple]:
         """Format IN AUTONOMOUS TRANSACTION DO <statement> (Firebird 3.0+).
 
         The block is wrapped in ``BEGIN ... END`` unless it already starts
-        with ``BEGIN``, mirroring :meth:`format_execute_block`.
+        with ``BEGIN``, mirroring :meth:`format_execute_block_statement`.
         """
-        block = expr._block
+        block = expr.block
 
         version = getattr(self, 'version', (3, 0, 0))
         if _norm_version(version) < (3, 0, 0):

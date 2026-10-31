@@ -23,7 +23,7 @@ Spellings
 ---------
 A concept that SQL spells several ways is one class with a ``spelling``
 argument, so every formatter that can be handed one declares, through
-:meth:`~...dialect.mixins.data_type.DataTypeMixin._check_spelling`, which of
+:meth:`~...dialect.mixins.data_type.DataTypeMixin.check_spelling`, which of
 those words Firebird's own grammar uses. The rule this dialect follows:
 
 * a word **Firebird writes** is accepted and rendered as Firebird's canonical
@@ -69,11 +69,10 @@ Three Firebird facts settle the fields that could not be honoured:
     numerics, and none of them carries an ``UNSIGNED`` modifier or any other
     attribute — the very same production writes ``[CHARACTER SET charset]`` for
     the character types because Firebird *does* have a type attribute and states
-    where it goes. There is nothing to honour the field with, so all seven
-    numeric formatters — the four core ``decimal``/``float``/``real``/``double``
-    keys and Firebird's own ``firebird_decimal``/``firebird_float``/
-    ``firebird_double`` — route through :meth:`_check_firebird_signed` rather
-    than each inventing its own answer.
+    where it goes. There is nothing to honour the field with, so every numeric
+    formatter in this file — ``decimal``/``float``/``real``/``double`` and
+    ``decfloat`` — routes through :meth:`_check_firebird_signed` rather than
+    each inventing its own answer.
 
     **This backend's answer is read from Firebird's documentation, not
     measured.** No Firebird client library is installed in this environment
@@ -87,10 +86,8 @@ Three Firebird facts settle the fields that could not be honoured:
     tracker CORE-6109: *"FLOAT(p) definition is changed to represent precision in
     binary digits ... rather than in decimal digits as before."* The same string
     therefore names different columns before and after 4.0, so a precision is
-    written on 4.0+ and refused below it: :meth:`_validate_firebird_float`. Both
-    ``format_data_type_float`` (core ``FloatType``) and
-    ``format_data_type_firebird_float`` route through that one helper, because
-    they are the same Firebird type under two dispatch keys.
+    written on 4.0+ and refused below it: :meth:`_validate_firebird_float`, which
+    is the single place that boundary lives.
 
 ``precision`` on ``TIME`` / ``TIMESTAMP``, zoned or not
     There is nothing to honour it with. The declaration grammar for these types
@@ -151,12 +148,8 @@ from rhosocial.activerecord.backend.expression.types import (
 from .version_boundaries import _norm_version
 from ..expression.types import (
     FirebirdCharType,
-    FirebirdDecimalType,
     FirebirdDecFloatType,
-    FirebirdDoubleType,
-    FirebirdFloatType,
     FirebirdInt128Type,
-    FirebirdBlobSubType,
     FirebirdTimeStampTzType,
     FirebirdTimeWithoutTimeZoneType,
     FirebirdTimeTzType,
@@ -230,18 +223,12 @@ class FirebirdTypeSupportMixin(DDLTypeMixin, DDLTypeSupport):
         refusal backed by a live server; this one is backed by the reference,
         and says so rather than implying otherwise.
 
-        Called from **every** numeric formatter — the four core
-        ``decimal``/``float``/``real``/``double`` dispatch keys and Firebird's own
-        ``firebird_decimal``/``firebird_float``/``firebird_double``, which are the
-        same three storages under three more keys — because a per-formatter
-        check is a per-formatter bug waiting to happen. It also covers
-        :class:`~...expression.types.FirebirdBlobSubType`, which narrows
-        ``PARAMETERS`` to ``()`` precisely because ``unsigned`` is not a field of
-        its concept: narrowing removes it from equality, and this is what keeps
-        the inherited constructor from quietly ignoring it.
+        Called from **every** numeric formatter — the
+        ``decimal``/``float``/``real``/``double``/``decfloat`` dispatch keys —
+        because a per-formatter check is a per-formatter bug waiting to happen.
 
         It is called **first** in every one of those formatters, ahead of
-        ``_check_spelling``, the 4.0 version gate and every precision and scale
+        ``check_spelling``, the 4.0 version gate and every precision and scale
         ``ValueError``. That ordering is the point: a declaration this grammar
         cannot express at all is a stronger and less recoverable statement than
         a misspelled word or an out-of-range number, so it is the one the caller
@@ -253,8 +240,35 @@ class FirebirdTypeSupportMixin(DDLTypeMixin, DDLTypeSupport):
         because that is what every caller but the three float/decimal paths
         passes, and this is a pre-existing helper whose callers must not all have
         to change to accommodate a new kind.
+
+        **The shape check runs before the refusal, and it is not a duplicate of
+        it.**  The expression collects ``unsigned`` without judging it, because
+        only the formatter knows which backend has to honour it, so a
+        non-boolean arrives here rather than being rejected at construction.  The
+        refusal below is a *truth* test and cannot see that case: ``unsigned=0``,
+        ``unsigned=""`` and ``unsigned=None`` are all falsy, so they would walk
+        straight past it and render a signed ``INTEGER`` — or a signed
+        ``DECIMAL(10, 2)`` — and report success, which is exactly the silent loss
+        this gate exists to prevent.  A truthy non-boolean (``"yes"``, ``1``)
+        would reach the refusal instead, but it would be named as a *feature*
+        the grammar cannot express when the actual problem is a value of the
+        wrong shape.  ``TypeError`` for the shape, ``UnsupportedFeatureError`` for
+        the genuine request, in that order; the two do not share a base class.
+
+        The attribute is read directly rather than probed for with a default.
+        Whether the field exists is settled by the class: every formatter that
+        calls this serves a concept declaring ``unsigned``, because the derived
+        classes are not allowed to change the core signature. So a missing one
+        means the wrong class was handed over, and that deserves the crash rather
+        than a quietly signed column.
         """
-        if getattr(data_type, "unsigned", False):
+        unsigned = data_type.unsigned
+        if not isinstance(unsigned, bool):
+            raise TypeError(
+                f"unsigned must be a bool, got {type(unsigned).__name__}; it "
+                f"becomes a type modifier in the rendered DDL."
+            )
+        if unsigned:
             raise UnsupportedFeatureError(
                 self.name,
                 f"the UNSIGNED modifier on an {declaration} column "
@@ -309,9 +323,8 @@ class FirebirdTypeSupportMixin(DDLTypeMixin, DDLTypeSupport):
         is not a column Firebird can be asked for and writing it would put a
         declaration the server rejects into the statement.
 
-        Both the generic ``format_data_type_float`` and
-        ``format_data_type_firebird_float`` come through here, because they are
-        the same Firebird type under two dispatch keys and must not disagree.
+        This helper is the one place the version boundary and the range are
+        decided, so every caller gets the same answer for the same argument.
         """
         if precision is None:
             return
@@ -402,7 +415,7 @@ class FirebirdTypeSupportMixin(DDLTypeMixin, DDLTypeSupport):
         spelling check — see :meth:`_check_firebird_signed`.
         """
         self._check_firebird_signed(data_type)
-        self._check_spelling(data_type, IntegerType)
+        self.check_spelling(data_type, IntegerType)
         return "INTEGER", ()
 
     def format_data_type_bigint(self, data_type: BigIntType) -> Tuple[str, tuple]:
@@ -417,7 +430,7 @@ class FirebirdTypeSupportMixin(DDLTypeMixin, DDLTypeSupport):
         spelling check — see :meth:`_check_firebird_signed`.
         """
         self._check_firebird_signed(data_type)
-        self._check_spelling(data_type, ("bigint",))
+        self.check_spelling(data_type, ("bigint",))
         return "BIGINT", ()
 
     def format_data_type_smallint(self, data_type: SmallIntType) -> Tuple[str, tuple]:
@@ -429,7 +442,7 @@ class FirebirdTypeSupportMixin(DDLTypeMixin, DDLTypeSupport):
         :meth:`_check_firebird_signed`.
         """
         self._check_firebird_signed(data_type)
-        self._check_spelling(data_type, ("smallint",))
+        self.check_spelling(data_type, ("smallint",))
         return "SMALLINT", ()
 
     def format_data_type_tinyint(self, data_type: TinyIntType) -> Tuple[str, tuple]:
@@ -443,32 +456,26 @@ class FirebirdTypeSupportMixin(DDLTypeMixin, DDLTypeSupport):
         see :meth:`_check_firebird_signed`.
         """
         self._check_firebird_signed(data_type)
-        self._check_spelling(data_type, TinyIntType)
+        self.check_spelling(data_type, TinyIntType)
         return "SMALLINT", ()
 
     def format_data_type_float(self, data_type: FloatType) -> Tuple[str, tuple]:
-        """``FLOAT`` or ``FLOAT(bin_prec)`` — **the same validation as
-        :meth:`format_data_type_firebird_float`**, deliberately.
+        """``FLOAT`` or ``FLOAT(bin_prec)`` — the precision is honoured.
 
-        Core's ``FloatType`` and this backend's
-        :class:`~...expression.types.FirebirdFloatType` both end up writing
-        ``FLOAT[(bin_prec)]``, because Firebird has exactly one ``FLOAT`` and it
-        is a precision-bearing approximate numeric (§3.2.1.1: ``bin_prec`` is
-        *"precision in binary digits, default is 24; 1 - 24: 32-bit single
-        precision; 25 - 53: 64-bit double precision"*). Two renderers for one
-        Firebird type is the same arrangement as ``decimal`` /
-        ``firebird_decimal`` and ``char`` / ``firebird_char`` in this file: the
-        generic concept keeps its pure dispatch key, the Firebird-named concept
-        has its own, and both name the same storage.
+        Firebird has exactly one ``FLOAT`` and it is a precision-bearing
+        approximate numeric (§3.2.1.1: ``bin_prec`` is *"precision in binary
+        digits, default is 24; 1 - 24: 32-bit single precision; 25 - 53: 64-bit
+        double precision"*). Emitting a fixed ``FLOAT`` regardless of
+        ``precision`` would make ``FLOAT(24)`` and ``FLOAT(53)`` the same column
+        while ``__eq__`` calls them different — precisely the silent identity loss
+        the rule exists to prevent — so the precision is written.
 
-        Which is why they cannot disagree. The earlier state of this method took
-        the argument unconditionally and range-checked it to 1..24, and both
-        halves of that were wrong against the reference:
+        Two halves of an earlier state of this method were wrong against the
+        reference, and both had to be fixed rather than inherited:
 
         * **the range.**  25..53 is not out of bounds, it is the documented
           *double precision* half: 25-53 is a synonym for ``DOUBLE PRECISION``.
-          Rejecting it refused a column Firebird declares, while
-          :meth:`format_data_type_firebird_float` accepted it.
+          Range-checking to 1..24 refused a column Firebird declares.
         * **the gate.**  Firebird 4.0 release notes, CORE-6109: ``FLOAT(p)``
           *"definition is changed to represent precision in binary digits ...
           rather than in decimal digits as before"*, and the 3.0 reference's
@@ -477,8 +484,10 @@ class FirebirdTypeSupportMixin(DDLTypeMixin, DDLTypeSupport):
           declare a ten-decimal-digit float where a 4.0 server would read ten
           *bits*.
 
-        So both paths call :meth:`_validate_firebird_float`, which is where the
-        version boundary and the range live now.
+        Both now live in :meth:`_validate_firebird_float`, the one place the
+        version boundary and the range are decided. ``precision=None`` renders
+        bare ``FLOAT``, which every Firebird version this backend targets reads
+        as ``bin_prec`` 24.
 
         ``unsigned`` is refused rather than rendered, before that call — see
         :meth:`_check_firebird_signed`.
@@ -500,8 +509,8 @@ class FirebirdTypeSupportMixin(DDLTypeMixin, DDLTypeSupport):
         in §3.1 agrees from the other end: ``REAL`` is 32 bits, *"Synonym for
         FLOAT"*, and ``FLOAT`` itself is *"32 bits ... Single-precision, IEEE-754
         binary32, ~7 digits"*. A bare ``FLOAT`` is therefore ``bin_prec`` 24 —
-        single precision, 4 bytes — which is what the docstring for
-        :meth:`format_data_type_firebird_float` reads off the same row.
+        single precision, 4 bytes — the same row
+        :meth:`format_data_type_float` reads the argument off.
 
         An earlier version of this docstring justified the rendering by claiming
         the opposite, that "Firebird's unqualified ``FLOAT`` is *double*
@@ -532,7 +541,7 @@ class FirebirdTypeSupportMixin(DDLTypeMixin, DDLTypeSupport):
         see :meth:`_check_firebird_signed`.
         """
         self._check_firebird_signed(data_type, "approximate numeric (DOUBLE PRECISION)")
-        self._check_spelling(data_type, DoubleType)
+        self.check_spelling(data_type, DoubleType)
         return "DOUBLE PRECISION", ()
 
     def format_data_type_decimal(self, data_type: DecimalType) -> Tuple[str, tuple]:
@@ -547,7 +556,7 @@ class FirebirdTypeSupportMixin(DDLTypeMixin, DDLTypeSupport):
         for a signed declaration.
         """
         self._check_firebird_signed(data_type, "exact numeric (DECIMAL)")
-        self._check_spelling(data_type, DecimalType)
+        self.check_spelling(data_type, DecimalType)
         self._validate_numeric(data_type.precision, data_type.scale)
         if data_type.precision is not None and data_type.scale is not None:
             return f"DECIMAL({data_type.precision}, {data_type.scale})", ()
@@ -562,7 +571,7 @@ class FirebirdTypeSupportMixin(DDLTypeMixin, DDLTypeSupport):
         Firebird 3 introduced the type as ``BOOLEAN`` and has no alias for it —
         so the spelling is refused instead of being answered with a declaration
         the server would reject."""
-        self._check_spelling(data_type, ("boolean",))
+        self.check_spelling(data_type, ("boolean",))
         self._check_fb3_type("BOOLEAN")
         return "BOOLEAN", ()
 
@@ -583,7 +592,7 @@ class FirebirdTypeSupportMixin(DDLTypeMixin, DDLTypeSupport):
         :meth:`type_parameter_defaults` entry — a server that will not create the
         column supplies nothing to read back — stays attached to the number.
         """
-        self._check_spelling(data_type, VarCharType)
+        self.check_spelling(data_type, VarCharType)
         length = data_type.length
         if length is None:
             length = self._FB_RENDERED_VARCHAR_LENGTH
@@ -603,7 +612,7 @@ class FirebirdTypeSupportMixin(DDLTypeMixin, DDLTypeSupport):
         ``length``; the fallback reads the one declaration so a type built
         without a dialect renders the same number.
         """
-        self._check_spelling(data_type, CharType)
+        self.check_spelling(data_type, CharType)
         length = data_type.length
         if length is None:
             length = self.type_parameter_defaults()["char"]["length"]
@@ -620,7 +629,7 @@ class FirebirdTypeSupportMixin(DDLTypeMixin, DDLTypeSupport):
         The default spelling must always render, or the concept would be
         unusable on this backend.
         """
-        self._check_spelling(data_type, ("text",))
+        self.check_spelling(data_type, ("text",))
         return "BLOB SUB_TYPE TEXT", ()
 
     def format_data_type_datetime(self, data_type: DateTimeType) -> Tuple[str, tuple]:
@@ -706,7 +715,7 @@ class FirebirdTypeSupportMixin(DDLTypeMixin, DDLTypeSupport):
         PostgreSQL declaration, and quietly substituting this backend's is
         exactly the substitution the gate exists to catch.
         """
-        self._check_spelling(data_type, ("blob",))
+        self.check_spelling(data_type, ("blob",))
         return "BLOB", ()
 
     def format_data_type_binary(self, data_type: BinaryType) -> Tuple[str, tuple]:
@@ -723,92 +732,6 @@ class FirebirdTypeSupportMixin(DDLTypeMixin, DDLTypeSupport):
 
     # --- Firebird-specific type formatters (dispatch key = type name) ---
 
-    def format_data_type_firebird_decimal(self, data_type: FirebirdDecimalType) -> Tuple[str, tuple]:
-        """``DECIMAL`` under its own dispatch key. Same spelling rule as
-        :meth:`format_data_type_decimal` — ``NUMERIC`` and ``DEC`` name the same
-        Firebird storage and are accepted; the declared one renders as
-        ``DECIMAL``.
-
-        ``unsigned`` is refused rather than rendered, before the spelling check
-        and before both ``ValueError`` s — see :meth:`_check_firebird_signed`.
-        The class does not narrow ``PARAMETERS``, so it genuinely carries the
-        field: :class:`~...expression.types.FirebirdDecimalType` inherits core's
-        constructor, which is why its formatter needs the gate as much as the
-        core ``decimal`` one does."""
-        self._check_firebird_signed(data_type, "exact numeric (DECIMAL)")
-        self._check_spelling(data_type, DecimalType)
-        self._validate_numeric(data_type.precision, data_type.scale)
-        if data_type.precision is not None and data_type.scale is not None:
-            return f"DECIMAL({data_type.precision}, {data_type.scale})", ()
-        if data_type.precision is not None:
-            return f"DECIMAL({data_type.precision})", ()
-        return "DECIMAL", ()
-
-    def format_data_type_firebird_float(self, data_type: FirebirdFloatType) -> Tuple[str, tuple]:
-        """``FLOAT`` or ``FLOAT(bin_prec)`` — the binary precision is **honoured**.
-
-        Firebird's grammar really does take the argument. The 4.0 reference's
-        declaration syntax is ``REAL | FLOAT [(bin_prec)] | DOUBLE PRECISION``
-        (§3.12.1) and its numeric-types entry gives ``FLOAT (bin_prec)`` as
-        "32 bits or 64 bits", with ``bin_prec`` documented as "precision in
-        binary digits, default is 24; 1 - 24: 32-bit single precision; 25 - 53:
-        64-bit double precision" (§3.2.1.1). Emitting a fixed ``FLOAT``
-        regardless of ``precision`` would make ``FLOAT(24)`` and ``FLOAT(53)``
-        the same column while ``__eq__`` calls them different — precisely the
-        silent identity loss the rule exists to prevent — so the precision is
-        written.
-
-        ``precision=None`` renders bare ``FLOAT``, which the server reads as
-        ``bin_prec`` 24: 32-bit single precision, 4 bytes — Firebird's own
-        ``REAL`` (§3.2.1.2: *"The data type REAL is a synonym for FLOAT"*).
-
-        A precision is refused below Firebird 4.0 and range-checked 1..53 on 4.0+
-        — see :meth:`_validate_firebird_float` for why the *same* string means
-        different columns on the two sides of that boundary, and for why the
-        generic :meth:`format_data_type_float` shares this method's validation
-        rather than keeping its own.
-
-        ``unsigned`` is refused rather than rendered, before the 4.0 gate and the
-        range check — see :meth:`_check_firebird_signed`. Like
-        :class:`~...expression.types.FirebirdFloatType`'s siblings, the class
-        inherits core's constructor, so it really does carry the field.
-        """
-        self._check_firebird_signed(data_type, "approximate numeric (FLOAT)")
-        self._validate_firebird_float(data_type.precision)
-        if data_type.precision is None:
-            return "FLOAT", ()
-        return f"FLOAT({data_type.precision})", ()
-
-    def format_data_type_firebird_double(self, data_type: FirebirdDoubleType) -> Tuple[str, tuple]:
-        """``DOUBLE PRECISION`` — the same Firebird type
-        :meth:`format_data_type_double` writes, under this backend's own dispatch
-        key.
-
-        ``unsigned`` is refused rather than rendered; see
-        :meth:`_check_firebird_signed`.
-        """
-        self._check_firebird_signed(data_type, "approximate numeric (DOUBLE PRECISION)")
-        return "DOUBLE PRECISION", ()
-
-    def format_data_type_firebird_blob_subtype(self, data_type: FirebirdBlobSubType) -> Tuple[str, tuple]:
-        """``BLOB SUB_TYPE TEXT``.
-
-        The integer here is the sub-type tag Firebird stores for a ``BLOB``
-        column, so ``INTEGER``/``INT`` — Firebird's own two words for a 32-bit
-        integer — are both accepted; the word written is the BLOB clause either
-        way, because that clause is what declares the column.
-
-        ``unsigned`` is refused rather than rendered, and refused **before** the
-        spelling check like every other gate in this file. The class narrows
-        ``PARAMETERS`` to ``()`` — a BLOB sub-type tag has no signedness to
-        differ in — and this is what keeps the inherited constructor from
-        quietly accepting and discarding it; see
-        :meth:`_check_firebird_signed`.
-        """
-        self._check_firebird_signed(data_type)
-        self._check_spelling(data_type, IntegerType)
-        return "BLOB SUB_TYPE TEXT", ()
-
     def format_data_type_firebird_char(self, data_type: FirebirdCharType) -> Tuple[str, tuple]:
         """``CHAR(n) CHARACTER SET UTF8`` — the fixed-length concept with the
         column's character set written out, so the declaration does not depend on
@@ -819,7 +742,7 @@ class FirebirdTypeSupportMixin(DDLTypeMixin, DDLTypeSupport):
         the one declaration rather than repeated; see :meth:`format_data_type_char`
         for why Firebird's 1 is a documented default and not a choice of this
         backend."""
-        self._check_spelling(data_type, CharType)
+        self.check_spelling(data_type, CharType)
         length = data_type.length
         if length is None:
             length = self.type_parameter_defaults()["firebird_char"]["length"]
@@ -832,7 +755,7 @@ class FirebirdTypeSupportMixin(DDLTypeMixin, DDLTypeSupport):
         the unsized ``VARCHAR(255)`` here is a decision of this backend rather
         than a Firebird default — it is the same number, named once in
         :attr:`_FB_RENDERED_VARCHAR_LENGTH`."""
-        self._check_spelling(data_type, VarCharType)
+        self.check_spelling(data_type, VarCharType)
         length = data_type.length
         if length is None:
             length = self._FB_RENDERED_VARCHAR_LENGTH
@@ -935,11 +858,12 @@ class FirebirdTypeSupportMixin(DDLTypeMixin, DDLTypeSupport):
         and the zoned spellings :meth:`parse_type` recognises — so parsing and
         rendering cannot disagree about whether the type exists.
 
-        The default is 4.0 because a dialect built with no version at all is
-        the "latest this backend knows about" case; FirebirdDialect only sets
-        ``version`` when one is passed.
+        A dialect that has not been adapted answers ``False``: the 4.0 types
+        are a capability nobody has confirmed yet, and the renderer's refusal
+        names the version it needs rather than surfacing a bare "not adapted"
+        from a probe.
         """
-        return _norm_version(getattr(self, 'version', (4, 0, 0))) >= (4, 0, 0)
+        return self.version_at_least((4, 0, 0))
 
     def _check_fb4_type(self, feature: str) -> None:
         """Raise unless the dialect targets Firebird 4.0 or later.
@@ -985,7 +909,7 @@ class FirebirdTypeSupportMixin(DDLTypeMixin, DDLTypeSupport):
         return True
 
     def supports_data_type_boolean(self) -> bool:
-        return _norm_version(getattr(self, 'version', (3, 0, 0))) >= (3, 0, 0)
+        return self.version_at_least((3, 0, 0))
 
     def supports_data_type_varchar(self) -> bool:
         return True
@@ -1034,23 +958,6 @@ class FirebirdTypeSupportMixin(DDLTypeMixin, DDLTypeSupport):
     def supports_data_type_custom(self) -> bool:
         return True
 
-    def supports_data_type_firebird_decimal(self) -> bool:
-        return True
-
-    def supports_data_type_firebird_float(self) -> bool:
-        # Deliberately ungated, unlike its Firebird 4.0 neighbours. Bare ``FLOAT``
-        # is 32-bit single precision in every version this backend targets, so
-        # ``firebird_float`` *is* renderable on Firebird 3; only the ``bin_prec``
-        # argument needs 4.0, and that gate lives in the formatter
-        # (``_validate_firebird_float``) because it is the argument that needs it.
-        return True
-
-    def supports_data_type_firebird_double(self) -> bool:
-        return True
-
-    def supports_data_type_firebird_blob_subtype(self) -> bool:
-        return True
-
     def supports_data_type_firebird_char(self) -> bool:
         return True
 
@@ -1058,19 +965,19 @@ class FirebirdTypeSupportMixin(DDLTypeMixin, DDLTypeSupport):
         return True
 
     def supports_data_type_firebird_timestamptz(self) -> bool:
-        return _norm_version(getattr(self, 'version', (4, 0, 0))) >= (4, 0, 0)
+        return self.version_at_least((4, 0, 0))
 
     def supports_data_type_firebird_timetz(self) -> bool:
-        return _norm_version(getattr(self, 'version', (4, 0, 0))) >= (4, 0, 0)
+        return self.version_at_least((4, 0, 0))
 
     def supports_data_type_firebird_time_without_time_zone(self) -> bool:
-        return _norm_version(getattr(self, 'version', (4, 0, 0))) >= (4, 0, 0)
+        return self.version_at_least((4, 0, 0))
 
     def supports_data_type_firebird_decfloat(self) -> bool:
-        return _norm_version(getattr(self, 'version', (4, 0, 0))) >= (4, 0, 0)
+        return self.version_at_least((4, 0, 0))
 
     def supports_data_type_firebird_int128(self) -> bool:
-        return _norm_version(getattr(self, 'version', (4, 0, 0))) >= (4, 0, 0)
+        return self.version_at_least((4, 0, 0))
 
     # ------------------------------------------------------------------
     # suggested_data_types() — D9

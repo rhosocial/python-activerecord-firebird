@@ -5,27 +5,28 @@ Procedures exist since Firebird 1.0 and are gated here at ``(2, 5, 0)``;
 stored functions were introduced in Firebird 3.0.  The PSQL body is
 received as a string; when it does not already start with ``BEGIN`` it is
 wrapped in a ``BEGIN ... END`` block (mirroring
-``FirebirdDMLOperationMixin.format_execute_block``).
+``FirebirdDMLOperationMixin.format_execute_block_statement``).
 """
 
 from typing import Any, List, Tuple, TYPE_CHECKING
 
 from rhosocial.activerecord.backend.dialect.exceptions import UnsupportedFeatureError
+from rhosocial.activerecord.backend.expression.bases import BaseExpression
 from rhosocial.activerecord.backend.expression.objects import Function, Procedure
 
 from ..expression.ddl.routine import FirebirdRoutineMode
 
 if TYPE_CHECKING:
     from ..expression.ddl.routine import (
-        FirebirdCreateProcedureExpression,
-        FirebirdCreateFunctionExpression,
-        FirebirdDropRoutineExpression,
+        FirebirdCreateProcedureStatement,
+        FirebirdCreateFunctionStatement,
+        FirebirdDropRoutineStatement,
     )
 
 
 class FirebirdRoutineMixin:
 
-    def format_create_procedure_statement(self, expr: "FirebirdCreateProcedureExpression") -> Tuple[str, tuple]:
+    def format_create_procedure_statement(self, expr: "FirebirdCreateProcedureStatement") -> Tuple[str, tuple]:
         """Format CREATE [OR ALTER | RECREATE] PROCEDURE ... AS <body>."""
         self._check_routine_version("CREATE PROCEDURE", (2, 5, 0))
 
@@ -38,7 +39,7 @@ class FirebirdRoutineMixin:
         parts.append(self._format_psql_body(expr.body))
         return " ".join(parts), ()
 
-    def format_create_function_statement(self, expr: "FirebirdCreateFunctionExpression") -> Tuple[str, tuple]:
+    def format_create_function_statement(self, expr: "FirebirdCreateFunctionStatement") -> Tuple[str, tuple]:
         """Format CREATE [OR ALTER | RECREATE] FUNCTION ... RETURNS type AS <body>.
 
         Overrides the core ``FunctionMixin`` renderer so the Firebird PSQL
@@ -50,13 +51,13 @@ class FirebirdRoutineMixin:
         parts = [expr.mode.value, "FUNCTION", Function(self, expr.function_name).to_sql()[0]]
         if expr.params:
             parts.append(f"({self._format_routine_params(expr.params)})")
-        if getattr(expr, "returns", None):
+        if expr.returns:
             parts.append(f"RETURNS {self._format_routine_return_type(expr.returns)}")
         parts.append("AS")
         parts.append(self._format_psql_body(expr.body))
         return " ".join(parts), ()
 
-    def format_drop_routine_statement(self, expr: "FirebirdDropRoutineExpression") -> Tuple[str, tuple]:
+    def format_drop_routine_statement(self, expr: "FirebirdDropRoutineStatement") -> Tuple[str, tuple]:
         """Format DROP / CREATE OR ALTER / RECREATE for a PROCEDURE or FUNCTION."""
         minimum = (3, 0, 0) if expr.routine_type == "FUNCTION" else (2, 5, 0)
         self._check_routine_version(f"{expr.routine_type} routine DDL", minimum)
@@ -72,7 +73,7 @@ class FirebirdRoutineMixin:
             parts = [expr.mode.value, "FUNCTION", name_renderer(expr.routine_name)]
             if expr.params:
                 parts.append(f"({self._format_routine_params(expr.params)})")
-            if getattr(expr, "returns", None):
+            if expr.returns:
                 parts.append(f"RETURNS {self._format_routine_return_type(expr.returns)}")
         else:
             parts = [expr.mode.value, "PROCEDURE", name_renderer(expr.routine_name)]
@@ -106,7 +107,10 @@ class FirebirdRoutineMixin:
 
     def _format_routine_return_type(self, returns: Any) -> str:
         """Render a single return type (str or DataType)."""
-        if hasattr(returns, "to_sql"):
+        # The question is what the slot holds, answered by the class rather
+        # than by probing: a DataType (or any other expression) renders as
+        # itself, and anything else is a type name spelled as a string.
+        if isinstance(returns, BaseExpression):
             type_sql, _ = returns.to_sql()
             return type_sql
         return str(returns)

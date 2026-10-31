@@ -14,15 +14,17 @@ from rhosocial.activerecord.backend.dialect.exceptions import UnsupportedFeature
 
 if TYPE_CHECKING:
     from ..expression.ddl.external_function import (
-        FirebirdCreateExternalFunctionExpression,
-        FirebirdAlterExternalFunctionExpression,
-        FirebirdDropExternalFunctionExpression,
+        FirebirdCreateExternalFunctionStatement,
+        FirebirdAlterExternalFunctionStatement,
+        FirebirdDropExternalFunctionStatement,
     )
 
 
 class FirebirdExternalFunctionMixin:
 
-    def format_create_external_function_statement(self, expr: "FirebirdCreateExternalFunctionExpression") -> Tuple[str, tuple]:
+    def format_create_external_function_statement(
+        self, expr: "FirebirdCreateExternalFunctionStatement"
+    ) -> Tuple[str, tuple]:
         """Format DECLARE EXTERNAL FUNCTION name [(params)] RETURNS type
         [BY VALUE] [FREE_IT] ENTRY_POINT 'entry' MODULE_NAME 'module'."""
         self._check_external_function_version("DECLARE EXTERNAL FUNCTION")
@@ -34,16 +36,18 @@ class FirebirdExternalFunctionMixin:
         if expr.params:
             parts.append(f"({', '.join(expr.params)})")
         returns = expr.returns
-        if getattr(expr, "by_value", False):
+        if expr.by_value:
             returns = f"{returns} BY VALUE"
         parts.append(f"RETURNS {returns}")
-        if getattr(expr, "free_it", False):
+        if expr.free_it:
             parts.append("FREE_IT")
         parts.append(f"ENTRY_POINT {self._quote_literal(expr.entry_point)}")
         parts.append(f"MODULE_NAME {self._quote_literal(expr.module_name)}")
         return " ".join(parts), ()
 
-    def format_alter_external_function_statement(self, expr: "FirebirdAlterExternalFunctionExpression") -> Tuple[str, tuple]:
+    def format_alter_external_function_statement(
+        self, expr: "FirebirdAlterExternalFunctionStatement"
+    ) -> Tuple[str, tuple]:
         """Format ALTER EXTERNAL FUNCTION name [ENTRY_POINT ...] [MODULE_NAME ...]."""
         self._check_external_function_version("ALTER EXTERNAL FUNCTION")
 
@@ -54,7 +58,9 @@ class FirebirdExternalFunctionMixin:
             parts.append(f"MODULE_NAME {self._quote_literal(expr.module_name)}")
         return " ".join(parts), ()
 
-    def format_drop_external_function_statement(self, expr: "FirebirdDropExternalFunctionExpression") -> Tuple[str, tuple]:
+    def format_drop_external_function_statement(
+        self, expr: "FirebirdDropExternalFunctionStatement"
+    ) -> Tuple[str, tuple]:
         """Format DROP EXTERNAL FUNCTION name."""
         self._check_external_function_version("DROP EXTERNAL FUNCTION")
         return f"DROP EXTERNAL FUNCTION {self.format_identifier(expr.function_name)}", ()

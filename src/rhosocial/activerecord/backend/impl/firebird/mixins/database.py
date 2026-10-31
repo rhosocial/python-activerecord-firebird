@@ -6,24 +6,25 @@ set (PAGE_SIZE, DEFAULT CHARACTER SET, COLLATION, DIALECT, FORCE WRITE,
 SQL SECURITY).  Both statements are gated at ``(2, 5, 0)``.
 """
 
+from enum import Enum
 from typing import Tuple, TYPE_CHECKING
 
 from .version_boundaries import _norm_version
 from rhosocial.activerecord.backend.dialect.exceptions import UnsupportedFeatureError
 
 if TYPE_CHECKING:
-    from ..expression.database import FirebirdCreateDatabaseExpression, FirebirdDropDatabaseExpression
+    from ..expression.database import FirebirdCreateDatabaseStatement, FirebirdDropDatabaseStatement
 
 
 class FirebirdDatabaseMixin:
 
     def supports_create_database(self) -> bool:
-        return _norm_version(self.version) >= (2, 5, 0)
+        return self.version_at_least((2, 5, 0))
 
     def supports_drop_database(self) -> bool:
-        return _norm_version(self.version) >= (2, 5, 0)
+        return self.version_at_least((2, 5, 0))
 
-    def format_create_database_statement(self, expr: "FirebirdCreateDatabaseExpression") -> Tuple[str, tuple]:
+    def format_create_database_statement(self, expr: "FirebirdCreateDatabaseStatement") -> Tuple[str, tuple]:
         """Format CREATE DATABASE 'file' with the configured options."""
         self._check_database_version("CREATE DATABASE")
 
@@ -40,14 +41,19 @@ class FirebirdDatabaseMixin:
             parts.append(f"COLLATION {self._quote_literal(expr.collation)}")
         if expr.sql_dialect is not None:
             parts.append(f"DIALECT {expr.sql_dialect}")
-        if getattr(expr, "force_write", False):
+        if expr.force_write:
             parts.append("FORCE WRITE")
         if expr.sql_security is not None:
-            mode = getattr(expr.sql_security, "value", expr.sql_security)
+            # ``sql_security`` accepts the enum or its raw spelling.
+            mode = (
+                expr.sql_security.value
+                if isinstance(expr.sql_security, Enum)
+                else expr.sql_security
+            )
             parts.append(f"SQL SECURITY {mode}")
         return " ".join(parts), ()
 
-    def format_drop_database_statement(self, expr: "FirebirdDropDatabaseExpression") -> Tuple[str, tuple]:
+    def format_drop_database_statement(self, expr: "FirebirdDropDatabaseStatement") -> Tuple[str, tuple]:
         """Format DROP DATABASE."""
         self._check_database_version("DROP DATABASE")
         return "DROP DATABASE", ()

@@ -8,9 +8,15 @@ tables and MON$ monitoring tables.
 Design principle: Sync and Async are separate and cannot coexist.
 - SyncFirebirdStatusIntrospector: for synchronous backends
 - AsyncFirebirdStatusIntrospector: for asynchronous backends
+
+Every query below is built from expression nodes and rendered by the dialect
+(org guide §16.2): this layer asks the catalogue a question, it does not spell
+the SQL. The row shapes the parsers read -- the projection order and the
+aliases -- are the ones the previous statement text produced, so the ``_exec_sql``
+path and its key lower-casing are unchanged.
 """
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple, TYPE_CHECKING
 
 from rhosocial.activerecord.backend.introspection.status import (
     StatusItem,
@@ -25,9 +31,17 @@ from rhosocial.activerecord.backend.introspection.status import (
     AsyncAbstractStatusIntrospector,
 )
 
+if TYPE_CHECKING:  # pragma: no cover
+    from rhosocial.activerecord.backend.dialect import SQLDialectBase
+
 
 class FirebirdStatusIntrospectorMixin:
     """Shared non-I/O logic for Firebird status introspectors."""
+
+    @property
+    def dialect(self) -> "SQLDialectBase":
+        """The dialect these status queries are rendered by."""
+        return self._backend.dialect
 
     def _get_vendor_name(self) -> str:
         """Get the database vendor name."""
@@ -76,6 +90,143 @@ class FirebirdStatusIntrospectorMixin:
             users=users,
         )
 
+    # ------------------------------------------------------------------
+    # The status queries, expressed once for both sync and async
+    # ------------------------------------------------------------------
+
+    def _version_string_sql(self) -> Tuple[str, tuple]:
+        """The engine version, read from the system context."""
+        from ..query_nodes import engine_version_sql
+
+        return engine_version_sql(self.dialect)
+
+    def _statement_count_sql(self) -> Tuple[str, tuple]:
+        """How many statements this database is running."""
+        from ..query_nodes import call, relation, row_count, select_sql
+
+        d = self.dialect
+        return select_sql(
+            d,
+            [call(d, "COUNT", row_count(d), alias="C")],
+            from_=relation(d, "MON$STATEMENTS"),
+        )
+
+    def _attachment_count_sql(self) -> Tuple[str, tuple]:
+        """How many attachments (sessions) this database has."""
+        from ..query_nodes import call, relation, row_count, select_sql
+
+        d = self.dialect
+        return select_sql(
+            d,
+            [call(d, "COUNT", row_count(d), alias="C")],
+            from_=relation(d, "MON$ATTACHMENTS"),
+        )
+
+    def _attachment_list_sql(self) -> Tuple[str, tuple]:
+        """One row per attachment: its id, login, address and remote pid."""
+        from ..query_nodes import column, relation, select_sql
+
+        d = self.dialect
+        return select_sql(
+            d,
+            [
+                column(d, "MON$ATTACHMENT_ID", alias="ID"),
+                column(d, "MON$USER", alias="USERNAME"),
+                column(d, "MON$REMOTE_ADDRESS", alias="REMOTE_ADDR"),
+                column(d, "MON$REMOTE_PID", alias="REMOTE_PID"),
+            ],
+            from_=relation(d, "MON$ATTACHMENTS"),
+        )
+
+    def _database_size_sql(self) -> Tuple[str, tuple]:
+        """The database's size in bytes: page size times page count.
+
+        The multiplication is stated as nodes because ``MON$PAGE_SIZE`` is a
+        smallint on older engines and overflows a 16-bit product; the cast to
+        ``BIGINT`` is what makes the arithmetic 64-bit, so it is part of the
+        question rather than an incidental spelling.
+        """
+        from ..query_nodes import cast, column, multiply, relation, select_sql
+
+        d = self.dialect
+        return select_sql(
+            d,
+            [
+                multiply(
+                    d,
+                    cast(d, column(d, "MON$PAGE_SIZE"), "BIGINT"),
+                    column(d, "MON$PAGES"),
+                ).as_("SIZE_BYTES")
+            ],
+            from_=relation(d, "MON$DATABASE"),
+        )
+
+    def _database_files_sql(self) -> Tuple[str, tuple]:
+        """One row per database file with its page count and byte size."""
+        from ..query_nodes import cast, column, multiply, relation, select_sql
+
+        d = self.dialect
+        return select_sql(
+            d,
+            [
+                column(d, "MON$FILE_ID", alias="FILE_ID"),
+                column(d, "MON$PAGES", alias="PAGES"),
+                multiply(
+                    d,
+                    cast(d, column(d, "MON$PAGE_SIZE"), "BIGINT"),
+                    column(d, "MON$PAGES"),
+                ).as_("SIZE_BYTES"),
+            ],
+            from_=relation(d, "MON$DATABASE_FILES"),
+        )
+
+    def _database_name_sql(self) -> Tuple[str, tuple]:
+        """The database's own name, as the attachment reports it."""
+        from ..query_nodes import column, relation, select_sql
+
+        d = self.dialect
+        return select_sql(
+            d,
+            [column(d, "MON$DATABASE_NAME", alias="NAME")],
+            from_=relation(d, "MON$DATABASE"),
+        )
+
+    def _rdb_users_sql(self) -> Tuple[str, tuple]:
+        """Logins known to the security database, by name."""
+        from ..query_nodes import (
+            column,
+            null_test,
+            relation,
+            select_sql,
+        )
+
+        d = self.dialect
+        return select_sql(
+            d,
+            [column(d, "USER_NAME", alias="USERNAME")],
+            from_=relation(d, "RDB$USERS"),
+            where=null_test(d, column(d, "USER_NAME"), is_not=True),
+            order_by=[column(d, "USER_NAME")],
+        )
+
+    def _attached_users_sql(self) -> Tuple[str, tuple]:
+        """Distinct logins currently attached, for when ``RDB$USERS`` is empty.
+
+        ``RDB$USERS`` exists only in a security database that carries it; an
+        embedded or differently-secured database answers with no rows, and
+        this is the fallback question.
+        """
+        from ..query_nodes import column, null_test, relation, select_sql
+
+        d = self.dialect
+        return select_sql(
+            d,
+            [column(d, "MON$USER", alias="USERNAME")],
+            from_=relation(d, "MON$ATTACHMENTS"),
+            where=null_test(d, column(d, "MON$USER"), is_not=True),
+            distinct=True,
+        )
+
 
 class SyncFirebirdStatusIntrospector(FirebirdStatusIntrospectorMixin, SyncAbstractStatusIntrospector):
     """Synchronous Firebird status introspector.
@@ -120,9 +271,7 @@ class SyncFirebirdStatusIntrospector(FirebirdStatusIntrospectorMixin, SyncAbstra
     def _get_version_string(self) -> str:
         """Get the Firebird server version string."""
         try:
-            rows = self._exec(
-                "SELECT rdb$get_context('SYSTEM', 'ENGINE_VERSION') AS VERSION FROM rdb$database"
-            )
+            rows = self._exec_sql(self._version_string_sql())
             if rows and rows[0].get("version"):
                 return str(rows[0]["version"])
         except Exception:
@@ -157,7 +306,7 @@ class SyncFirebirdStatusIntrospector(FirebirdStatusIntrospectorMixin, SyncAbstra
         """List performance metrics from MON$ tables."""
         items: List[StatusItem] = []
         try:
-            rows = self._exec("SELECT COUNT(*) AS C FROM MON$STATEMENTS")
+            rows = self._exec_sql(self._statement_count_sql())
             if rows:
                 items.append(
                     self._create_status_item(
@@ -170,7 +319,7 @@ class SyncFirebirdStatusIntrospector(FirebirdStatusIntrospectorMixin, SyncAbstra
         except Exception:
             pass
         try:
-            rows = self._exec("SELECT COUNT(*) AS C FROM MON$ATTACHMENTS")
+            rows = self._exec_sql(self._attachment_count_sql())
             if rows:
                 items.append(
                     self._create_status_item(
@@ -191,17 +340,13 @@ class SyncFirebirdStatusIntrospector(FirebirdStatusIntrospectorMixin, SyncAbstra
         active_count = None
         max_connections = None
         try:
-            rows = self._exec("SELECT COUNT(*) AS C FROM MON$ATTACHMENTS")
+            rows = self._exec_sql(self._attachment_count_sql())
             if rows:
                 active_count = int(rows[0].get("c", 0))
         except Exception:
             pass
         try:
-            rows = self._exec(
-                "SELECT MON$ATTACHMENT_ID AS ID, MON$USER AS USERNAME, "
-                "MON$REMOTE_ADDRESS AS REMOTE_ADDR, MON$REMOTE_PID AS REMOTE_PID "
-                "FROM MON$ATTACHMENTS"
-            )
+            rows = self._exec_sql(self._attachment_list_sql())
             extra = {"attachments": rows}
         except Exception:
             extra = {}
@@ -216,20 +361,13 @@ class SyncFirebirdStatusIntrospector(FirebirdStatusIntrospectorMixin, SyncAbstra
         """Get storage information."""
         total_size = None
         try:
-            rows = self._exec(
-                "SELECT CAST(MON$PAGE_SIZE AS BIGINT) * MON$PAGES AS SIZE_BYTES "
-                "FROM MON$DATABASE"
-            )
+            rows = self._exec_sql(self._database_size_sql())
             if rows and rows[0].get("size_bytes") is not None:
                 total_size = int(rows[0]["size_bytes"])
         except Exception:
             pass
         try:
-            rows = self._exec(
-                "SELECT MON$FILE_ID AS FILE_ID, MON$PAGES AS PAGES, "
-                "CAST(MON$PAGE_SIZE AS BIGINT) * MON$PAGES AS SIZE_BYTES "
-                "FROM MON$DATABASE_FILES"
-            )
+            rows = self._exec_sql(self._database_files_sql())
         except Exception:
             rows = []
         return StorageInfo(
@@ -244,9 +382,7 @@ class SyncFirebirdStatusIntrospector(FirebirdStatusIntrospectorMixin, SyncAbstra
     def list_databases(self) -> List[DatabaseBriefInfo]:
         """List databases/schemas."""
         try:
-            rows = self._exec(
-                "SELECT MON$DATABASE_NAME AS NAME FROM MON$DATABASE"
-            )
+            rows = self._exec_sql(self._database_name_sql())
         except Exception:
             rows = []
         result = []
@@ -269,10 +405,7 @@ class SyncFirebirdStatusIntrospector(FirebirdStatusIntrospectorMixin, SyncAbstra
         """List users from RDB$USERS."""
         users: List[UserInfo] = []
         try:
-            rows = self._exec(
-                "SELECT USER_NAME AS USERNAME FROM RDB$USERS "
-                "WHERE USER_NAME IS NOT NULL ORDER BY USER_NAME"
-            )
+            rows = self._exec_sql(self._rdb_users_sql())
             for row in rows:
                 name = str(row.get("username", "") or "")
                 if name:
@@ -286,10 +419,7 @@ class SyncFirebirdStatusIntrospector(FirebirdStatusIntrospectorMixin, SyncAbstra
             pass
         if not users:
             try:
-                rows = self._exec(
-                    "SELECT DISTINCT MON$USER AS USERNAME FROM MON$ATTACHMENTS "
-                    "WHERE MON$USER IS NOT NULL"
-                )
+                rows = self._exec_sql(self._attached_users_sql())
                 for row in rows:
                     name = str(row.get("username", "") or "")
                     if name and name != "unknown":
@@ -320,9 +450,10 @@ class SyncFirebirdStatusIntrospector(FirebirdStatusIntrospectorMixin, SyncAbstra
             password_used=True if user else None,
         )
 
-    def _exec(self, sql: str) -> List[Dict[str, Any]]:
-        """Execute a query and return list of row dicts (lowercased keys)."""
-        result = self._backend.execute(sql)
+    def _exec_sql(self, statement: Tuple[str, tuple]) -> List[Dict[str, Any]]:
+        """Execute a rendered statement and return rows as lowercased dicts."""
+        sql, params = statement
+        result = self._backend.execute(sql, params or None)
         if result is None or not hasattr(result, "data"):
             return []
         rows = result.data or []
@@ -365,9 +496,7 @@ class AsyncFirebirdStatusIntrospector(FirebirdStatusIntrospectorMixin, AsyncAbst
     async def _get_version_string(self) -> str:
         """Get the Firebird server version string."""
         try:
-            rows = await self._exec(
-                "SELECT rdb$get_context('SYSTEM', 'ENGINE_VERSION') AS VERSION FROM rdb$database"
-            )
+            rows = await self._exec_sql(self._version_string_sql())
             if rows and rows[0].get("version"):
                 return str(rows[0]["version"])
         except Exception:
@@ -402,7 +531,7 @@ class AsyncFirebirdStatusIntrospector(FirebirdStatusIntrospectorMixin, AsyncAbst
         """List performance metrics from MON$ tables."""
         items: List[StatusItem] = []
         try:
-            rows = await self._exec("SELECT COUNT(*) AS C FROM MON$STATEMENTS")
+            rows = await self._exec_sql(self._statement_count_sql())
             if rows:
                 items.append(
                     self._create_status_item(
@@ -415,7 +544,7 @@ class AsyncFirebirdStatusIntrospector(FirebirdStatusIntrospectorMixin, AsyncAbst
         except Exception:
             pass
         try:
-            rows = await self._exec("SELECT COUNT(*) AS C FROM MON$ATTACHMENTS")
+            rows = await self._exec_sql(self._attachment_count_sql())
             if rows:
                 items.append(
                     self._create_status_item(
@@ -435,17 +564,13 @@ class AsyncFirebirdStatusIntrospector(FirebirdStatusIntrospectorMixin, AsyncAbst
         """Get connection information."""
         active_count = None
         try:
-            rows = await self._exec("SELECT COUNT(*) AS C FROM MON$ATTACHMENTS")
+            rows = await self._exec_sql(self._attachment_count_sql())
             if rows:
                 active_count = int(rows[0].get("c", 0))
         except Exception:
             pass
         try:
-            rows = await self._exec(
-                "SELECT MON$ATTACHMENT_ID AS ID, MON$USER AS USERNAME, "
-                "MON$REMOTE_ADDRESS AS REMOTE_ADDR, MON$REMOTE_PID AS REMOTE_PID "
-                "FROM MON$ATTACHMENTS"
-            )
+            rows = await self._exec_sql(self._attachment_list_sql())
             extra = {"attachments": rows}
         except Exception:
             extra = {}
@@ -460,20 +585,13 @@ class AsyncFirebirdStatusIntrospector(FirebirdStatusIntrospectorMixin, AsyncAbst
         """Get storage information."""
         total_size = None
         try:
-            rows = await self._exec(
-                "SELECT CAST(MON$PAGE_SIZE AS BIGINT) * MON$PAGES AS SIZE_BYTES "
-                "FROM MON$DATABASE"
-            )
+            rows = await self._exec_sql(self._database_size_sql())
             if rows and rows[0].get("size_bytes") is not None:
                 total_size = int(rows[0]["size_bytes"])
         except Exception:
             pass
         try:
-            rows = await self._exec(
-                "SELECT MON$FILE_ID AS FILE_ID, MON$PAGES AS PAGES, "
-                "CAST(MON$PAGE_SIZE AS BIGINT) * MON$PAGES AS SIZE_BYTES "
-                "FROM MON$DATABASE_FILES"
-            )
+            rows = await self._exec_sql(self._database_files_sql())
         except Exception:
             rows = []
         return StorageInfo(
@@ -488,9 +606,7 @@ class AsyncFirebirdStatusIntrospector(FirebirdStatusIntrospectorMixin, AsyncAbst
     async def list_databases(self) -> List[DatabaseBriefInfo]:
         """List databases/schemas."""
         try:
-            rows = await self._exec(
-                "SELECT MON$DATABASE_NAME AS NAME FROM MON$DATABASE"
-            )
+            rows = await self._exec_sql(self._database_name_sql())
         except Exception:
             rows = []
         result = []
@@ -513,10 +629,7 @@ class AsyncFirebirdStatusIntrospector(FirebirdStatusIntrospectorMixin, AsyncAbst
         """List users from RDB$USERS."""
         users: List[UserInfo] = []
         try:
-            rows = await self._exec(
-                "SELECT USER_NAME AS USERNAME FROM RDB$USERS "
-                "WHERE USER_NAME IS NOT NULL ORDER BY USER_NAME"
-            )
+            rows = await self._exec_sql(self._rdb_users_sql())
             for row in rows:
                 name = str(row.get("username", "") or "")
                 if name:
@@ -530,10 +643,7 @@ class AsyncFirebirdStatusIntrospector(FirebirdStatusIntrospectorMixin, AsyncAbst
             pass
         if not users:
             try:
-                rows = await self._exec(
-                    "SELECT DISTINCT MON$USER AS USERNAME FROM MON$ATTACHMENTS "
-                    "WHERE MON$USER IS NOT NULL"
-                )
+                rows = await self._exec_sql(self._attached_users_sql())
                 for row in rows:
                     name = str(row.get("username", "") or "")
                     if name and name != "unknown":
@@ -564,9 +674,10 @@ class AsyncFirebirdStatusIntrospector(FirebirdStatusIntrospectorMixin, AsyncAbst
             password_used=True if user else None,
         )
 
-    async def _exec(self, sql: str) -> List[Dict[str, Any]]:
-        """Execute a query and return list of row dicts (lowercased keys)."""
-        result = await self._backend.execute(sql)
+    async def _exec_sql(self, statement: Tuple[str, tuple]) -> List[Dict[str, Any]]:
+        """Execute a rendered statement and return rows as lowercased dicts."""
+        sql, params = statement
+        result = await self._backend.execute(sql, params or None)
         if result is None or not hasattr(result, "data"):
             return []
         rows = result.data or []

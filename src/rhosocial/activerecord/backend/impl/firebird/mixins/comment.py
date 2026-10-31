@@ -14,6 +14,7 @@ is reported rather than dropped, and quoting has the same owner as everywhere
 else.
 """
 
+from enum import Enum
 from typing import Tuple
 
 from .version_boundaries import _norm_version
@@ -53,9 +54,9 @@ class FirebirdCommentMixin:
     }
 
     def supports_comment_on(self) -> bool:
-        return _norm_version(self.version) >= (2, 5, 0)
+        return self.version_at_least((2, 5, 0))
 
-    def format_comment_statement(self, expr) -> Tuple[str, tuple]:
+    def format_comment_on_statement(self, expr) -> Tuple[str, tuple]:
         """Format COMMENT ON <object> IS 'text' (or IS NULL to remove).
 
         Accepts any comment expression carrying ``object_type``,
@@ -63,7 +64,10 @@ class FirebirdCommentMixin:
         """
         self._check_comment_version("COMMENT ON")
 
-        object_type = getattr(expr.object_type, "value", expr.object_type)
+        # ``object_type`` accepts the enum or its raw spelling.
+        object_type = (
+            expr.object_type.value if isinstance(expr.object_type, Enum) else expr.object_type
+        )
         name = self._format_comment_object_name(expr)
         if expr.comment is None:
             return f"COMMENT ON {object_type} {name} IS NULL", ()
@@ -81,7 +85,9 @@ class FirebirdCommentMixin:
         is -- the owner as the catalogue object it is, the member as a plain
         identifier, since a column and a parameter are not catalogue objects.
         """
-        object_type = getattr(expr.object_type, "value", expr.object_type)
+        object_type = (
+            expr.object_type.value if isinstance(expr.object_type, Enum) else expr.object_type
+        )
 
         if object_type == FirebirdCommentObjectType.COLUMN.value:
             owner, _, member = expr.object_name.rpartition(".")

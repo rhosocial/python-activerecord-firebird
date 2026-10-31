@@ -9,6 +9,8 @@ import sys
 
 from unittest.mock import patch
 
+import pytest
+
 from rhosocial.activerecord.backend.impl.firebird.__main__ import _build_parser
 from rhosocial.activerecord.backend.impl.firebird.cli import COMMAND_NAMES
 
@@ -89,11 +91,11 @@ class TestFirebirdCLIIntrospect:
         assert args.command == "introspect"
         assert args.type == "tables"
 
-    def test_introspect_table_with_name(self):
-        with patch.object(sys, "argv", ["firebird", "introspect", "table", "users"]):
+    def test_introspect_columns_with_name(self):
+        with patch.object(sys, "argv", ["firebird", "introspect", "columns", "users"]):
             args = _build_parser().parse_args()
         assert args.command == "introspect"
-        assert args.type == "table"
+        assert args.type == "columns"
         assert args.name == "users"
 
     def test_introspect_all_valid_types(self):
@@ -118,13 +120,17 @@ class TestFirebirdCLIIntrospect:
         assert args.command == "introspect"
         assert args.output == "json"
 
-    def test_introspect_schema_option(self):
+    def test_introspect_has_no_namespace_flag(self):
+        """Firebird has one unnamed namespace, so there is no level to name.
+
+        A ``--schema`` flag would name something Firebird does not have; it
+        is gone, and this pins that it stays gone rather than returning as an
+        alias for the connection's database.
+        """
         with patch.object(
             sys, "argv", ["firebird", "introspect", "tables", "--schema", "PUBLIC"]
-        ):
-            args = _build_parser().parse_args()
-        assert args.command == "introspect"
-        assert args.schema == "PUBLIC"
+        ), pytest.raises(SystemExit):
+            _build_parser().parse_args()
 
 
 class TestFirebirdCLIInfo:

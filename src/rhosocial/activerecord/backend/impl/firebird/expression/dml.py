@@ -1,9 +1,9 @@
 # src/rhosocial/activerecord/backend/impl/firebird/expression/dml.py
 """Firebird DML-specific expression classes.
 
-``UpdateOrInsertExpression`` wraps the ``UPDATE OR INSERT INTO … MATCHING …``
+``UpdateOrInsertStatement`` wraps the ``UPDATE OR INSERT INTO … MATCHING …``
 statement.  ``AutonomousTransactionDoExpression`` wraps the
-``IN AUTONOMOUS TRANSACTION DO …`` block.  ``ExecuteBlockExpression`` wraps the
+``IN AUTONOMOUS TRANSACTION DO …`` block.  ``ExecuteBlockStatement`` wraps the
 ``EXECUTE BLOCK …`` statement.
 """
 
@@ -15,7 +15,7 @@ if TYPE_CHECKING:  # pragma: no cover
     from rhosocial.activerecord.backend.dialect import SQLDialectBase
 
 
-class UpdateOrInsertExpression(BaseExpression):
+class UpdateOrInsertStatement(BaseExpression):
     """``UPDATE OR INSERT INTO table (cols) VALUES (vals) MATCHING (match)
     [RETURNING …]``.
 
@@ -36,11 +36,15 @@ class UpdateOrInsertExpression(BaseExpression):
         returning_columns: Optional[List[str]] = None,
     ):
         super().__init__(dialect)
+        # Every constructor argument is stored under its own name: the
+        # artifact contract reads a parameter by the name it was declared
+        # with, and a private spelling would make the node unwritable and
+        # unreadable in the same breath.
         self.table = table
-        self._insert_columns = insert_columns
-        self._insert_values = insert_values
-        self._match_columns = match_columns
-        self._returning_columns = returning_columns
+        self.insert_columns = insert_columns
+        self.insert_values = insert_values
+        self.match_columns = match_columns
+        self.returning_columns = returning_columns
 
     @property
     def table_name(self) -> Any:
@@ -49,7 +53,7 @@ class UpdateOrInsertExpression(BaseExpression):
 
     @property
     def format_method(self) -> str:
-        return "format_update_or_insert"
+        return "format_update_or_insert_statement"
 
 
 class AutonomousTransactionDoExpression(BaseExpression):
@@ -57,14 +61,14 @@ class AutonomousTransactionDoExpression(BaseExpression):
 
     def __init__(self, dialect: "SQLDialectBase", block: str):
         super().__init__(dialect)
-        self._block = block
+        self.block = block
 
     @property
     def format_method(self) -> str:
-        return "format_autonomous_transaction_do"
+        return "format_autonomous_transaction_do_expression"
 
 
-class ExecuteBlockExpression(BaseExpression):
+class ExecuteBlockStatement(BaseExpression):
     """``EXECUTE BLOCK (…) AS BEGIN … END``."""
 
     def __init__(
@@ -74,16 +78,16 @@ class ExecuteBlockExpression(BaseExpression):
         params: Optional[Dict[str, Any]] = None,
     ):
         super().__init__(dialect)
-        self._block = block
-        self._params = params
+        self.block = block
+        self.params = params
 
     @property
     def format_method(self) -> str:
-        return "format_execute_block"
+        return "format_execute_block_statement"
 
 
 __all__ = [
-    "UpdateOrInsertExpression",
+    "UpdateOrInsertStatement",
     "AutonomousTransactionDoExpression",
-    "ExecuteBlockExpression",
+    "ExecuteBlockStatement",
 ]

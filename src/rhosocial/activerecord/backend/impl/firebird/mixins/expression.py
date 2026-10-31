@@ -6,9 +6,8 @@ from typing import Any, Optional, Tuple, TYPE_CHECKING
 from rhosocial.activerecord.backend.expression.types import DataType
 
 if TYPE_CHECKING:
-    from rhosocial.activerecord.backend.expression import bases
     from rhosocial.activerecord.backend.expression.advanced_functions import CaseExpression
-    from rhosocial.activerecord.backend.expression.operators import BinaryArithmeticExpression
+    from rhosocial.activerecord.backend.expression.operators import ArithmeticOperation
 
 
 class FirebirdExpressionMixin:
@@ -78,10 +77,10 @@ class FirebirdExpressionMixin:
         """
         from rhosocial.activerecord.backend.expression.core import CastExpression, Literal
 
-        value = getattr(expr, "value", None)
-        cases = getattr(expr, "cases", [])
-        else_result = getattr(expr, "else_result", None)
-        alias = getattr(expr, "alias", None)
+        value = expr.value
+        cases = expr.cases
+        else_result = expr.else_result
+        alias = expr.alias
 
         wrapped_cases = []
         for condition, result in cases:
@@ -109,27 +108,29 @@ class FirebirdExpressionMixin:
         wrapped_expr = CaseExpression(self, value=value, cases=wrapped_cases, else_result=wrapped_else, alias=alias)
         return super().format_case_expression(wrapped_expr)
 
-    def format_binary_arithmetic_expression(self, expr: "BinaryArithmeticExpression") -> Tuple[str, tuple]:
-        """Format a binary arithmetic expression with typed phantom parameters.
+    def format_arithmetic_operation(self, expr: "ArithmeticOperation") -> Tuple[str, tuple]:
+        """Format an arithmetic operation with typed phantom parameters.
 
         Firebird cannot infer the type of a ``?`` parameter used inside an
         arithmetic expression (e.g. ``col + ?`` raises -804 Data type unknown).
         Wrap literal ``?`` operands in an explicit CAST based on the bound value.
+
+        The entry point itself is the core's current name (``cf7972d9``):
+        the node declares ``format_arithmetic_operation``, and this method
+        carried the older ``format_binary_arithmetic_expression`` spelling,
+        which nothing dispatched to -- the operand wrapping below never
+        reached the server through it.
         """
-        from rhosocial.activerecord.backend.expression.operators import BinaryArithmeticExpression
+        from rhosocial.activerecord.backend.expression.operators import ArithmeticOperation
 
-        left = expr.left
-        right = expr.right
-        op = expr.op
+        left = self._maybe_cast_operand(expr.left)
+        right = self._maybe_cast_operand(expr.right)
 
-        # Cast literal operands that Firebird can't type-infer
-        left = self._maybe_cast_operand(left)
-        right = self._maybe_cast_operand(right)
-
-        # Rebuild expression with wrapped operands
-        wrapped = BinaryArithmeticExpression(self, op, left, right)
-        wrapped.alias = getattr(expr, 'alias', None)
-        return super().format_binary_arithmetic_expression(wrapped)
+        # Rebuild with the wrapped operands; the alias rides along because
+        # the base renderer reads it off the node it is handed.
+        wrapped = ArithmeticOperation(self, expr.op, left, right)
+        wrapped.alias = expr.alias
+        return super().format_arithmetic_operation(wrapped)
 
     def _maybe_cast_operand(self, operand):
         """Wrap a Literal operand in CastExpression if Firebird needs explicit typing."""
@@ -152,41 +153,25 @@ class FirebirdExpressionMixin:
         before rendering (because the base formatter accesses node-specific
         attributes that CastExpression doesn't carry).
         """
-        if not self._validate_data_type(target_type):
-            raise ValueError(
-                f"Invalid target type '{target_type}': "
-                "must contain only alphanumeric characters, spaces, parentheses, and commas."
-            )
+        from rhosocial.activerecord.backend.expression.type_name import (
+            validate_type_name,
+        )
+
+        validate_type_name(target_type)
         sql = f"CAST({inner_sql} AS {target_type})"
         if alias:
             sql = f"{sql} AS {self.format_identifier(alias)}"
         return sql, inner_params
 
-    def format_function_call(self, expr: "bases.BaseExpression") -> Tuple[str, tuple]:
-        """Format a function call, remapping names Firebird does not provide.
-
-        Firebird 5 does not expose a ``LENGTH`` scalar function (the name is a
-        reserved keyword); the canonical length function is ``CHAR_LENGTH`` for
-        characters and ``OCTET_LENGTH`` for bytes.
-
-        Firebird 5/6-snapshot fails to infer the result type of ``SUM``/``AVG``
-        over a ``DECIMAL`` column ("Data type unknown" at prepare time), so the
-        aggregate result is explicitly cast to ``DECIMAL(18,2)`` to pin the
-        return type. This matches the precision used by the testsuite schemas.
-        """
-        func_name = getattr(expr, "func_name", None)
-        if isinstance(func_name, str) and func_name.upper() == "LENGTH":
-            expr.func_name = "CHAR_LENGTH"
-            try:
-                return super().format_function_call(expr)
-            finally:
-                expr.func_name = func_name
-        if isinstance(func_name, str) and func_name.upper() in ("SUM", "AVG"):
-            saved_alias = expr.alias
-            expr.alias = None
-            try:
-                inner_sql, inner_params = super().format_function_call(expr)
-            finally:
-                expr.alias = saved_alias
-            return self._cast_sql(inner_sql, inner_params, "DECIMAL(18,2)", saved_alias)
-        return super().format_function_call(expr)
+    # ``format_function_call`` is overridden on FirebirdFunctionMixin: the
+    # generic entry point does not serve user-defined functions alone, and
+    # the SUM/AVG pin lives there -- a plain ``FunctionCall`` naming those
+    # aggregates reaches this renderer with the same grammar the classed
+    # entry points take, and the server's "Data type unknown" refusal is a
+    # fact about the aggregate, not about the node class that spelled it
+    # (the window tests' ``FunctionCall(dialect, "SUM", ..., window_spec=...)``
+    # is the counter-example that motivated it). ``format_char_length_function``
+    # and ``format_sum_function`` / ``format_avg_function`` stay on
+    # FirebirdFunctionMixin beside it; what still reaches the core's generic
+    # renderer unmodified is a UDF, whose name is the user's own and none of
+    # this backend's business.

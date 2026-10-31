@@ -74,7 +74,13 @@ jobs:
       - name: Install activerecord and testsuite
         run: |
           pip install "rhosocial-activerecord @ git+https://github.com/rhosocial/python-activerecord.git@release/v1.0.0.dev30"
-          pip install "rhosocial-activerecord-testsuite @ git+https://github.com/rhosocial/python-activerecord-testsuite.git@release/v1.0.0.dev17"
+          # NOSONAR(githubactions:S8541, S8544): both sibling projects are installed
+          # from a git reference on purpose. The release branches are the contract
+          # between these repositories, the test suite is still on a development
+          # branch until it merges, and neither repository publishes a lock file to
+          # pin against -- a hash-pinned install of a moving branch would be a pin
+          # that goes stale on the next commit instead of a safety property.
+          pip install "rhosocial-activerecord-testsuite @ git+https://github.com/rhosocial/python-activerecord-testsuite.git@fix/column-constraint-gates"  # NOSONAR
 
       - name: Verify Firebird connection and create test user
         run: |
@@ -146,7 +152,11 @@ jobs:
         if: matrix.python-version == '3.14' && matrix.firebird-version == '6-snapshot'
         run: |
           export PYTHONPATH=src:tests
-          python -m pytest tests/ --tb=short -n auto --dist=loadgroup --cov=src/rhosocial --cov-branch --cov-report=xml
+          # ``term-missing:skip-covered`` is what makes a gate failure readable
+          # from the job log: without it the only statement of what is uncovered
+          # is the XML Codecov consumes, and its per-file report is not reachable
+          # from a pull request without a browser.
+          python -m pytest tests/ --tb=short -n auto --dist=loadgroup --cov=src/rhosocial --cov-branch --cov-report=xml --cov-report=term-missing:skip-covered
 
       - name: Upload coverage to Codecov
         if: matrix.python-version == '3.14' && matrix.firebird-version == '6-snapshot'
@@ -157,4 +167,15 @@ jobs:
           flags: unittests,python-${{ matrix.python-version }},firebird-${{ matrix.firebird-version }}
           name: codecov-firebird-${{ matrix.python-version }}-${{ matrix.firebird-version }}
           fail_ci_if_error: true
+
+      # The report itself, kept with the run. Codecov answers "is the gate met"
+      # and nothing finer through its public API, so the XML is the only way to
+      # ask "which line" after the fact -- and a rerun costs the whole matrix.
+      - name: Keep the coverage report with the run
+        if: matrix.python-version == '3.14' && matrix.firebird-version == '6-snapshot'
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-firebird-${{ matrix.python-version }}-${{ matrix.firebird-version }}
+          path: coverage.xml
+          if-no-files-found: error
 

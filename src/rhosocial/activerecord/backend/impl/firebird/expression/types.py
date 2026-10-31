@@ -2,9 +2,7 @@
 """Firebird-specific DDL DataType subclasses."""
 
 import re
-from typing import Tuple
 
-from rhosocial.activerecord.backend.expression.serialization import ExpressionRegistry
 from rhosocial.activerecord.backend.expression.types import (
     BigIntType,
     BinaryType,
@@ -26,122 +24,6 @@ from rhosocial.activerecord.backend.expression.types import (
     VarBinaryType,
     VarCharType,
 )
-
-
-class FirebirdDecimalType(DecimalType):
-    """Firebird ``DECIMAL(p, s)`` — exact fixed-point, written by name.
-
-    Firebird's grammar spells this concept three ways — ``NUMERIC``,
-    ``DECIMAL`` and ``DEC`` — all of which are in :attr:`DecimalType.SPELLINGS`,
-    so the storage is the generic concept's and only the word written differs.
-    Deriving from :class:`DecimalType` is what lets
-    ``isinstance(col.data_type, DecimalType)`` answer for a column declared
-    through this class too.
-
-    The namespaced ``name`` stays ``firebird_decimal`` because a schema diff
-    compares the DDL that was actually written.
-    """
-
-    name = "firebird_decimal"
-
-
-class FirebirdFloatType(FloatType):
-    """Firebird ``FLOAT[(bin_prec)]`` — binary approximate numeric.
-
-    Firebird's ``FLOAT`` is not one width. The language reference's declaration
-    syntax is ``REAL | FLOAT [(bin_prec)] | DOUBLE PRECISION`` (§3.12.1) and
-    its numeric-types entry gives ``FLOAT (bin_prec)`` as "32 bits or 64 bits",
-    with ``bin_prec`` documented as "precision in binary digits, default is 24;
-    1 - 24: 32-bit single precision; 25 - 53: 64-bit double precision"
-    (§3.2.1.1). ``REAL`` is Firebird's own synonym for the bare ``FLOAT``
-    (§3.1, Table 3.1). That is exactly the shape of the generic
-    :class:`FloatType` (``FLOAT[(p)]``), so the binary precision *is* the type
-    and this derives from it rather than from :class:`DoubleType`: ``FLOAT(53)``
-    and ``DOUBLE PRECISION`` are the same storage written two ways, but
-    ``FLOAT(24)`` and ``FLOAT(53)`` are two different columns and only the
-    precision field tells them apart.
-
-    So ``precision`` is **honoured**, never dropped — see
-    ``FirebirdTypeSupportMixin.format_data_type_firebird_float``.
-
-    This class and the generic :class:`FloatType` are the same Firebird type under
-    two dispatch keys (the arrangement ``decimal`` / ``firebird_decimal`` and
-    ``char`` / ``firebird_char`` also have), so their two formatters must give
-    the same answer for the same precision on both sides of the version boundary.
-    They share ``_validate_firebird_float`` for exactly that; it used to be this
-    one alone, and the generic renderer accepted 1..24 ungated while this one took
-    1..53 behind a 4.0 gate.
-
-    The precision is also **version-dependent**, which is the reason the
-    formatter refuses rather than guesses. Firebird 4.0 release notes, tracker
-    CORE-6109, "FLOAT datatype is now SQL standard compliant": *"FLOAT(p)
-    definition is changed to represent precision in binary digits (as defined by
-    the SQL specification) rather than in decimal digits as before."* The 3.0
-    reference's declaration syntax is ``SMALLINT | INT[EGER] | BIGINT | FLOAT |
-    DOUBLE PRECISION | ...`` — no argument at all — and the 4.0 one is ``REAL |
-    FLOAT [(bin_prec)] | DOUBLE PRECISION``. So the *same* string names a
-    different column before and after 4.0 — ``FLOAT(10)`` was a ten-decimal-digit
-    float and is now a ten-bit float — and a backend that cannot tell which server
-    it is talking to has no honest way to write one. The bare ``FLOAT`` means the
-    same thing in both (32-bit single precision: 4 bytes and a documented 7
-    decimal digits in 3.0, ``bin_prec`` 24 from 4.0), so it is the one spelling
-    that needs no gate.
-    """
-
-    name = "firebird_float"
-
-
-class FirebirdDoubleType(DoubleType):
-    """Firebird ``DOUBLE PRECISION`` — binary approximate numeric, 53-bit
-    mantissa.
-
-    Derived from :class:`DoubleType`, which is the concept: SQL's
-    ``DOUBLE PRECISION`` is a double, its dispatch key is ``firebird_double``,
-    and it is rendered as ``DOUBLE PRECISION``. It was previously derived from
-    :class:`FloatType` on the reasoning that "binary approximate numeric of a
-    stated precision" covers both — but that reasoning makes the key lie, since
-    stripping ``firebird_`` leaves ``double``, and the class would then claim to
-    be something it is not. :class:`FirebirdFloatType` remains on ``FloatType``:
-    Firebird's ``FLOAT(bin_prec)`` really is a precision-bearing approximate
-    numeric, which is a different concept.
-    """
-
-    name = "firebird_double"
-
-
-class FirebirdBlobSubType(IntegerType):
-    """Firebird ``BLOB SUB_TYPE`` — the sub-type tag of a ``BLOB`` column.
-
-    What is stored is an integer: Firebird keeps the sub-type (0 untyped /
-    binary, 1 text, the rest reserved) in ``RDB$FIELDS.RDB$FIELD_SUB_TYPE`` as a
-    plain non-negative ``SMALLINT`` and reads it back as one. So the *value* is
-    the integer concept and :class:`IntegerType` is the base that says so; what
-    the formatter writes is ``BLOB SUB_TYPE TEXT`` because that integer is part
-    of a BLOB's declaration, not a column of its own.
-
-    :attr:`PARAMETERS` is deliberately **empty**, overriding the
-    ``("unsigned",)`` the base declares. Signedness is not a property this
-    concept has: the language reference says so outright under Integer Data
-    Types (chapter 3, §3.1) — *"Firebird does not support an unsigned integer
-    data type"* — and the BLOB declaration grammar is ``BLOB [SUB_TYPE
-    {subtype_num | subtype_name}] [SEGMENT SIZE seglen] [CHARACTER SET
-    charset]``, which carries no modifier of any kind. A sub-type tag has
-    neither a width that varies nor a sign bit, so there is nothing here that
-    could make two of these different columns and :attr:`PARAMETERS` is empty.
-
-    Left inherited, ``unsigned`` would be an identity field that no rendering
-    consults — two declarations the value object calls different, rendered as
-    one column. That is the one answer a dialect may never give, so the field is
-    not merely ignored: the base's constructor still accepts it (that is the
-    inherited signature), and every formatter for an integer here refuses
-    ``unsigned=True`` **by name** rather than writing the signed column and
-    reporting success. See
-    ``FirebirdTypeSupportMixin._check_firebird_signed``.
-    """
-
-    name = "firebird_blob_subtype"
-
-    PARAMETERS = ()
 
 
 class FirebirdCharType(CharType):
@@ -272,8 +154,8 @@ class FirebirdDecFloatType(DecimalType):
     **Not** a variant of the binary approximate types. ``DECFLOAT`` is IEEE 754
     decimal floating-point: every value is held exactly as a coefficient times a
     power of ten, so ``0.1`` is the same number as the literal ``0.1`` — which is
-    the property :class:`DecimalType` exists for. ``FirebirdFloatType`` and
-    :class:`FirebirdDoubleType` are binary approximate and hold a *different*
+    the property :class:`DecimalType` exists for. :class:`FloatType` and
+    :class:`DoubleType` are binary approximate and hold a *different*
     number than their decimal-looking literals, so deriving from
     :class:`FloatType` would put this on the wrong side of that line.
 
@@ -548,24 +430,13 @@ def _parse_firebird_data_type_name(value: str) -> DataType:
     raise ValueError("data_type_name contains unsupported Firebird type syntax")
 
 
-ExpressionRegistry.register(FirebirdDecimalType)
-ExpressionRegistry.register(FirebirdFloatType)
-ExpressionRegistry.register(FirebirdDoubleType)
-ExpressionRegistry.register(FirebirdBlobSubType)
-ExpressionRegistry.register(FirebirdCharType)
-ExpressionRegistry.register(FirebirdVarCharType)
-ExpressionRegistry.register(FirebirdTimeStampTzType)
-ExpressionRegistry.register(FirebirdTimeTzType)
-ExpressionRegistry.register(FirebirdTimeWithoutTimeZoneType)
-ExpressionRegistry.register(FirebirdDecFloatType)
-ExpressionRegistry.register(FirebirdInt128Type)
+# No registration calls: the class-path index they fed was removed with the
+# kind-based artifact format (core ``ee5f4b55``). A registry is assembled from
+# the framework's packages at first deserialization; a deployment that wants
+# to read this backend's own kinds registers them into a registry of its own.
 
 
 __all__ = [
-    "FirebirdDecimalType",
-    "FirebirdFloatType",
-    "FirebirdDoubleType",
-    "FirebirdBlobSubType",
     "FirebirdCharType",
     "FirebirdVarCharType",
     "FirebirdTimeStampTzType",

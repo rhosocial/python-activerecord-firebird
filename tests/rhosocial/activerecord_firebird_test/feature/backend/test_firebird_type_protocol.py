@@ -34,7 +34,7 @@ system and the Firebird backend:
   every rendered formatter must find an *empty* set — ``unsigned`` is refused by
   name everywhere an integer renders, ``BLOB SUB_TYPE`` carries an empty
   ``PARAMETERS`` because a sub-type tag has no signedness,
-  ``FirebirdFloatType``'s ``precision`` reaches the rendered ``FLOAT(bin_prec)``,
+  ``FloatType``'s ``precision`` reaches the rendered ``FLOAT(bin_prec)``,
   and every date-time ``precision`` is refused by name because Firebird's grammar
   has no argument for it. There is no allowlist of known-unread fields;
 - the two Firebird 4 catalog codes that were missing from ``FB_FIELD_TYPES``
@@ -73,12 +73,8 @@ from rhosocial.activerecord.backend.impl.firebird.mixins.types import (
     FirebirdTypeSupportMixin,
 )
 from rhosocial.activerecord.backend.impl.firebird.expression.types import (
-    FirebirdBlobSubType,
     FirebirdCharType,
-    FirebirdDecimalType,
     FirebirdDecFloatType,
-    FirebirdDoubleType,
-    FirebirdFloatType,
     FirebirdInt128Type,
     FirebirdTimeStampTzType,
     FirebirdTimeTzType,
@@ -152,14 +148,25 @@ class TestSupportsDataTypesMapping:
 
     def test_includes_firebird_namespaced_entries(self, dialect):
         supported = dialect.supports_data_types()
-        assert "firebird_decimal" in supported
-        assert "firebird_float" in supported
-        assert "firebird_double" in supported
-        assert "firebird_blob_subtype" in supported
         assert "firebird_timestamptz" in supported
         assert "firebird_timetz" in supported
         assert "firebird_decfloat" in supported
         assert "firebird_int128" in supported
+
+    def test_a_second_key_for_the_same_storage_is_not_offered(self, dialect):
+        """``decimal``/``float``/``double``/``text`` have no Firebird-named twin.
+
+        There used to be one for each. They rendered byte-identical SQL while
+        ``DataType.__eq__`` — ``type(self) is type(other)`` — called a declaration
+        and the row it produced *different*, so the differ reported an unchanged
+        column as changed. Firebird spells these four with one word each, so there
+        is no dialect name that would justify a second key; the core entry is the
+        only one, and ``parse_type`` returns that same class.
+        """
+        supported = dialect.supports_data_types()
+        for key in ("firebird_decimal", "firebird_float",
+                    "firebird_double", "firebird_blob_subtype"):
+            assert key not in supported, key
 
     def test_includes_core_entries(self, dialect):
         supported = dialect.supports_data_types()
@@ -618,11 +625,7 @@ class TestDialectIsTheFirstConstructorArgument:
         FirebirdTimeStampTzType,
         FirebirdTimeTzType,
         FirebirdTimeWithoutTimeZoneType,
-        FirebirdDecimalType,
-        FirebirdFloatType,
-        FirebirdDoubleType,
-        FirebirdBlobSubType,
-        FirebirdInt128Type,
+                        FirebirdInt128Type,
     ])
     def test_dialect_only_classes_keep_the_dialect(self, cls):
         instance = cls(FirebirdDialect((4, 0, 0)))
@@ -660,7 +663,7 @@ class TestDialectRangeValidation:
         half ("25 - 53: 64-bit double precision"), so the old assertion refused a
         column Firebird declares while
         :meth:`TestFirebirdFloatHonoursItsPrecision` — checking the same range
-        against ``FirebirdFloatType`` — accepted it. One Firebird type, two
+        against ``FloatType`` — accepted it. One Firebird type, two
         answers, and the stricter one was simply wrong.
         """
         for precision in (0, 54):
@@ -688,41 +691,39 @@ class TestDialectRangeValidation:
         digits where it had counted *decimal* ones. So ``FLOAT(10)`` names two
         different columns either side of that boundary, and the generic
         ``FloatType`` renderer refuses the argument below 4.0 exactly as
-        ``FirebirdFloatType`` does.
+        ``FloatType`` does.
         """
         with pytest.raises(UnsupportedFeatureError, match="FLOAT"):
             dialect_3.format_data_type(FloatType(precision=24))
 
     def test_both_float_renderers_agree_on_every_precision(self, dialect,
                                                             dialect_3):
-        """The defect: two renderers, one Firebird type, two answers.
+        """One Firebird type, and the spelling each precision renders to.
 
         Checked against the whole accepted range and both sides of the version
-        boundary rather than case by case, because the way this failed was a
-        single case disagreeing — ``FloatType(precision=25)`` raising while
-        ``FirebirdFloatType(precision=25)`` rendered.
+        boundary rather than case by case: the argument is *binary* precision on
+        4.0 and does not exist before it, so a renderer that accepted it on 3.0,
+        or spelled it as anything but ``FLOAT(n)``, would be wrong in exactly
+        one place — which is how this failed before.
         """
         for precision in (1, 12, 24, 25, 40, 53):
             assert dialect.format_data_type(FloatType(precision=precision)) == (
-                dialect.format_data_type(
-                    FirebirdFloatType(precision=precision)
-                )
+                f"FLOAT({precision})",
+                (),
             )
         for precision in (0, 54):
             with pytest.raises(ValueError):
                 dialect.format_data_type(FloatType(precision=precision))
-            with pytest.raises(ValueError):
-                dialect.format_data_type(FirebirdFloatType(precision=precision))
         for precision in (24, 53):
             with pytest.raises(UnsupportedFeatureError):
                 dialect_3.format_data_type(FloatType(precision=precision))
-            with pytest.raises(UnsupportedFeatureError):
-                dialect_3.format_data_type(FirebirdFloatType(precision=precision))
         # Bare FLOAT means the same thing in both renderers and needs no gate:
-        # 32-bit single precision, 4 bytes, in every Firebird version.
+        # 32-bit single precision, 4 bytes, in every Firebird version. It is
+        # also the one case both version fixtures can render, so the two are
+        # compared here rather than left to agree by coincidence.
         assert dialect_3.format_data_type(FloatType()) == ("FLOAT", ())
-        assert dialect_3.format_data_type(FloatType()) == dialect_3.format_data_type(
-            FirebirdFloatType()
+        assert dialect.format_data_type(FloatType()) == dialect_3.format_data_type(
+            FloatType()
         )
 
 
@@ -921,17 +922,13 @@ class TestIdentityFieldsAreHonouredOrRefused:
             cls(unsigned=False)
         )
 
-    #: Every exact/approximate numeric formatter on this backend — the four core
-    #: dispatch keys and Firebird's own three, which are the same three storages
-    #: under three more names. All seven must refuse.
+    #: Every exact/approximate numeric formatter on this backend. All four must
+    #: refuse.
     _NUMERIC_CONCEPTS = [
         ("decimal", DecimalType, "DECIMAL"),
         ("float", FloatType, "FLOAT"),
         ("real", RealType, "FLOAT"),
         ("double", DoubleType, "DOUBLE PRECISION"),
-        ("firebird_decimal", FirebirdDecimalType, "DECIMAL"),
-        ("firebird_float", FirebirdFloatType, "FLOAT"),
-        ("firebird_double", FirebirdDoubleType, "DOUBLE PRECISION"),
     ]
 
     @pytest.mark.parametrize("name,cls,signed_sql", _NUMERIC_CONCEPTS,
@@ -945,7 +942,7 @@ class TestIdentityFieldsAreHonouredOrRefused:
         honour *or* refuse and an unsigned declaration rendered the signed column
         while the framework's own ``==`` called the two different columns. Core now
         puts ``unsigned`` on all four exact/approximate numerics for the same
-        reason it puts it on the integer widths, so all seven of these formatters
+        reason it puts it on the integer widths, so all four of these formatters
         refuse instead.
         """
         with pytest.raises(UnsupportedFeatureError) as excinfo:
@@ -1066,38 +1063,6 @@ class TestIdentityFieldsAreHonouredOrRefused:
         with pytest.raises(UnsupportedFeatureError):
             dialect.format_data_type(DecimalType(dialect, unsigned=True))
 
-    def test_blob_sub_type_declares_an_empty_identity(self, dialect):
-        """``BLOB SUB_TYPE TEXT`` has no field that can make two of them differ.
-
-        A sub-type tag is a non-negative integer (0 untyped/binary, 1 text, the
-        rest reserved) stored in ``RDB$FIELDS.RDB$FIELD_SUB_TYPE``; the Firebird
-        BLOB grammar — ``BLOB [SUB_TYPE {subtype_num | subtype_name}] [SEGMENT
-        SIZE seglen] [CHARACTER SET charset]`` — carries no modifier of any kind.
-        So ``PARAMETERS`` is narrowed from the base's ``("unsigned",)`` to
-        ``()``: a text blob has neither a width that varies nor a sign bit.
-        """
-        assert IntegerType.PARAMETERS == ("unsigned",)
-        assert FirebirdBlobSubType.PARAMETERS == ()
-        assert FirebirdBlobSubType().identity() == ()
-
-    def test_blob_sub_type_still_renders_unchanged(self, dialect):
-        assert dialect.format_data_type(FirebirdBlobSubType()) == (
-            "BLOB SUB_TYPE TEXT", ()
-        )
-
-    def test_blob_sub_type_unsigned_is_refused_not_ignored(self, dialect):
-        """The inherited constructor still accepts ``unsigned``; this stops it.
-
-        Narrowing ``PARAMETERS`` alone would have removed the field from equality
-        while leaving the constructor accepting and discarding it — the same
-        silent drop, one level down. Rendering must raise instead.
-        """
-        assert FirebirdBlobSubType(unsigned=True) == FirebirdBlobSubType(
-            unsigned=False
-        ), "with an empty identity these are the same declaration"
-        with pytest.raises(UnsupportedFeatureError, match="UNSIGNED"):
-            dialect.format_data_type(FirebirdBlobSubType(unsigned=True))
-
     def test_every_identity_field_is_read(self, dialect):
         """The general form of the rule, checked over every formatter.
 
@@ -1143,7 +1108,7 @@ class TestIdentityFieldsAreHonouredOrRefused:
         )
         unread = set()
         for key in keys:
-            klass = dialect._type_class_for(key)
+            klass = dialect.type_class_for(key)
             if klass is None:
                 continue
             body = formatter_and_helpers(key)
@@ -1172,17 +1137,17 @@ class TestIdentityFieldsAreHonouredOrRefused:
         ``unsigned``, "no ``firebird_*`` type declares it" was a single assertion.
         Core now puts ``unsigned`` on ``DecimalType``, ``FloatType``,
         ``DoubleType`` and ``RealType`` as well, and
-        :class:`FirebirdDecimalType`, :class:`FirebirdFloatType` and
-        :class:`FirebirdDoubleType` inherit it — correctly, because they *are*
+        :class:`DecimalType`, :class:`FloatType` and
+        :class:`DoubleType` inherit it — correctly, because they *are*
         those concepts under this backend's own dispatch keys, and Firebird refuses
         the flag on each of them rather than pretending.
 
-        What must stay true is the narrower, stronger statement: the one
-        Firebird-owned concept whose base has **no** signedness must not have one
-        put into it — exactly what
-        :meth:`test_blob_sub_type_declares_an_empty_identity` removes from
-        ``firebird_blob_subtype`` — and every ``firebird_*`` type which *does*
-        declare it must refuse it rather than drop it.
+        What must stay true is the narrower, stronger statement: a
+        Firebird-owned concept must not *invent* a signedness its base does not
+        have. The ``firebird_*`` keys left are exactly the ones that carry no
+        field of the kind — the two character types, the three zoned temporal
+        types, ``decfloat`` and ``int128`` — so none of them may declare
+        ``unsigned``, and none of them may silently drop one either.
         """
         keys = (
             member[len("format_data_type_"):]
@@ -1191,7 +1156,7 @@ class TestIdentityFieldsAreHonouredOrRefused:
         )
         declaring, silent = set(), set()
         for key in keys:
-            klass = dialect._type_class_for(key) or DataType
+            klass = dialect.type_class_for(key) or DataType
             if "unsigned" not in klass.PARAMETERS:
                 continue
             declaring.add(key)
@@ -1200,10 +1165,9 @@ class TestIdentityFieldsAreHonouredOrRefused:
             except UnsupportedFeatureError:
                 continue                       # refused — the other legal answer
             silent.add(key)
-        # These three *are* the core concepts, under this backend's own words, so
-        # they are expected to carry the field and to refuse it.
-        assert declaring == {"firebird_decimal", "firebird_double",
-                             "firebird_float"}, sorted(declaring)
+        # The numeric concepts are reached through their core keys, where the
+        # refusal is covered by _NUMERIC_CONCEPTS above.
+        assert declaring == set(), sorted(declaring)
         assert not silent, (
             f"these declare unsigned in identity and render it as nothing: "
             f"{sorted(silent)}"
@@ -1230,8 +1194,8 @@ class TestFirebirdFloatHonoursItsPrecision:
         FLOAT", and ``bin_prec`` a default of 24, which is the same thing said
         three ways.
         """
-        assert dialect.format_data_type(FirebirdFloatType()) == ("FLOAT", ())
-        assert dialect.format_data_type(FirebirdFloatType(precision=None)) == (
+        assert dialect.format_data_type(FloatType()) == ("FLOAT", ())
+        assert dialect.format_data_type(FloatType(precision=None)) == (
             "FLOAT", ()
         )
 
@@ -1239,14 +1203,14 @@ class TestFirebirdFloatHonoursItsPrecision:
     def test_precision_reaches_the_rendered_sql(self, dialect, precision):
         """The point of the fix: flipping the field changes the declaration."""
         assert dialect.format_data_type(
-            FirebirdFloatType(precision=precision)
+            FloatType(precision=precision)
         ) == (f"FLOAT({precision})", ())
 
     def test_flipping_the_precision_changes_the_column(self, dialect):
         """Before the fix both rendered ``FLOAT`` while ``__eq__`` called them
         different columns — the identity object and the DDL disagreeing."""
-        single = FirebirdFloatType(precision=24)
-        double = FirebirdFloatType(precision=53)
+        single = FloatType(precision=24)
+        double = FloatType(precision=53)
         assert single != double
         assert dialect.format_data_type(single)[0] != dialect.format_data_type(
             double
@@ -1256,7 +1220,7 @@ class TestFirebirdFloatHonoursItsPrecision:
     def test_precision_outside_the_documented_range_raises(self, dialect,
                                                            precision):
         with pytest.raises(ValueError, match="between 1 and 53"):
-            dialect.format_data_type(FirebirdFloatType(precision=precision))
+            dialect.format_data_type(FloatType(precision=precision))
 
     def test_no_scale_is_declared_or_expected(self, dialect):
         """``FLOAT`` takes a precision, a signedness and nothing else.
@@ -1272,10 +1236,10 @@ class TestFirebirdFloatHonoursItsPrecision:
         distinction the two fields show: a field with a slot in the grammar is
         honoured, a field without one is refused, and neither is dropped.
         """
-        assert FirebirdFloatType.PARAMETERS == ("precision", "unsigned")
-        assert not hasattr(FirebirdFloatType(), "scale")
+        assert FloatType.PARAMETERS == ("precision", "unsigned")
+        assert not hasattr(FloatType(), "scale")
         with pytest.raises(UnsupportedFeatureError, match="UNSIGNED"):
-            dialect.format_data_type(FirebirdFloatType(unsigned=True))
+            dialect.format_data_type(FloatType(unsigned=True))
 
     def test_precision_is_refused_below_firebird_4(self, dialect_3):
         """CORE-6109: before 4.0, ``FLOAT(p)`` counted *decimal* digits.
@@ -1286,29 +1250,34 @@ class TestFirebirdFloatHonoursItsPrecision:
         meaning is a coin toss, so the field is refused below 4.0 by name.
         """
         with pytest.raises(UnsupportedFeatureError, match="FLOAT"):
-            dialect_3.format_data_type(FirebirdFloatType(precision=24))
+            dialect_3.format_data_type(FloatType(precision=24))
 
     def test_bare_float_needs_no_version_gate(self, dialect_3):
         """``FLOAT`` alone means single precision on both sides of 4.0."""
-        assert dialect_3.format_data_type(FirebirdFloatType()) == ("FLOAT", ())
-        assert dialect_3.format_data_type(FirebirdFloatType()) == (
-            FirebirdDialect((4, 0, 0)).format_data_type(FirebirdFloatType())
+        assert dialect_3.format_data_type(FloatType()) == ("FLOAT", ())
+        assert dialect_3.format_data_type(FloatType()) == (
+            FirebirdDialect((4, 0, 0)).format_data_type(FloatType())
         )
 
     def test_the_support_flag_stays_ungated(self, dialect, dialect_3):
         """The flag is about the *type*, and ``FLOAT`` exists on Firebird 3.
 
-        Only the argument needs 4.0, and gating the flag would drop ``firebird
-        _float`` from ``supports_data_types()`` on an older dialect even though
-        it renders there.
+        Only the argument needs 4.0, and gating the flag would drop ``float``
+        from ``supports_data_types()`` on an older dialect even though it
+        renders there.
         """
-        assert dialect.supports_data_type_firebird_float() is True
-        assert dialect_3.supports_data_type_firebird_float() is True
-        assert "firebird_float" in dialect_3.supports_data_types()
+        assert dialect.supports_data_type_float() is True
+        assert dialect_3.supports_data_type_float() is True
+        assert "float" in dialect_3.supports_data_types()
 
     def test_docstring_records_the_documentation_facts(self):
-        """The reasoning must be written down, with the version boundary in it."""
-        doc = FirebirdFloatType.__doc__ or ""
+        """The reasoning must be written down, with the version boundary in it.
+
+        It lives on this backend's formatter rather than on the class, because
+        the version boundary is a fact about Firebird and not about the concept:
+        core's ``FloatType`` docstring says nothing about ``bin_prec``.
+        """
+        doc = FirebirdTypeSupportMixin.format_data_type_float.__doc__ or ""
         assert "bin_prec" in doc
         assert "CORE-6109" in doc
 
@@ -1668,12 +1637,14 @@ class TestParseRoundTripSweep:
         "RealType": "FloatType",
         # A parameter normalisation on the same class (the default length).
         "VarCharType": "VarCharType",
-        # The backend's own classes parse back to the concept that shares
-        # their storage; each re-renders the identical string.
-        "FirebirdBlobSubType": "TextType",
-        "FirebirdDecimalType": "DecimalType",
-        "FirebirdDoubleType": "DoubleType",
-        "FirebirdFloatType": "FloatType",
+        # These parse back to themselves now. They used to be reached through a
+        # Firebird-named class that rendered the identical string; the second key
+        # was removed rather than kept, because a class differing only in its name
+        # makes a declaration and the catalog row it produced compare unequal.
+        "TextType": "TextType",
+        "DecimalType": "DecimalType",
+        "DoubleType": "DoubleType",
+        "FloatType": "FloatType",
         # The documented written-form differences: the character set is a
         # column attribute in Firebird, not part of the type's identity, so
         # the parse answers the concept and the re-render states the default
@@ -1708,9 +1679,11 @@ class TestParseRoundTripSweep:
         return registry
 
     def test_every_rendered_type_parses_back_coherently(self, dialect, registry):
-        from rhosocial.activerecord.testsuite.utils.parse_contract import (
-            parse_roundtrip_failures,
-        )
+        # This repository's own harness, not the suite's ``parse_contract``:
+        # that module imported ``make_instance`` from the ``utils/expression``
+        # the suite deleted in ``e05edb0``, so importing it raises rather than
+        # answering. The sweep itself moved here with the rest of the harness.
+        from expression_roundtrip_harness import parse_roundtrip_failures
 
         failures = parse_roundtrip_failures(
             dialect,

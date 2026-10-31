@@ -13,34 +13,34 @@ from rhosocial.activerecord.backend.dialect.exceptions import UnsupportedFeature
 
 if TYPE_CHECKING:
     from ..expression.ddl.package import (
-        FirebirdCreatePackageExpression,
-        FirebirdCreatePackageBodyExpression,
-        FirebirdDropPackageExpression,
+        FirebirdCreatePackageStatement,
+        FirebirdCreatePackageBodyStatement,
+        FirebirdDropPackageStatement,
     )
 
 
 class FirebirdPackageMixin:
 
-    def format_create_package_statement(self, expr: "FirebirdCreatePackageExpression") -> Tuple[str, tuple]:
+    def format_create_package_statement(self, expr: "FirebirdCreatePackageStatement") -> Tuple[str, tuple]:
         """Format CREATE PACKAGE name AS <declarations>."""
         self._check_package_version("CREATE PACKAGE")
         parts = ["CREATE PACKAGE", self.format_identifier(expr.package_name)]
-        if getattr(expr, "body", None):
+        if expr.body:
             parts.append(f"AS {expr.body}")
         return " ".join(parts), ()
 
-    def format_create_package_body_statement(self, expr: "FirebirdCreatePackageBodyExpression") -> Tuple[str, tuple]:
+    def format_create_package_body_statement(self, expr: "FirebirdCreatePackageBodyStatement") -> Tuple[str, tuple]:
         """Format CREATE PACKAGE BODY name AS <implementations>."""
         self._check_package_version("CREATE PACKAGE BODY")
         parts = ["CREATE PACKAGE BODY", self.format_identifier(expr.package_name)]
-        if getattr(expr, "body", None):
+        if expr.body:
             parts.append(f"AS {expr.body}")
         return " ".join(parts), ()
 
-    def format_drop_package_statement(self, expr: "FirebirdDropPackageExpression") -> Tuple[str, tuple]:
+    def format_drop_package_statement(self, expr: "FirebirdDropPackageStatement") -> Tuple[str, tuple]:
         """Format DROP PACKAGE [BODY] name."""
         self._check_package_version("DROP PACKAGE")
-        if getattr(expr, "body", False):
+        if expr.body:
             return (
                 f"DROP PACKAGE BODY {self.format_identifier(expr.package_name)}",
                 (),

@@ -13,9 +13,9 @@ from rhosocial.activerecord.backend.impl.firebird.dialect import FirebirdDialect
 from rhosocial.activerecord.backend.impl.firebird.expression import (
     BlobColumnExpression,
     BlobLiteralExpression,
-    UpdateOrInsertExpression,
+    UpdateOrInsertStatement,
     AutonomousTransactionDoExpression,
-    ExecuteBlockExpression,
+    ExecuteBlockStatement,
 )
 from rhosocial.activerecord.backend.impl.firebird.expression.generator import (
     GenIdExpression,
@@ -60,7 +60,7 @@ class TestBlobLiteralExpression:
 class TestUpdateOrInsertExpression:
     def test_update_or_insert_expression_to_sql(self):
         dialect = FirebirdDialect((4, 0, 0))
-        sql, params = UpdateOrInsertExpression(
+        sql, params = UpdateOrInsertStatement(
             dialect,
             Table(dialect, "users"),
             ["name", "email"],
@@ -75,7 +75,7 @@ class TestUpdateOrInsertExpression:
 
     def test_update_or_insert_expression_with_returning(self):
         dialect = FirebirdDialect((4, 0, 0))
-        sql, params = UpdateOrInsertExpression(
+        sql, params = UpdateOrInsertStatement(
             dialect,
             Table(dialect, "users"),
             ["name"],
@@ -114,7 +114,7 @@ class TestAutonomousTransactionDoExpression:
 class TestExecuteBlockExpression:
     def test_execute_block_expression_to_sql(self):
         dialect = FirebirdDialect((4, 0, 0))
-        sql, params = ExecuteBlockExpression(
+        sql, params = ExecuteBlockStatement(
             dialect, "INSERT INTO log VALUES (1);",
         ).to_sql()
         assert sql == (
@@ -124,7 +124,7 @@ class TestExecuteBlockExpression:
 
     def test_execute_block_expression_with_params(self):
         dialect = FirebirdDialect((4, 0, 0))
-        sql, params = ExecuteBlockExpression(
+        sql, params = ExecuteBlockStatement(
             dialect,
             "INSERT INTO log VALUES (:p_val);",
             params={"p_val": ("INTEGER", 42)},

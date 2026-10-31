@@ -12,7 +12,7 @@ import pytest
 
 from rhosocial.activerecord.backend.dialect.exceptions import UnsupportedFeatureError
 from rhosocial.activerecord.backend.expression.objects import View
-from rhosocial.activerecord.backend.expression.statements import DropViewExpression
+from rhosocial.activerecord.backend.expression.statements import DropViewStatement
 from rhosocial.activerecord.backend.impl.firebird.dialect import FirebirdDialect
 
 
@@ -23,7 +23,7 @@ def dialect():
 
 def test_cascade_view_unsupported(dialect):
     assert dialect.supports_cascade_view() is False
-    expr = DropViewExpression(dialect, view=View(dialect, "v"), cascade=True)
+    expr = DropViewStatement(dialect, view=View(dialect, "v"), cascade=True)
     with pytest.raises(UnsupportedFeatureError, match="CASCADE"):
         expr.to_sql()
 

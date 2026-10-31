@@ -1,0 +1,21 @@
+# The coverage gates, stated rather than inherited.
+#
+# Both statuses used Codecov's defaults, where ``target: auto`` means "the base
+# commit's coverage". That is a real rule, but an invisible and moving one: the
+# bar changes whenever the base branch does, and a reader of the pull request
+# cannot tell from the check what number was missed. The thresholds below are
+# the ones this project holds itself to.
+coverage:
+  status:
+    project:
+      default:
+        # The project may not lose coverage. The threshold is the rounding
+        # wobble of a percentage point, not a licence to drop.
+        target: auto
+        threshold: 0.2%
+    patch:
+      # New code arrives tested. This is the project's own level, written
+      # down, so a branch that adds a whole new area cannot borrow the
+      # coverage of the area it sits beside.
+      default:
+        target: 75%

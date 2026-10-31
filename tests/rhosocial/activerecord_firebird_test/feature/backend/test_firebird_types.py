@@ -3,7 +3,7 @@
 
 Covers ``TIMESTAMP WITH TIME ZONE``, ``TIME WITH TIME ZONE``,
 ``DECFLOAT(16|34)`` and ``INT128`` through ``format_data_type``, the
-``(4, 0, 0)`` version gate, and ``FirebirdFloatType``'s ``FLOAT(bin_prec)``.
+``(4, 0, 0)`` version gate, and ``FloatType``'s ``FLOAT(bin_prec)``.
 All tests are pure construction — no database connection.
 
 Documentation-based, not measured: ``fbclient`` is not installed on this
@@ -16,11 +16,14 @@ Firebird 4.0 release notes (CORE-6109 for the ``FLOAT(p)`` meaning change).
 import pytest
 
 from rhosocial.activerecord.backend.dialect.exceptions import UnsupportedFeatureError
-from rhosocial.activerecord.backend.expression.types import CustomType, DecimalType
+from rhosocial.activerecord.backend.expression.types import (
+    CustomType,
+    DecimalType,
+    FloatType,
+)
 from rhosocial.activerecord.backend.impl.firebird.dialect import FirebirdDialect
 from rhosocial.activerecord.backend.impl.firebird.expression import (
     FirebirdDecFloatType,
-    FirebirdFloatType,
     FirebirdInt128Type,
     FirebirdTimeStampTzType,
     FirebirdTimeWithoutTimeZoneType,
@@ -200,25 +203,25 @@ class TestFirebirdFloatBinaryPrecision:
 
     def test_bare_float(self):
         dialect = FirebirdDialect((4, 0, 0))
-        assert dialect.format_data_type(FirebirdFloatType(dialect)) == ("FLOAT", ())
+        assert dialect.format_data_type(FloatType(dialect)) == ("FLOAT", ())
 
     @pytest.mark.parametrize("precision", [1, 24, 25, 53])
     def test_precision_is_written(self, precision):
         dialect = FirebirdDialect((4, 0, 0))
         assert dialect.format_data_type(
-            FirebirdFloatType(precision=precision)
+            FloatType(precision=precision)
         ) == (f"FLOAT({precision})", ())
 
     @pytest.mark.parametrize("precision", [0, 54])
     def test_precision_outside_the_documented_range_raises(self, precision):
         dialect = FirebirdDialect((4, 0, 0))
         with pytest.raises(ValueError, match="between 1 and 53"):
-            dialect.format_data_type(FirebirdFloatType(precision=precision))
+            dialect.format_data_type(FloatType(precision=precision))
 
     def test_two_precisions_are_two_columns(self):
         dialect = FirebirdDialect((4, 0, 0))
-        single = FirebirdFloatType(precision=24)
-        double = FirebirdFloatType(precision=53)
+        single = FloatType(precision=24)
+        double = FloatType(precision=53)
         assert single != double
         assert dialect.format_data_type(single)[0] != dialect.format_data_type(
             double
@@ -228,17 +231,17 @@ class TestFirebirdFloatBinaryPrecision:
         """``FLOAT(10)`` meant ten decimal digits there and ten bits here."""
         dialect = FirebirdDialect((3, 0, 0))
         with pytest.raises(UnsupportedFeatureError, match="FLOAT"):
-            dialect.format_data_type(FirebirdFloatType(precision=24))
+            dialect.format_data_type(FloatType(precision=24))
 
     def test_bare_float_renders_on_firebird_3(self):
         """Single precision on both sides, so the type needs no gate."""
         assert FirebirdDialect((3, 0, 0)).format_data_type(
-            FirebirdFloatType()
+            FloatType()
         ) == ("FLOAT", ())
 
     def test_support_flag_is_not_gated(self):
-        """Gating it would drop ``firebird_float`` on a dialect that renders it."""
-        assert FirebirdDialect((3, 0, 0)).supports_data_type_firebird_float() is True
+        """Gating it would drop ``float`` on a dialect that renders it."""
+        assert FirebirdDialect((3, 0, 0)).supports_data_type_float() is True
 
 
 class TestFirebirdFourTypesParseToRealClasses:

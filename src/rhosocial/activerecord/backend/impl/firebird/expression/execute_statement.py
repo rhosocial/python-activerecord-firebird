@@ -20,9 +20,14 @@ if TYPE_CHECKING:  # pragma: no cover
     from rhosocial.activerecord.backend.dialect import SQLDialectBase
 
 
-class FirebirdExecuteStatementExpression(BaseExpression):
+class FirebirdExecuteStatement(BaseExpression):
     """EXECUTE STATEMENT sql [WITH {AUTONOMOUS | COMMON} TRANSACTION]
-    [WITH CALLER PRIVILEGES] [(params)]."""
+    [WITH CALLER PRIVILEGES] [(params)].
+
+    Every constructor argument is a declared field under its own public
+    name -- the statement's contract is what the formatter reads, with no
+    private stash to reflect back.
+    """
 
     def __init__(
         self,
@@ -33,14 +38,14 @@ class FirebirdExecuteStatementExpression(BaseExpression):
         params: Optional[Sequence[Any]] = None,
     ):
         super().__init__(dialect)
-        self._sql: Union[str, Any] = sql
-        self._transaction: Optional[str] = transaction
-        self._caller_privileges: bool = caller_privileges
-        self._params: List[Any] = list(params) if params else []
+        self.sql: Union[str, Any] = sql
+        self.transaction: Optional[str] = transaction
+        self.caller_privileges: bool = caller_privileges
+        self.params: List[Any] = list(params) if params else []
 
     @property
     def format_method(self) -> str:
         return "format_execute_statement"
 
 
-__all__ = ["FirebirdExecuteStatementExpression"]
+__all__ = ["FirebirdExecuteStatement"]

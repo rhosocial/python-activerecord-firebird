@@ -17,7 +17,7 @@ if TYPE_CHECKING:  # pragma: no cover
     from rhosocial.activerecord.backend.dialect import SQLDialectBase
 
 
-class FirebirdCreateExternalFunctionExpression(BaseExpression):
+class FirebirdCreateExternalFunctionStatement(BaseExpression):
     """DECLARE EXTERNAL FUNCTION name [(params)] RETURNS type [BY VALUE]
     [FREE_IT] ENTRY_POINT 'entry' MODULE_NAME 'module'."""
 
@@ -46,7 +46,7 @@ class FirebirdCreateExternalFunctionExpression(BaseExpression):
         return "format_create_external_function_statement"
 
 
-class FirebirdAlterExternalFunctionExpression(BaseExpression):
+class FirebirdAlterExternalFunctionStatement(BaseExpression):
     """ALTER EXTERNAL FUNCTION name [ENTRY_POINT 'entry'] [MODULE_NAME 'module']."""
 
     def __init__(
@@ -66,7 +66,7 @@ class FirebirdAlterExternalFunctionExpression(BaseExpression):
         return "format_alter_external_function_statement"
 
 
-class FirebirdDropExternalFunctionExpression(BaseExpression):
+class FirebirdDropExternalFunctionStatement(BaseExpression):
     """DROP EXTERNAL FUNCTION name."""
 
     def __init__(self, dialect: "SQLDialectBase", function_name: str):
@@ -79,7 +79,7 @@ class FirebirdDropExternalFunctionExpression(BaseExpression):
 
 
 __all__ = [
-    "FirebirdCreateExternalFunctionExpression",
-    "FirebirdAlterExternalFunctionExpression",
-    "FirebirdDropExternalFunctionExpression",
+    "FirebirdCreateExternalFunctionStatement",
+    "FirebirdAlterExternalFunctionStatement",
+    "FirebirdDropExternalFunctionStatement",
 ]

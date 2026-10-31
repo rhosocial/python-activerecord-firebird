@@ -16,7 +16,8 @@ Covers bugs found in rbac cross-backend testing:
 import pytest
 
 from rhosocial.activerecord.backend.expression import (
-    CreateTableExpression, ColumnDefinition, ColumnConstraint, ColumnConstraintType,
+    CreateTableStatement, ColumnDefinition, ColumnConstraint,
+    ColumnDefaultConstraint, ColumnNotNullConstraint, ColumnPrimaryKeyConstraint,
 )
 from rhosocial.activerecord.backend.expression.objects import Table
 from rhosocial.activerecord.backend.expression.types import (
@@ -31,19 +32,19 @@ def dialect():
 
 
 def _pk(dialect):
-    return [ColumnConstraint(dialect, ColumnConstraintType.PRIMARY_KEY, is_auto_increment=True)]
+    return [ColumnConstraint(dialect, branch=ColumnPrimaryKeyConstraint(dialect, is_auto_increment=True))]
 
 
 def _build_table(dialect):
-    return CreateTableExpression(
+    return CreateTableStatement(
         dialect=dialect, table=Table(dialect, "test_tbl"),
         columns=[
             ColumnDefinition(dialect, "id", IntegerType(dialect), constraints=_pk(dialect)),
             ColumnDefinition(dialect, "name", TextType(dialect),
-                constraints=[ColumnConstraint(dialect, ColumnConstraintType.NOT_NULL)]),
+                constraints=[ColumnConstraint(dialect, branch=ColumnNotNullConstraint(dialect))]),
             ColumnDefinition(dialect, "flag", BooleanType(dialect),
-                constraints=[ColumnConstraint(dialect, ColumnConstraintType.NOT_NULL),
-                             ColumnConstraint(dialect, ColumnConstraintType.DEFAULT, default_value=True)]),
+                constraints=[ColumnConstraint(dialect, branch=ColumnNotNullConstraint(dialect)),
+                             ColumnConstraint(dialect, branch=ColumnDefaultConstraint(dialect, True))]),
             ColumnDefinition(dialect, "code", VarCharType(length=16, dialect=dialect)),
             ColumnDefinition(dialect, "created_at", TimestampType(dialect=dialect)),
         ],
@@ -64,20 +65,20 @@ class TestAutoIncrementDDL:
         assert isinstance(params, tuple)
 
     def test_boolean_default_true(self, dialect):
-        expr = CreateTableExpression(
+        expr = CreateTableStatement(
             dialect=dialect, table=Table(dialect, "bool_test"),
             columns=[
                 ColumnDefinition(dialect, "id", IntegerType(dialect), constraints=_pk(dialect)),
                 ColumnDefinition(dialect, "flag", BooleanType(dialect),
-                    constraints=[ColumnConstraint(dialect, ColumnConstraintType.NOT_NULL),
-                                 ColumnConstraint(dialect, ColumnConstraintType.DEFAULT, default_value=True)]),
+                    constraints=[ColumnConstraint(dialect, branch=ColumnNotNullConstraint(dialect)),
+                                 ColumnConstraint(dialect, branch=ColumnDefaultConstraint(dialect, True))]),
             ],
         )
         sql, _ = dialect.format_create_table_statement(expr)
         assert "BOOLEAN" in sql.upper()
 
     def test_timestamp_type(self, dialect):
-        expr = CreateTableExpression(
+        expr = CreateTableStatement(
             dialect=dialect, table=Table(dialect, "ts_test"),
             columns=[
                 ColumnDefinition(dialect, "id", IntegerType(dialect), constraints=_pk(dialect)),

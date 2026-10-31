@@ -11,16 +11,13 @@ from typing import Any, List, Tuple, TYPE_CHECKING
 
 if TYPE_CHECKING:  # pragma: no cover
     from rhosocial.activerecord.backend.expression.statements import (
-        AlterTableExpression,
+        AlterTableStatement,
         ColumnDefinition,
-        CreateTableExpression,
-        TableConstraint,
+        CreateTableStatement,
     )
 
 from rhosocial.activerecord.backend.dialect.mixins.ddl_table import TableMixin
 from rhosocial.activerecord.backend.expression.objects import Table
-
-from .version_boundaries import _norm_version
 
 
 class FirebirdTableMixin:
@@ -36,7 +33,7 @@ class FirebirdTableMixin:
         ``WITH DATA`` / ``WITH NO DATA`` on it. The gate is therefore the
         version the measurement found, not a flat answer.
         """
-        return _norm_version(self.version) >= (6, 0, 0)
+        return self.version_at_least((6, 0, 0))
 
     def supports_with_data_clause(self) -> bool:
         """Whether the ``WITH [NO] DATA`` population clause is supported.
@@ -48,7 +45,7 @@ class FirebirdTableMixin:
         Firebird version has materialized views, so the clause answers with the
         same version gate as the CTAS statement.
         """
-        return _norm_version(self.version) >= (6, 0, 0)
+        return self.version_at_least((6, 0, 0))
 
     def supports_drop_table_cascade(self) -> bool:
         """Firebird has no CASCADE keyword on DROP TABLE."""
@@ -58,14 +55,14 @@ class FirebirdTableMixin:
         """Firebird has no RESTRICT keyword on DROP TABLE."""
         return False
 
-    # Delegate to TableMixin for DropTableExpression formatting.
+    # Delegate to TableMixin for DropTableStatement formatting.
     # FirebirdDialect's MRO resolves DropTableSupport.format_drop_table_statement
     # (the empty Protocol stub) before TableMixin's actual implementation due to
     # Python's C3 linearization. Re-binding the concrete method here ensures the
     # MRO picks up the TypeScript-level override.
     format_drop_table_statement = TableMixin.format_drop_table_statement
 
-    def format_alter_table_statement(self, expr: "AlterTableExpression") -> Tuple[str, tuple]:
+    def format_alter_table_statement(self, expr: "AlterTableStatement") -> Tuple[str, tuple]:
         """Render ALTER TABLE, naming the relation through a schema object.
 
         Firebird's ALTER TABLE grammar has no table name inside an action, so
@@ -81,13 +78,13 @@ class FirebirdTableMixin:
         ``format_identifier``, so a name carrying a namespace slot is reported.
 
         Raises:
-            TypeError: ``AlterTableExpression.table`` is not a Table. Another
+            TypeError: ``AlterTableStatement.table`` is not a Table. Another
                 object kind would have had its own name rendered as the relation
                 being altered.
         """
         if not isinstance(expr.table, Table):
             raise TypeError(
-                f"AlterTableExpression.table must be a Table, "
+                f"AlterTableStatement.table must be a Table, "
                 f"got {type(expr.table).__name__}"
             )
         all_params: List[Any] = []
@@ -107,11 +104,11 @@ class FirebirdTableMixin:
             f"ALTER TABLE {table_sql} {part}" for part in action_parts
         ), tuple(all_params)
 
-    def format_create_table_statement(self, expr: "CreateTableExpression") -> Tuple[str, tuple]:
+    def format_create_table_statement(self, expr: "CreateTableStatement") -> Tuple[str, tuple]:
         """Render CREATE TABLE, naming the relation through a schema object.
 
         Raises:
-            TypeError: ``CreateTableExpression.table`` is not a Table. A view or a
+            TypeError: ``CreateTableStatement.table`` is not a Table. A view or a
                 sequence would have had its own name rendered as the relation
                 being created.
             UnsupportedFeatureError: A Firebird-unreadable clause was requested --
@@ -122,28 +119,28 @@ class FirebirdTableMixin:
 
         if not isinstance(expr.table, Table):
             raise TypeError(
-                f"CreateTableExpression.table must be a Table, "
+                f"CreateTableStatement.table must be a Table, "
                 f"got {type(expr.table).__name__}"
             )
-        if getattr(expr, "tablespace", None):
+        if expr.tablespace:
             raise UnsupportedFeatureError(
                 self.name,
                 "TABLESPACE",
                 "Firebird does not support table tablespaces.",
             )
-        if getattr(expr, "inherits", None):
+        if expr.inherits:
             raise UnsupportedFeatureError(
                 self.name,
                 "table INHERITS",
                 "Firebird does not support table inheritance.",
             )
-        if getattr(expr, 'partition', None) is not None:
+        if expr.partition is not None:
             raise UnsupportedFeatureError(
                 self.name,
                 "PARTITION BY clause",
                 "Firebird does not support table partitioning.",
             )
-        if getattr(getattr(expr, 'table_options', None), 'comment', None):
+        if expr.table_options is not None and expr.table_options.comment:
             # Firebird annotates comments through the standalone
             # COMMENT ON statement (no inline table option); a comment on the
             # table options is never silently dropped.
@@ -158,13 +155,13 @@ class FirebirdTableMixin:
         all_params: List[Any] = []
 
         parts = []
-        if getattr(expr, 'temporary', False):
+        if expr.temporary:
             # Legal Firebird word order is CREATE GLOBAL TEMPORARY TABLE;
             # "CREATE TABLE GLOBAL TEMPORARY" is rejected by the parser.
             parts.append("CREATE GLOBAL TEMPORARY TABLE")
         else:
             parts.append("CREATE TABLE")
-        if getattr(expr, 'if_not_exists', False):
+        if expr.if_not_exists:
             # Capability gate: Firebird has no IF NOT EXISTS on CREATE TABLE,
             # so rendering it anyway would produce broken DDL.
             if not self.supports_if_not_exists_table():
@@ -180,12 +177,20 @@ class FirebirdTableMixin:
         # object layer rather than dropped here.
         parts.append(expr.table.to_sql()[0])
 
-        if getattr(expr, 'temporary', False):
-            on_commit = getattr(expr, 'on_commit_delete', True)
-            if on_commit:
-                parts.append("ON COMMIT DELETE ROWS")
-            else:
-                parts.append("ON COMMIT PRESERVE ROWS")
+        if expr.temporary:
+            # ``on_commit_delete`` is FirebirdCreateTableStatement's field --
+            # the generic statement has no such clause, and omitting it is the
+            # server's own default (ON COMMIT DELETE ROWS). The kind decides
+            # whether the question exists, then the field is read.
+            from rhosocial.activerecord.backend.impl.firebird.expression.create_table import (
+                FirebirdCreateTableStatement,
+            )
+
+            if isinstance(expr, FirebirdCreateTableStatement):
+                if expr.on_commit_delete:
+                    parts.append("ON COMMIT DELETE ROWS")
+                else:
+                    parts.append("ON COMMIT PRESERVE ROWS")
 
         column_parts = []
         for col_def in expr.columns:
@@ -200,9 +205,15 @@ class FirebirdTableMixin:
 
         parts.append(f"({', '.join(column_parts)})")
 
-        external_file = getattr(expr, 'external_file', None)
-        if external_file:
-            parts.append(f"EXTERNAL FILE '{external_file}'")
+        # ``external_file`` is FirebirdCreateTableStatement's field; the
+        # generic statement declares no such clause, so the kind decides
+        # whether the question exists, then the field is read.
+        from rhosocial.activerecord.backend.impl.firebird.expression.create_table import (
+            FirebirdCreateTableStatement,
+        )
+
+        if isinstance(expr, FirebirdCreateTableStatement) and expr.external_file:
+            parts.append(f"EXTERNAL FILE '{expr.external_file}'")
 
         return ' '.join(parts), tuple(all_params)
 
@@ -212,13 +223,23 @@ class FirebirdTableMixin:
         Accepts both the generic ``ColumnDefinition`` and the Firebird
         ``FirebirdColumnDefinition``; the latter's Firebird-only attributes
         (``computed_by`` / ``character_set`` / ``collation``) are rendered here.
+
+        Each constraint is dispatched on its **branch class** rather than on a
+        ``constraint_type`` tag: the two-level nodes name the kind in a class
+        now, so the renderer reads the same thing it did before without the
+        enum. The spellings this method emits are unchanged -- the branch split
+        is a shape change, not a rendering change.
         """
-        from rhosocial.activerecord.backend.expression.statements import ColumnConstraintType
+        from rhosocial.activerecord.backend.expression.statements import (
+            ColumnDefaultConstraint,
+            ColumnGeneratedConstraint,
+            ColumnPrimaryKeyConstraint,
+        )
         from rhosocial.activerecord.backend.impl.firebird.expression.column import (
             FirebirdColumnDefinition,
         )
 
-        if getattr(col_def, "comment", None):
+        if col_def.comment is not None:
             # Firebird annotates column comments through the standalone
             # COMMENT ON COLUMN statement (no inline column clause); a comment
             # on a column definition is never silently dropped.
@@ -234,7 +255,14 @@ class FirebirdTableMixin:
         params: List[Any] = []
 
         for constraint in col_def.constraints:
-            if getattr(constraint, 'is_auto_increment', False):
+            # The flag lives on the branch now: ``is_auto_increment`` is
+            # specific to PRIMARY KEY, so it is part of that alternative rather
+            # than of the production. The branch's class decides whether the
+            # question exists, then the field is read.
+            if (
+                isinstance(constraint.branch, ColumnPrimaryKeyConstraint)
+                and constraint.branch.is_auto_increment
+            ):
                 parts.append("GENERATED BY DEFAULT AS IDENTITY")
                 break
 
@@ -246,14 +274,16 @@ class FirebirdTableMixin:
         if isinstance(col_def, FirebirdColumnDefinition) and col_def.character_set:
             parts.append(f"CHARACTER SET {col_def.character_set}")
 
-        computed_by = getattr(col_def, 'computed_by', None)
-        if computed_by:
-            parts.append(f"COMPUTED BY ({computed_by})")
+        # ``computed_by`` is FirebirdColumnDefinition's field; the generic
+        # column definition declares no such clause, so the kind decides
+        # whether the question exists, then the field is read.
+        if isinstance(col_def, FirebirdColumnDefinition) and col_def.computed_by:
+            parts.append(f"COMPUTED BY ({col_def.computed_by})")
         else:
-            # A generic GeneratedColumnExpression maps onto Firebird's
+            # A generic ColumnGeneratedConstraint maps onto Firebird's
             # ``COMPUTED BY (<expr>)`` form (Firebird has no GENERATED ALWAYS
             # syntax); a declared generated column is never silently dropped.
-            generated = getattr(col_def, 'generated_expression', None)
+            generated = col_def.generated_expression
             if generated is not None:
                 gen_sql, gen_params = generated.expression.to_sql()
                 parts.append(f"COMPUTED BY ({gen_sql})")
@@ -262,23 +292,44 @@ class FirebirdTableMixin:
         constraint_parts = []
         default_parts: List[str] = []
         for constraint in col_def.constraints:
-            if constraint.constraint_type == ColumnConstraintType.PRIMARY_KEY:
-                constraint_parts.append("PRIMARY KEY")
-            elif constraint.constraint_type == ColumnConstraintType.NOT_NULL:
-                constraint_parts.append("NOT NULL")
-            elif constraint.constraint_type == ColumnConstraintType.UNIQUE:
-                constraint_parts.append("UNIQUE")
-            elif constraint.constraint_type == ColumnConstraintType.NULL:
-                constraint_parts.append("NULL")
-            elif constraint.constraint_type == ColumnConstraintType.DEFAULT:
-                if constraint.default_value is not None:
+            branch = constraint.branch
+            if isinstance(branch, ColumnDefaultConstraint):
+                # ``DEFAULT`` is rendered through its own branch value rather
+                # than through the constraint clause, because Firebird requires
+                # the DEFAULT clause to follow the data type directly -- it must
+                # be emitted *before* NOT NULL / UNIQUE (see below), which is
+                # the one place this backend's column order differs from the
+                # core's ``format_column_definition``.
+                if branch.value is not None:
                     from rhosocial.activerecord.backend.expression import bases
-                    if isinstance(constraint.default_value, bases.BaseExpression):
-                        default_sql, default_params = constraint.default_value.to_sql()
+                    if isinstance(branch.value, bases.BaseExpression):
+                        default_sql, default_params = branch.value.to_sql()
                         default_parts.append(f"DEFAULT {default_sql}")
                         params.extend(default_params)
                     else:
-                        default_parts.append(f"DEFAULT {self.inline_sql_literal(constraint.default_value)}")
+                        default_parts.append(f"DEFAULT {self.inline_sql_literal(branch.value)}")
+                continue
+            # A generated column is Firebird's ``COMPUTED BY (<expr>)`` and has
+            # no ``GENERATED ALWAYS AS`` spelling at all, so a
+            # ``ColumnGeneratedConstraint`` that arrives through the constraint
+            # list (the ``generated_expression`` channel is handled above) must
+            # not be delegated to core's ``GENERATED ALWAYS`` renderer.
+            if isinstance(branch, ColumnGeneratedConstraint):
+                gen_sql, gen_params = branch.expression.to_sql()
+                constraint_parts.append(f"COMPUTED BY ({gen_sql})")
+                params.extend(gen_params)
+                continue
+            # Everything else -- PRIMARY KEY, UNIQUE, NOT NULL, NULL, CHECK,
+            # REFERENCES, a generated column -- is rendered by the shared
+            # ``format_column_constraint``, which owns the production-level
+            # ``CONSTRAINT <name>`` prefix and the branch dispatch. Routing them
+            # through it rather than re-spelling each kind here is what keeps a
+            # branch from being *silently dropped* when this list was incomplete:
+            # before this change a column-level CHECK and a column-level
+            # ``REFERENCES`` produced no SQL at all on this backend.
+            suffix, suffix_params = self.format_column_constraint(constraint)
+            constraint_parts.append(suffix.strip())
+            params.extend(suffix_params)
 
         # Firebird requires the DEFAULT clause to follow the data type directly;
         # it must be emitted before column constraints such as NOT NULL/UNIQUE,
@@ -289,91 +340,11 @@ class FirebirdTableMixin:
         if constraint_parts:
             parts.append(' '.join(constraint_parts))
 
-        collation = getattr(col_def, 'collation', None)
-        if collation:
-            parts.append(f"COLLATE {collation}")
-
-        return ' '.join(parts), tuple(params)
-
-    def format_table_constraint(self, expr: "TableConstraint") -> Tuple[str, tuple]:
-        from rhosocial.activerecord.backend.expression.statements import (
-            ForeignKeyConstraint,
-            ReferentialAction,
-            TableConstraintType,
-        )
-        from rhosocial.activerecord.backend.dialect.exceptions import UnsupportedFeatureError
-
-        # Deferrability is a two-spelling option (DEFERRABLE / NOT DEFERRABLE)
-        # with one parameter per spelling, and INITIALLY DEFERRED / IMMEDIATE is
-        # its own attribute. Firebird's grammar has neither pair's spellings
-        # (measured on 5.0.4 and 6.0.0: ``Token unknown - DEFERRABLE`` /
-        # ``- NOT`` / ``- INITIALLY``), so a requested spelling is refused by
-        # name rather than dropped.
-        if expr.deferrable or expr.not_deferrable:
-            raise UnsupportedFeatureError(
-                self.name, "DEFERRABLE constraint",
-                "Firebird does not support deferrable constraints.",
-            )
-        if expr.initially_deferred or expr.initially_immediate:
-            raise UnsupportedFeatureError(
-                self.name, "INITIALLY DEFERRED/IMMEDIATE constraint",
-                "Firebird does not support initially deferred/immediate constraints.",
-            )
-        if isinstance(expr, ForeignKeyConstraint) and getattr(expr, "match_type", None) is not None:
-            raise UnsupportedFeatureError(
-                self.name, "FOREIGN KEY MATCH",
-                "Firebird does not support FOREIGN KEY MATCH.",
-            )
-
-        parts = []
-        params: List[Any] = []
-
-        if expr.name:
-            parts.append(f"CONSTRAINT {self.format_identifier(expr.name)}")
-
-        if expr.constraint_type == TableConstraintType.PRIMARY_KEY:
-            if expr.columns:
-                cols = ', '.join(self.format_identifier(c) for c in expr.columns)
-                parts.append(f"PRIMARY KEY ({cols})")
-        elif expr.constraint_type == TableConstraintType.UNIQUE:
-            if expr.columns:
-                cols = ', '.join(self.format_identifier(c) for c in expr.columns)
-                parts.append(f"UNIQUE ({cols})")
-        elif expr.constraint_type == TableConstraintType.FOREIGN_KEY:
-            if expr.columns and expr.foreign_key_table and expr.foreign_key_columns:
-                cols = ', '.join(self.format_identifier(c) for c in expr.columns)
-                ref_cols = ', '.join(self.format_identifier(c) for c in expr.foreign_key_columns)
-                ref_table = expr.foreign_key_table.to_sql()[0]
-                parts.append(f"FOREIGN KEY ({cols}) REFERENCES {ref_table} ({ref_cols})")
-            if isinstance(expr, ForeignKeyConstraint):
-                if expr.on_delete != ReferentialAction.NO_ACTION:
-                    parts.append(f"ON DELETE {expr.on_delete.value}")
-                if expr.on_update != ReferentialAction.NO_ACTION:
-                    parts.append(f"ON UPDATE {expr.on_update.value}")
-        elif expr.constraint_type == TableConstraintType.CHECK and expr.check_condition:
-            check_sql, check_params = expr.check_condition.to_sql()
-            parts.append(f"CHECK ({check_sql})")
-            params.extend(check_params)
-
-        # Enforcement is a two-spelling option (ENFORCED / NOT ENFORCED) with
-        # one parameter per spelling. Firebird's grammar has neither (measured
-        # on 5.0.4 and 6.0.0: ``Token unknown - ENFORCED`` / ``- NOT``), so a
-        # requested spelling is refused by name rather than dropped.
-        if expr.enforced or expr.not_enforced:
-            if expr.constraint_type not in (
-                TableConstraintType.CHECK,
-                TableConstraintType.FOREIGN_KEY,
-            ):
-                raise ValueError(
-                    "ENFORCED/NOT ENFORCED is only valid for CHECK and "
-                    "FOREIGN KEY constraints"
-                )
-            if not self.supports_constraint_enforced():
-                raise UnsupportedFeatureError(
-                    self.name, "ENFORCED/NOT ENFORCED constraint",
-                    "Firebird does not support ENFORCED/NOT ENFORCED constraints.",
-                )
-            parts.append("ENFORCED" if expr.enforced else "NOT ENFORCED")
+        # ``collation`` is FirebirdColumnDefinition's field; the generic column
+        # definition declares no such clause, so the kind decides whether the
+        # question exists, then the field is read.
+        if isinstance(col_def, FirebirdColumnDefinition) and col_def.collation:
+            parts.append(f"COLLATE {col_def.collation}")
 
         return ' '.join(parts), tuple(params)
 

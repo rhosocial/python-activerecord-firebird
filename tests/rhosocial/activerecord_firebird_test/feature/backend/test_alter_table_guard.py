@@ -11,9 +11,9 @@ import pytest
 from rhosocial.activerecord.backend.dialect.exceptions import UnsupportedFeatureError
 from rhosocial.activerecord.backend.expression.statements import ColumnDefinition
 from rhosocial.activerecord.backend.expression.statements.ddl_alter import (
-    AddColumn,
-    DropColumn,
-    DropTableConstraint,
+    AddColumnAction,
+    DropColumnAction,
+    DropTableConstraintAction,
 )
 from rhosocial.activerecord.backend.expression.types import TextType
 from rhosocial.activerecord.backend.impl.firebird.dialect import FirebirdDialect
@@ -33,33 +33,33 @@ class TestFirebirdAlterTableModifierCapabilities:
 
 class TestFirebirdGuardRaises:
     def test_add_column_if_not_exists_raises(self, dialect):
-        action = AddColumn(
+        action = AddColumnAction(
             dialect, ColumnDefinition(dialect, "content", TextType(dialect)), if_not_exists=True
         )
         with pytest.raises(UnsupportedFeatureError):
             action.to_sql()
 
     def test_drop_column_if_exists_raises(self, dialect):
-        action = DropColumn(dialect, column_name="x", if_exists=True)
+        action = DropColumnAction(dialect, column_name="x", if_exists=True)
         with pytest.raises(UnsupportedFeatureError):
             action.to_sql()
 
     def test_drop_constraint_if_exists_raises(self, dialect):
-        action = DropTableConstraint(dialect, constraint_name="fk", if_exists=True)
+        action = DropTableConstraintAction(dialect, constraint_name="fk", if_exists=True)
         with pytest.raises(UnsupportedFeatureError):
             action.to_sql()
 
 
 class TestFirebirdPlainForms:
     def test_add_column_plain(self, dialect):
-        action = AddColumn(dialect, ColumnDefinition(dialect, "content", TextType(dialect)))
+        action = AddColumnAction(dialect, ColumnDefinition(dialect, "content", TextType(dialect)))
         sql, params = action.to_sql()
         assert sql.startswith("ADD COLUMN")
         assert "IF NOT EXISTS" not in sql
         assert params == ()
 
     def test_drop_column_plain(self, dialect):
-        action = DropColumn(dialect, column_name="x")
+        action = DropColumnAction(dialect, column_name="x")
         sql, params = action.to_sql()
         assert sql.startswith("DROP COLUMN")
         assert "IF EXISTS" not in sql

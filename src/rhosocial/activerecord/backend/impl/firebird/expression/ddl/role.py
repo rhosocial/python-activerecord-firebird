@@ -18,7 +18,12 @@ if TYPE_CHECKING:  # pragma: no cover
     from rhosocial.activerecord.backend.dialect import SQLDialectBase
 
 
-class FirebirdRoleAlterClause(Enum):
+class FirebirdRoleAlterClause(str, Enum):
+    #: A member *is* the word it carries: ``__str__ = str.__str__`` keeps the
+    #: artifact's spelling the bare word, because the Enum ``__str__`` that
+    #: would otherwise win writes ``ClassName.MEMBER`` (§11.3).
+    __str__ = str.__str__
+
     """ALTER ROLE clause selector (Firebird 3.0+).
 
     Per the Firebird 5.0 Language Reference, ``ALTER ROLE`` supports only:
@@ -32,7 +37,27 @@ class FirebirdRoleAlterClause(Enum):
     DROP_AUTO_ADMIN_MAPPING = "DROP AUTO ADMIN MAPPING"
 
 
-class FirebirdCreateRoleExpression(BaseExpression):
+def _normalize_role_clause(clause: FirebirdRoleAlterClause) -> FirebirdRoleAlterClause:
+    """The clause as the enum member, whatever spelling arrived.
+
+    The artifact carries the plain word (a string enum *is* a JSON string), so
+    the constructor accepts the word back and normalizes it.  Anything else is
+    refused here, by name, rather than at render time.
+    """
+    if isinstance(clause, FirebirdRoleAlterClause):
+        return clause
+    if isinstance(clause, str):
+        try:
+            return FirebirdRoleAlterClause(clause)
+        except ValueError as exc:
+            raise ValueError(f"unsupported ALTER ROLE clause: {clause!r}") from exc
+    raise TypeError(
+        f"clause must be a FirebirdRoleAlterClause (or its word), "
+        f"got {type(clause).__name__}"
+    )
+
+
+class FirebirdCreateRoleStatement(BaseExpression):
     """CREATE ROLE name."""
 
     def __init__(self, dialect: "SQLDialectBase", role_name: str):
@@ -44,7 +69,7 @@ class FirebirdCreateRoleExpression(BaseExpression):
         return "format_create_role_statement"
 
 
-class FirebirdAlterRoleExpression(BaseExpression):
+class FirebirdAlterRoleStatement(BaseExpression):
     """ALTER ROLE name {SET SYSTEM PRIVILEGES TO ... | DROP SYSTEM
     PRIVILEGES | SET/DROP AUTO ADMIN MAPPING} (Firebird 3.0+)."""
 
@@ -57,7 +82,7 @@ class FirebirdAlterRoleExpression(BaseExpression):
     ):
         super().__init__(dialect)
         self.role_name: str = role_name
-        self.clause: FirebirdRoleAlterClause = clause
+        self.clause: FirebirdRoleAlterClause = _normalize_role_clause(clause)
         self.system_privileges: Optional[List[str]] = system_privileges
 
     @property
@@ -65,7 +90,7 @@ class FirebirdAlterRoleExpression(BaseExpression):
         return "format_alter_role_statement"
 
 
-class FirebirdDropRoleExpression(BaseExpression):
+class FirebirdDropRoleStatement(BaseExpression):
     """DROP ROLE name."""
 
     def __init__(self, dialect: "SQLDialectBase", role_name: str):
@@ -79,7 +104,7 @@ class FirebirdDropRoleExpression(BaseExpression):
 
 __all__ = [
     "FirebirdRoleAlterClause",
-    "FirebirdCreateRoleExpression",
-    "FirebirdAlterRoleExpression",
-    "FirebirdDropRoleExpression",
+    "FirebirdCreateRoleStatement",
+    "FirebirdAlterRoleStatement",
+    "FirebirdDropRoleStatement",
 ]

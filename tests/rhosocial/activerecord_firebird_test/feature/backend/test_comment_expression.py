@@ -10,14 +10,14 @@ import pytest
 
 from rhosocial.activerecord.backend.impl.firebird.dialect import FirebirdDialect
 from rhosocial.activerecord.backend.impl.firebird.expression import (
-    FirebirdCommentExpression,
+    FirebirdCommentOnStatement,
     FirebirdCommentObjectType,
 )
 
 
 class TestCommentOn:
     def _comment(self, dialect, object_type, object_name, comment=None):
-        return FirebirdCommentExpression(dialect, object_type, object_name, comment).to_sql()
+        return FirebirdCommentOnStatement(dialect, object_type, object_name, comment).to_sql()
 
     def test_table(self):
         dialect = FirebirdDialect((4, 0, 0))
@@ -136,7 +136,7 @@ class TestCommentDispatch:
 
         dialect = FirebirdDialect((4, 0, 0))
         assert (
-            type(dialect).format_comment_statement == FirebirdCommentMixin.format_comment_statement
+            type(dialect).format_comment_on_statement == FirebirdCommentMixin.format_comment_on_statement
         )
 
     def test_supports_comment_on_true_across_supported_versions(self):
@@ -204,7 +204,7 @@ class TestObjectKindDispatchTable:
     @pytest.mark.parametrize("target", STRING_ONLY_TARGETS, ids=lambda t: t.name)
     def test_deliberate_exception_target_renders_as_one_identifier(self, target):
         dialect = FirebirdDialect((4, 0, 0))
-        sql, params = FirebirdCommentExpression(
+        sql, params = FirebirdCommentOnStatement(
             dialect, target, "some_name", "c"
         ).to_sql()
         assert sql == f'COMMENT ON {target.value} "SOME_NAME" IS \'c\''
@@ -234,6 +234,6 @@ class TestObjectKindDispatchTable:
             (FirebirdCommentObjectType.FUNCTION, "FUNCTION"),
             (FirebirdCommentObjectType.TRIGGER, "TRIGGER"),
         ):
-            sql, _ = FirebirdCommentExpression(dialect, target, "t", "c").to_sql()
+            sql, _ = FirebirdCommentOnStatement(dialect, target, "t", "c").to_sql()
             assert sql == f'COMMENT ON {kind} "T" IS \'c\''
 

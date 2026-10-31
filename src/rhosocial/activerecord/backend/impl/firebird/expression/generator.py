@@ -14,15 +14,18 @@ class GenIdExpression(BaseExpression):
 
     def __init__(self, dialect: "SQLDialectBase", generator_name: str, step: int = 1):
         super().__init__(dialect)
-        self._generator_name = generator_name
-        self._step = step
+        # Stored under the declared parameter's own name: get_params() reads
+        # a parameter from the attribute of that name, so a private spelling
+        # would leave the node unreadable and unwritable in one breath.
+        self.generator_name = generator_name
+        self.step = step
 
     @property
     def format_method(self) -> str:
-        return "format_gen_id"
+        return "format_gen_id_expression"
 
     def __repr__(self) -> str:
-        return f"GenIdExpression({self._generator_name}, step={self._step})"
+        return f"GenIdExpression({self.generator_name}, step={self.step})"
 
 
 class NextValueForExpression(BaseExpression):
@@ -30,14 +33,14 @@ class NextValueForExpression(BaseExpression):
 
     def __init__(self, dialect: "SQLDialectBase", sequence_name: str):
         super().__init__(dialect)
-        self._sequence_name = sequence_name
+        self.sequence_name = sequence_name
 
     @property
     def format_method(self) -> str:
-        return "format_next_value_for"
+        return "format_next_value_for_expression"
 
     def __repr__(self) -> str:
-        return f"NextValueForExpression({self._sequence_name})"
+        return f"NextValueForExpression({self.sequence_name})"
 
 
 __all__ = ["GenIdExpression", "NextValueForExpression"]

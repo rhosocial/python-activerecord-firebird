@@ -7,8 +7,8 @@ Firebird adds two table-creation clauses with no generic equivalent:
   ``ON COMMIT PRESERVE ROWS`` (``False``) for global temporary tables.
 * ``external_file`` -- ``EXTERNAL FILE '<path>'`` for external tables.
 
-They live on ``FirebirdCreateTableExpression`` (deriving the generic
-``CreateTableExpression``) and are rendered by the Firebird
+They live on ``FirebirdCreateTableStatement`` (deriving the generic
+``CreateTableStatement``) and are rendered by the Firebird
 ``format_create_table_statement`` override, which accepts both the generic and
 the Firebird-specific instance and reads the table off ``expr.table``.
 """
@@ -17,7 +17,7 @@ from typing import TYPE_CHECKING, List, Optional
 
 from rhosocial.activerecord.backend.expression.objects import Table
 from rhosocial.activerecord.backend.expression.statements.ddl_table import (
-    CreateTableExpression,
+    CreateTableStatement,
 )
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -34,7 +34,7 @@ if TYPE_CHECKING:  # pragma: no cover
     )
 
 
-class FirebirdCreateTableExpression(CreateTableExpression):
+class FirebirdCreateTableStatement(CreateTableStatement):
     """A Firebird CREATE TABLE statement extending the generic one.
 
     Adds the Firebird-only ``on_commit_delete`` / ``external_file`` table
@@ -85,5 +85,5 @@ class FirebirdCreateTableExpression(CreateTableExpression):
 
 
 __all__ = [
-    "FirebirdCreateTableExpression",
+    "FirebirdCreateTableStatement",
 ]

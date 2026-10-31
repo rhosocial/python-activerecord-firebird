@@ -13,9 +13,9 @@ from rhosocial.activerecord.backend.dialect.exceptions import UnsupportedFeature
 
 if TYPE_CHECKING:
     from ..expression.ddl.exception import (
-        FirebirdCreateExceptionExpression,
-        FirebirdAlterExceptionExpression,
-        FirebirdDropExceptionExpression,
+        FirebirdCreateExceptionStatement,
+        FirebirdAlterExceptionStatement,
+        FirebirdDropExceptionStatement,
     )
 
 
@@ -23,13 +23,13 @@ class FirebirdExceptionMixin:
 
     def supports_exception(self) -> bool:
         """Whether EXCEPTION statements are supported (Firebird 2.5+)."""
-        return _norm_version(getattr(self, 'version', (2, 5, 0))) >= (2, 5, 0)
+        return self.version_at_least((2, 5, 0))
 
     def supports_create_exception(self) -> bool:
         """Whether CREATE EXCEPTION is supported (Firebird 2.5+)."""
         return self.supports_exception()
 
-    def format_create_exception_statement(self, expr: "FirebirdCreateExceptionExpression") -> Tuple[str, tuple]:
+    def format_create_exception_statement(self, expr: "FirebirdCreateExceptionStatement") -> Tuple[str, tuple]:
         """Format CREATE EXCEPTION name 'message'."""
         self._check_exception_version("CREATE EXCEPTION")
         return (
@@ -38,7 +38,7 @@ class FirebirdExceptionMixin:
             (),
         )
 
-    def format_alter_exception_statement(self, expr: "FirebirdAlterExceptionExpression") -> Tuple[str, tuple]:
+    def format_alter_exception_statement(self, expr: "FirebirdAlterExceptionStatement") -> Tuple[str, tuple]:
         """Format ALTER EXCEPTION name 'message'."""
         self._check_exception_version("ALTER EXCEPTION")
         return (
@@ -47,7 +47,7 @@ class FirebirdExceptionMixin:
             (),
         )
 
-    def format_drop_exception_statement(self, expr: "FirebirdDropExceptionExpression") -> Tuple[str, tuple]:
+    def format_drop_exception_statement(self, expr: "FirebirdDropExceptionStatement") -> Tuple[str, tuple]:
         """Format DROP EXCEPTION name."""
         self._check_exception_version("DROP EXCEPTION")
         return f"DROP EXCEPTION {self.format_identifier(expr.exception_name)}", ()

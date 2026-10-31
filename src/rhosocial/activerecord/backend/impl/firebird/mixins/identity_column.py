@@ -20,7 +20,7 @@ server-generated column is the identity clause, so the marker is refused rather
 than rendered.
 """
 
-from .version_boundaries import FIREBIRD_VERSION_BOUNDARIES, _norm_version
+from .version_boundaries import FIREBIRD_VERSION_BOUNDARIES
 
 
 class FirebirdIdentityColumnMixin:
@@ -32,7 +32,7 @@ class FirebirdIdentityColumnMixin:
         Gated at Firebird 3.0, the version that introduced the identity
         column; the 2.5 language reference has no such grammar.
         """
-        return _norm_version(self.version) >= FIREBIRD_VERSION_BOUNDARIES["IDENTITY"]
+        return self.version_at_least(FIREBIRD_VERSION_BOUNDARIES["IDENTITY"])
 
     def supports_identity_generation_always(self) -> bool:
         """``GENERATED ALWAYS`` executes on Firebird 3.0+.

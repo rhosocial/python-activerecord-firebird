@@ -11,8 +11,9 @@ from rhosocial.activerecord.backend.dialect.protocols import (
 )
 from rhosocial.activerecord.backend.expression import Literal
 from rhosocial.activerecord.backend.expression.objects import Domain
+from rhosocial.activerecord.backend.expression.registry import ExpressionRegistry
 from rhosocial.activerecord.backend.expression.serialization import (
-    ExpressionRegistry,
+    default_registry,
     deserialize,
     deserialize_json,
     deserialize_xml,
@@ -22,14 +23,14 @@ from rhosocial.activerecord.backend.expression.serialization import (
 )
 from rhosocial.activerecord.backend.expression.statements import (
     AddDomainCheckAction,
-    AlterDomainExpression,
-    CreateDomainExpression,
+    AlterDomainStatement,
+    CreateDomainStatement,
     DomainCheckConstraint,
     DomainNullability,
     DomainValueExpression,
     DropDomainCheckAction,
     DropDomainDefaultAction,
-    DropDomainExpression,
+    DropDomainStatement,
     DropDomainNotNullAction,
     RenameDomainAction,
     SetDomainDefaultAction,
@@ -38,7 +39,10 @@ from rhosocial.activerecord.backend.expression.statements import (
 from rhosocial.activerecord.backend.expression.types import (
     ArrayType,
     DecimalType,
+    DoubleType,
+    FloatType,
     IntegerType,
+    TextType,
     VarCharType,
 )
 from rhosocial.activerecord.backend.impl.firebird.dialect import FirebirdDialect
@@ -50,12 +54,8 @@ from rhosocial.activerecord.backend.impl.firebird.expression import (
     FirebirdSetDomainDataTypeAction,
 )
 from rhosocial.activerecord.backend.impl.firebird.expression.types import (
-    FirebirdBlobSubType,
     FirebirdCharType,
     FirebirdDecFloatType,
-    FirebirdDecimalType,
-    FirebirdDoubleType,
-    FirebirdFloatType,
     FirebirdInt128Type,
     FirebirdTimeStampTzType,
     FirebirdTimeWithoutTimeZoneType,
@@ -67,12 +67,43 @@ from rhosocial.activerecord.backend.impl.firebird.protocols import FirebirdDomai
 from rhosocial.activerecord.backend.impl.sqlite.dialect import SQLiteDialect
 
 
+#: This backend's own artifact kinds and the enum its payloads carry. The
+#: class-path index these used to be registered into was removed with the
+#: kind-based artifact format (core ``ee5f4b55``); the registry says which
+#: class a kind *is*, and a deployment that wants to read this backend's
+#: artifacts registers its kinds through the public entry point. The
+#: module-level registration below is this test process doing exactly that,
+#: so the round-trip cases below read what they write.
+_FIREBIRD_ARTIFACT_CLASSES = (
+    FirebirdCreateDomainExpression,
+    FirebirdAlterDomainExpression,
+    FirebirdDropDomainExpression,
+    FirebirdSetDomainDataTypeAction,
+    FirebirdCharType,
+    FirebirdVarCharType,
+    FirebirdTimeStampTzType,
+    FirebirdTimeTzType,
+    FirebirdTimeWithoutTimeZoneType,
+    FirebirdDecFloatType,
+    FirebirdInt128Type,
+)
+
+for _firebird_class in _FIREBIRD_ARTIFACT_CLASSES:
+    default_registry().register_node(_firebird_class)
+# No ``register_enum`` beside it: core ``679d9817`` took the enum and dataclass
+# whitelists off the registry along with the ``__enum__`` / ``__dataclass__``
+# markers they existed to key. ``FirebirdDomainAlterMode`` is a ``(str, Enum)``
+# with ``__str__ = str.__str__``, so a member travels as its own bare word and
+# the constructor normalizes it back -- there is nothing left to whitelist.
+del _firebird_class
+
+
 def _check(dialect, condition, *, name=None):
     return DomainCheckConstraint(dialect, condition, name=name)
 
 
 def _positive_check(dialect):
-    return _check(dialect, DomainValueExpression(dialect) > Literal(dialect, 0, inline_literals=True))
+    return _check(dialect, DomainValueExpression(dialect) > Literal(dialect, 0, inline=True))
 
 
 class TestCreateDomain:
@@ -88,7 +119,7 @@ class TestCreateDomain:
             collation="UNICODE_FS",
         )
 
-        assert isinstance(expression, CreateDomainExpression)
+        assert isinstance(expression, CreateDomainStatement)
         assert expression.to_sql() == (
             'CREATE DOMAIN "SALARY_RANGE" AS DECIMAL(10, 2) DEFAULT 0 NOT NULL '
             'CHECK (VALUE >= 0) COLLATE "UNICODE_FS"',
@@ -97,12 +128,12 @@ class TestCreateDomain:
 
     def test_core_expression_uses_firebird_clause_order(self):
         dialect = FirebirdDialect((5, 0, 0))
-        condition = DomainValueExpression(dialect) > Literal(dialect, 0, inline_literals=True)
-        expression = CreateDomainExpression(
+        condition = DomainValueExpression(dialect) > Literal(dialect, 0, inline=True)
+        expression = CreateDomainStatement(
             dialect,
             Domain(dialect, "positive_code"),
             VarCharType(length=8),
-            default=Literal(dialect, "A", inline_literals=True),
+            default=Literal(dialect, "A", inline=True),
             nullability=DomainNullability.NOT_NULL,
             checks=[_check(dialect, condition)],
             collation="UNICODE_FS",
@@ -137,14 +168,14 @@ class TestCreateDomain:
 
     def test_named_check_fails_fast(self):
         dialect = FirebirdDialect((4, 0, 0))
-        expression = CreateDomainExpression(
+        expression = CreateDomainStatement(
             dialect,
             Domain(dialect, "positive"),
             IntegerType(dialect),
             checks=[
                 _check(
                     dialect,
-                    DomainValueExpression(dialect) > Literal(dialect, 0, inline_literals=True),
+                    DomainValueExpression(dialect) > Literal(dialect, 0, inline=True),
                     name="positive_check",
                 )
             ],
@@ -155,7 +186,7 @@ class TestCreateDomain:
 
     def test_multiple_checks_fail_fast(self):
         dialect = FirebirdDialect((4, 0, 0))
-        expression = CreateDomainExpression(
+        expression = CreateDomainStatement(
             dialect,
             Domain(dialect, "bounded"),
             IntegerType(dialect),
@@ -167,7 +198,7 @@ class TestCreateDomain:
 
     def test_explicit_null_is_not_rendered(self):
         dialect = FirebirdDialect((4, 0, 0))
-        expression = CreateDomainExpression(
+        expression = CreateDomainStatement(
             dialect,
             Domain(dialect, "nullable"),
             IntegerType(dialect),
@@ -216,7 +247,7 @@ class TestAlterDomain:
 
         for mode, fields, expected in cases:
             expression = FirebirdAlterDomainExpression(dialect, Domain(dialect, "d"), mode, **fields)
-            assert isinstance(expression, AlterDomainExpression)
+            assert isinstance(expression, AlterDomainStatement)
             assert expression.to_sql() == (expected, ())
 
     def test_unbound_data_type_is_bound_to_firebird(self):
@@ -240,7 +271,9 @@ class TestAlterDomain:
         sqlite = SQLiteDialect(version=(3, 45, 0))
         action = FirebirdSetDomainDataTypeAction(
             dialect,
-            ArrayType(sqlite, IntegerType(sqlite), dimensions=1),
+            # ``element_type`` is keyword-only in the core's constructor; the
+            # positional spelling this test used predates that change.
+            ArrayType(sqlite, element_type=IntegerType(sqlite), dimensions=1),
         )
 
         with pytest.raises(TypeError, match="generic type 'array'"):
@@ -402,7 +435,7 @@ class TestAlterDomain:
 
     def test_core_alter_expression_uses_same_formatter(self):
         dialect = FirebirdDialect((4, 0, 0))
-        expression = AlterDomainExpression(
+        expression = AlterDomainStatement(
             dialect,
             Domain(dialect, "d"),
             [
@@ -417,15 +450,15 @@ class TestAlterDomain:
         dialect = FirebirdDialect((4, 0, 0))
         named_check = _check(
             dialect,
-            DomainValueExpression(dialect) > Literal(dialect, 0, inline_literals=True),
+            DomainValueExpression(dialect) > Literal(dialect, 0, inline=True),
             name="positive_check",
         )
-        add_expression = AlterDomainExpression(
+        add_expression = AlterDomainStatement(
             dialect,
             Domain(dialect, "d"),
             [AddDomainCheckAction(dialect, named_check)],
         )
-        drop_expression = AlterDomainExpression(
+        drop_expression = AlterDomainStatement(
             dialect,
             Domain(dialect, "d"),
             [DropDomainCheckAction(dialect, name="positive_check")],
@@ -459,7 +492,7 @@ class TestAlterDomain:
 
     def test_only_one_check_action_is_rendered(self):
         dialect = FirebirdDialect((4, 0, 0))
-        expression = AlterDomainExpression(
+        expression = AlterDomainStatement(
             dialect,
             Domain(dialect, "d"),
             [
@@ -515,7 +548,7 @@ class TestVersionBoundaries:
             IntegerType(dialect),
             not_null=True,
         )
-        alter = AlterDomainExpression(
+        alter = AlterDomainStatement(
             dialect,
             Domain(dialect, "positive"),
             [FirebirdSetDomainDataTypeAction(dialect, IntegerType(dialect))],
@@ -530,7 +563,7 @@ class TestVersionBoundaries:
     def test_not_null_actions_require_firebird_30(self, action_type):
         dialect = FirebirdDialect((2, 5, 0))
         action = action_type(dialect)
-        expression = AlterDomainExpression(dialect, Domain(dialect, "positive"), [action])
+        expression = AlterDomainStatement(dialect, Domain(dialect, "positive"), [action])
 
         assert dialect.supports_alter_domain_action(action_type) is False
         with pytest.raises(UnsupportedFeatureError, match="ALTER DOMAIN action"):
@@ -548,7 +581,7 @@ class TestVersionBoundaries:
         with pytest.raises(UnsupportedFeatureError, match="CREATE DOMAIN"):
             FirebirdCreateDomainExpression(dialect, Domain(dialect, "d"), IntegerType(dialect)).to_sql()
         with pytest.raises(UnsupportedFeatureError, match="DROP DOMAIN"):
-            DropDomainExpression(dialect, Domain(dialect, "d")).to_sql()
+            DropDomainStatement(dialect, Domain(dialect, "d")).to_sql()
 
 
 class TestCapabilities:
@@ -621,23 +654,28 @@ class TestDispatchAndSerialization:
         assert type(dialect).format_domain_alter_action is FirebirdDomainMixin.format_domain_alter_action
 
     def test_backend_domain_classes_are_registered(self):
-        classes = (
+        """Each class resolves under the kind its name derives.
+
+        The registry is the only name authority for reading an artifact, and a
+        fresh one starts empty: registration is what makes a backend's own
+        kinds readable, which is why the test registers rather than looks
+        anything up by import path (that index is gone with the kind-based
+        artifact format).
+        """
+        registry = ExpressionRegistry()
+        for expression_class in (
             FirebirdCreateDomainExpression,
             FirebirdAlterDomainExpression,
             FirebirdDropDomainExpression,
             FirebirdSetDomainDataTypeAction,
-        )
-
-        for expression_class in classes:
-            fqn = f"{expression_class.__module__}.{expression_class.__name__}"
-            assert ExpressionRegistry.lookup(fqn) is expression_class
+        ):
+            kind = registry.register_node(expression_class)
+            assert kind == expression_class.kind()
+            assert registry.resolve_node(kind) is expression_class
 
     def test_firebird_data_types_are_registered(self):
-        classes = (
-            FirebirdDecimalType,
-            FirebirdFloatType,
-            FirebirdDoubleType,
-            FirebirdBlobSubType,
+        registry = ExpressionRegistry()
+        for expression_class in (
             FirebirdCharType,
             FirebirdVarCharType,
             FirebirdTimeStampTzType,
@@ -645,19 +683,18 @@ class TestDispatchAndSerialization:
             FirebirdTimeTzType,
             FirebirdDecFloatType,
             FirebirdInt128Type,
-        )
-
-        for expression_class in classes:
-            fqn = f"{expression_class.__module__}.{expression_class.__name__}"
-            assert ExpressionRegistry.lookup(fqn) is expression_class
+        ):
+            kind = registry.register_node(expression_class)
+            assert kind == expression_class.kind()
+            assert registry.resolve_node(kind) is expression_class
 
     def test_firebird_data_types_round_trip_in_all_codecs(self):
         dialect = FirebirdDialect((4, 0, 0))
         expressions = (
-            FirebirdDecimalType(dialect, precision=10, scale=2),
-            FirebirdFloatType(dialect),
-            FirebirdDoubleType(dialect),
-            FirebirdBlobSubType(dialect),
+            DecimalType(dialect, precision=10, scale=2),
+            FloatType(dialect),
+            DoubleType(dialect),
+            TextType(dialect),
             FirebirdCharType(dialect, length=5),
             FirebirdVarCharType(dialect, length=40),
             # No ``precision`` on the zoned date-times: Firebird's ``TIME`` /

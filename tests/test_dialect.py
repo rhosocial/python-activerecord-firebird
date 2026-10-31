@@ -159,13 +159,15 @@ class TestFirebirdDialectTransaction:
 
     def test_format_set_transaction(self, dialect):
         from rhosocial.activerecord.backend.transaction import IsolationLevel, TransactionMode
-        from rhosocial.activerecord.backend.expression.transaction import SetTransactionExpression
+        from rhosocial.activerecord.backend.expression.transaction import SetTransactionStatement
 
-        expr = SetTransactionExpression(dialect)
-        expr._isolation_level = IsolationLevel.READ_COMMITTED
-        expr._mode = TransactionMode.READ_WRITE
+        expr = SetTransactionStatement(
+            dialect,
+            isolation_level=IsolationLevel.READ_COMMITTED,
+            mode=TransactionMode.READ_WRITE,
+        )
 
-        sql, params = dialect.format_set_transaction(expr)
+        sql, params = dialect.format_set_transaction_statement(expr)
         assert sql.startswith("SET TRANSACTION")
         assert "READ COMMITTED" in sql
         assert "READ WRITE" in sql

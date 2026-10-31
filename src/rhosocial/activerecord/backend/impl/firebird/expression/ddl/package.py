@@ -16,7 +16,7 @@ if TYPE_CHECKING:  # pragma: no cover
     from rhosocial.activerecord.backend.dialect import SQLDialectBase
 
 
-class FirebirdCreatePackageExpression(BaseExpression):
+class FirebirdCreatePackageStatement(BaseExpression):
     """CREATE PACKAGE name AS <declarations>."""
 
     def __init__(self, dialect: "SQLDialectBase", package_name: str, body: str = ""):
@@ -29,7 +29,7 @@ class FirebirdCreatePackageExpression(BaseExpression):
         return "format_create_package_statement"
 
 
-class FirebirdCreatePackageBodyExpression(BaseExpression):
+class FirebirdCreatePackageBodyStatement(BaseExpression):
     """CREATE PACKAGE BODY name AS <implementations>."""
 
     def __init__(self, dialect: "SQLDialectBase", package_name: str, body: str = ""):
@@ -42,7 +42,7 @@ class FirebirdCreatePackageBodyExpression(BaseExpression):
         return "format_create_package_body_statement"
 
 
-class FirebirdDropPackageExpression(BaseExpression):
+class FirebirdDropPackageStatement(BaseExpression):
     """DROP PACKAGE [BODY] name."""
 
     def __init__(self, dialect: "SQLDialectBase", package_name: str, body: bool = False):
@@ -56,7 +56,7 @@ class FirebirdDropPackageExpression(BaseExpression):
 
 
 __all__ = [
-    "FirebirdCreatePackageExpression",
-    "FirebirdCreatePackageBodyExpression",
-    "FirebirdDropPackageExpression",
+    "FirebirdCreatePackageStatement",
+    "FirebirdCreatePackageBodyStatement",
+    "FirebirdDropPackageStatement",
 ]

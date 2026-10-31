@@ -7,22 +7,22 @@ are pure construction — no database connection.
 
 from rhosocial.activerecord.backend.impl.firebird.dialect import FirebirdDialect
 from rhosocial.activerecord.backend.impl.firebird.expression import (
-    FirebirdCreateDatabaseExpression,
+    FirebirdCreateDatabaseStatement,
     FirebirdDatabaseSecurityMode,
-    FirebirdDropDatabaseExpression,
+    FirebirdDropDatabaseStatement,
 )
 
 
 class TestCreateDatabase:
     def test_create_database_minimal(self):
         dialect = FirebirdDialect((4, 0, 0))
-        sql, params = FirebirdCreateDatabaseExpression(dialect, "file.fdb").to_sql()
+        sql, params = FirebirdCreateDatabaseStatement(dialect, "file.fdb").to_sql()
         assert sql == "CREATE DATABASE 'file.fdb'"
         assert params == ()
 
     def test_create_database_full(self):
         dialect = FirebirdDialect((4, 0, 0))
-        expr = FirebirdCreateDatabaseExpression(
+        expr = FirebirdCreateDatabaseStatement(
             dialect,
             "file.fdb",
             user="u",
@@ -43,7 +43,7 @@ class TestCreateDatabase:
 
     def test_create_database_remote_alias(self):
         dialect = FirebirdDialect((4, 0, 0))
-        sql, params = FirebirdCreateDatabaseExpression(
+        sql, params = FirebirdCreateDatabaseStatement(
             dialect,
             "baseserver:test",
             user="wizard",
@@ -58,7 +58,7 @@ class TestCreateDatabase:
 
     def test_create_database_sql_security_enum(self):
         dialect = FirebirdDialect((4, 0, 0))
-        sql, params = FirebirdCreateDatabaseExpression(
+        sql, params = FirebirdCreateDatabaseStatement(
             dialect, "file.fdb", sql_security=FirebirdDatabaseSecurityMode.DEFINER
         ).to_sql()
         assert sql == "CREATE DATABASE 'file.fdb' SQL SECURITY DEFINER"
@@ -66,7 +66,7 @@ class TestCreateDatabase:
 
     def test_create_database_sql_security_string(self):
         dialect = FirebirdDialect((4, 0, 0))
-        sql, params = FirebirdCreateDatabaseExpression(
+        sql, params = FirebirdCreateDatabaseStatement(
             dialect, "file.fdb", sql_security="INVOKER"
         ).to_sql()
         assert sql == "CREATE DATABASE 'file.fdb' SQL SECURITY INVOKER"
@@ -74,7 +74,7 @@ class TestCreateDatabase:
 
     def test_create_database_quoting(self):
         dialect = FirebirdDialect((4, 0, 0))
-        sql, params = FirebirdCreateDatabaseExpression(
+        sql, params = FirebirdCreateDatabaseStatement(
             dialect, "/path/to/it's.db", user="u", password="p'w"
         ).to_sql()
         assert sql == "CREATE DATABASE '/path/to/it''s.db' USER 'u' PASSWORD 'p''w'"
@@ -84,7 +84,7 @@ class TestCreateDatabase:
 class TestDropDatabase:
     def test_drop_database(self):
         dialect = FirebirdDialect((4, 0, 0))
-        sql, params = FirebirdDropDatabaseExpression(dialect).to_sql()
+        sql, params = FirebirdDropDatabaseStatement(dialect).to_sql()
         assert sql == "DROP DATABASE"
         assert params == ()
 

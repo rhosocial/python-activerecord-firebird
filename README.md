@@ -50,11 +50,11 @@ from typing import ClassVar, Optional
 from rhosocial.activerecord.base import FieldProxy
 from rhosocial.activerecord.backend.impl.firebird.backend import FirebirdBackend
 from rhosocial.activerecord.backend.impl.firebird.config import FirebirdConnectionConfig
-from rhosocial.activerecord.backend.expression import CreateTableExpression
+from rhosocial.activerecord.backend.expression import CreateTableStatement
 from rhosocial.activerecord.backend.expression.statements import (
     ColumnConstraint,
-    ColumnConstraintType,
     ColumnDefinition,
+    ColumnPrimaryKeyConstraint,
 )
 from rhosocial.activerecord.backend.expression.types import IntegerType, VarCharType
 from rhosocial.activerecord.model import ActiveRecord
@@ -82,14 +82,16 @@ User.configure(
 )
 
 dialect = User.__backend__.dialect
-User.__backend__.execute(*CreateTableExpression(
+User.__backend__.execute(*CreateTableStatement(
     dialect,
     "users",
     columns=[
         ColumnDefinition(
             dialect, "id", IntegerType(dialect),
-            constraints=[ColumnConstraint(dialect, ColumnConstraintType.PRIMARY_KEY,
-                is_auto_increment=True)],
+            constraints=[ColumnConstraint(
+                dialect,
+                branch=ColumnPrimaryKeyConstraint(dialect, is_auto_increment=True),
+            )],
         ),
         ColumnDefinition(dialect, "name", VarCharType(dialect, 100)),
         ColumnDefinition(dialect, "email", VarCharType(dialect, 255)),
@@ -124,13 +126,13 @@ rows = await User.query().where(User.c.email == "alice@example.com").all()
 ### Domains
 
 Firebird domains are a first-class DDL expression, not a raw string. Build a
-`CreateDomainExpression` and render it:
+`CreateDomainStatement` and render it:
 
 ```python
-from rhosocial.activerecord.backend.expression import CreateDomainExpression
+from rhosocial.activerecord.backend.expression import CreateDomainStatement
 from rhosocial.activerecord.backend.expression.types import VarCharType
 
-User.__backend__.execute(*CreateDomainExpression(
+User.__backend__.execute(*CreateDomainStatement(
     dialect,
     "email_address",
     VarCharType(dialect, 255),
@@ -181,7 +183,10 @@ oldest release carry no gate and are omitted.
   `if_exists_table`, `if_not_exists_table`, `drop_index_on_table` and
   `trigger_if_not_exists` are unsupported.
 - Also unsupported: `on_conflict_clause`, `returning_alias`,
-  `fetch_with_ties`, `fk_match`, `stored_generated_columns`, `explain_plan`.
+  `fetch_with_ties`, `fk_match`, `intersect`, `except`,
+  `stored_generated_columns`, `explain_plan`. Firebird has no `INTERSECT`
+  or `EXCEPT` operator (tracker CORE808 still open); `UNION` / `UNION ALL`
+  are supported.
 
 ## Testing
 

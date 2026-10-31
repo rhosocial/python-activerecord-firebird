@@ -17,7 +17,7 @@ import pytest
 
 from rhosocial.activerecord.backend.dialect.exceptions import UnsupportedFeatureError
 from rhosocial.activerecord.backend.dialect.mixins import NamespaceMixin
-from rhosocial.activerecord.backend.expression import Column, QueryExpression
+from rhosocial.activerecord.backend.expression import Column, QueryStatement
 from rhosocial.activerecord.backend.expression.objects import (
     Domain,
     Function,
@@ -34,18 +34,18 @@ from rhosocial.activerecord.backend.expression.sources import (
 )
 from rhosocial.activerecord.backend.expression.statements import (
     ColumnDefinition,
-    CreateTableExpression,
-    DropTableExpression,
+    CreateTableStatement,
+    DropTableStatement,
     ForeignKeyConstraint,
     ReferentialAction,
 )
 from rhosocial.activerecord.backend.expression.types import IntegerType
 from rhosocial.activerecord.backend.impl.firebird.dialect import FirebirdDialect
 from rhosocial.activerecord.backend.impl.firebird.expression.dml import (
-    UpdateOrInsertExpression,
+    UpdateOrInsertStatement,
 )
-from rhosocial.activerecord.backend.impl.firebird.introspection.async_introspector import (
-    FirebirdAsyncIntrospectorMixin,
+from rhosocial.activerecord.backend.impl.firebird.introspection.introspector import (
+    SyncFirebirdIntrospector,
 )
 from rhosocial.activerecord.backend.impl.firebird.mixins.identifier import (
     FirebirdIdentifierMixin,
@@ -172,14 +172,14 @@ class TestStatementsGoThroughTheObjectLayer:
 
     def test_create_table_renders_the_accepted_reference(self, dialect):
         columns = [ColumnDefinition(dialect, "id", IntegerType(dialect))]
-        expr = CreateTableExpression(dialect, Table(dialect, "orders"), columns)
+        expr = CreateTableStatement(dialect, Table(dialect, "orders"), columns)
         sql, params = expr.to_sql()
         assert sql == 'CREATE TABLE "ORDERS" ("ID" INTEGER)'
         assert params == ()
 
     def test_create_table_refuses_a_qualified_reference(self, dialect, qualified):
         columns = [ColumnDefinition(dialect, "id", IntegerType(dialect))]
-        expr = CreateTableExpression(dialect, qualified, columns)
+        expr = CreateTableStatement(dialect, qualified, columns)
         with pytest.raises(UnsupportedFeatureError, match="schema-qualified"):
             expr.to_sql()
 
@@ -196,28 +196,28 @@ class TestStatementsGoThroughTheObjectLayer:
             on_delete=ReferentialAction.CASCADE,
             on_update=ReferentialAction.NO_ACTION,
         )
-        expr = CreateTableExpression(
+        expr = CreateTableStatement(
             dialect, Table(dialect, "orders"), columns, table_constraints=[fk]
         )
         sql, _ = expr.to_sql()
         assert 'REFERENCES "USERS" ("ID") ON DELETE CASCADE' in sql
 
     def test_drop_table_renders_and_refuses(self, dialect, qualified):
-        assert DropTableExpression(
+        assert DropTableStatement(
             dialect=dialect, table=Table(dialect, "orders")
         ).to_sql() == ('DROP TABLE "ORDERS"', ())
         with pytest.raises(UnsupportedFeatureError, match="schema-qualified"):
-            DropTableExpression(dialect=dialect, table=qualified).to_sql()
+            DropTableStatement(dialect=dialect, table=qualified).to_sql()
 
     def test_select_from_a_qualified_relation_is_refused(self, dialect, qualified):
-        query = QueryExpression(
+        query = QueryStatement(
             dialect, [Column(dialect, "id")], NamedRelationRef(dialect, qualified)
         )
         with pytest.raises(UnsupportedFeatureError, match="schema-qualified"):
             query.to_sql()
 
     def test_update_or_insert_renders_its_target(self, dialect):
-        expr = UpdateOrInsertExpression(
+        expr = UpdateOrInsertStatement(
             dialect, Table(dialect, "orders"), ["id"], [1], ["id"]
         )
         sql, params = expr.to_sql()
@@ -227,7 +227,7 @@ class TestStatementsGoThroughTheObjectLayer:
         assert params == (1,)
 
     def test_update_or_insert_refuses_a_qualified_target(self, dialect, qualified):
-        expr = UpdateOrInsertExpression(
+        expr = UpdateOrInsertStatement(
             dialect, qualified, ["id"], [1], ["id"]
         )
         with pytest.raises(UnsupportedFeatureError, match="schema-qualified"):
@@ -251,7 +251,7 @@ class TestRowSourceName:
         ) == "z"
 
     def test_derived_table_is_known_only_by_its_alias(self, dialect):
-        query = QueryExpression(
+        query = QueryStatement(
             dialect, [Column(dialect, "id")], NamedRelationRef(dialect, Table(dialect, "orders"))
         )
         assert dialect.row_source_name(DerivedTableSource(dialect, query)) is None
@@ -433,36 +433,52 @@ class TestNamespaceDeclaration:
 class TestIntrospectionNamespace:
     """Introspection takes the core's ``schema`` argument and refuses it."""
 
-    class _Probe(FirebirdAsyncIntrospectorMixin):
+    class _Probe(SyncFirebirdIntrospector):
         def __init__(self, dialect):
             self._backend = type("_B", (), {"dialect": dialect})()
 
     @pytest.mark.parametrize("schema", [None, ""])
     def test_absent_namespace_is_fine(self, dialect, schema):
         probe = self._Probe(dialect)
-        assert probe._make_table_list_sql(schema, False, True, None)[1] == ()
-        assert probe._make_column_list_sql("orders", schema)[1] == ("orders",)
-        assert probe._make_index_list_sql("orders", schema)[1] == ("orders",)
-        assert probe._make_foreign_key_sql("orders", schema)[1] == ("orders",)
-        assert probe._make_view_list_sql(schema)[1] == ()
-        assert probe._build_primary_key_sql("orders", schema)[1] == ("orders",)
+        assert (
+            probe.table_list_statement(
+                schema=schema, include_system=False, include_views=True, table_type=None
+            ).to_sql()[1]
+            == ()
+        )
+        assert (
+            probe.column_info_statement(table_name="orders", schema=schema).to_sql()[1]
+            == ("orders",)
+        )
+        assert (
+            probe.index_info_statement(table_name="orders", schema=schema).to_sql()[1]
+            == ("orders",)
+        )
+        assert (
+            probe.foreign_key_statement(table_name="orders", schema=schema).to_sql()[1]
+            == ("orders",)
+        )
+        assert (
+            probe.view_list_statement(schema=schema, include_system=False).to_sql()[1]
+            == ()
+        )
 
     @pytest.mark.parametrize(
         "call",
         [
-            lambda p: p._make_table_list_sql("sales", False, True, None),
-            lambda p: p._make_column_list_sql("orders", "sales"),
-            lambda p: p._make_index_list_sql("orders", "sales"),
-            lambda p: p._make_foreign_key_sql("orders", "sales"),
-            lambda p: p._make_view_list_sql("sales"),
-            lambda p: p._build_primary_key_sql("orders", "sales"),
-            lambda p: p._build_table_list_sql("sales", False, True, None),
+            lambda p: p.table_list_statement(
+                schema="sales", include_system=False, include_views=True, table_type=None
+            ),
+            lambda p: p.column_info_statement(table_name="orders", schema="sales"),
+            lambda p: p.index_info_statement(table_name="orders", schema="sales"),
+            lambda p: p.foreign_key_statement(table_name="orders", schema="sales"),
+            lambda p: p.view_list_statement(schema="sales", include_system=False),
         ],
     )
     def test_named_namespace_raises(self, dialect, call):
         probe = self._Probe(dialect)
         with pytest.raises(UnsupportedFeatureError, match="schema-scoped introspection"):
-            call(probe)
+            call(probe).to_sql()
 
     def test_default_schema_is_empty(self, dialect):
-        assert self._Probe(dialect)._get_default_schema() == ""
+        assert self._Probe(dialect).default_schema == ""

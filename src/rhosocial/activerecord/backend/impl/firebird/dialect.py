@@ -11,9 +11,11 @@ Firebird SQL dialect features and version support:
     - SKIP LOCKED (FB 4.0+)
   - OFFSET/FETCH (FB 3.0+)
   - DECFLOAT (FB 4.0+)
+  - UNION / UNION ALL (every Firebird release -- the operators predate
+    Firebird); INTERSECT / EXCEPT do not exist (tracker CORE808 open)
 """
 
-from typing import Optional, Tuple, TYPE_CHECKING
+from typing import Optional, Tuple
 
 from rhosocial.activerecord.backend.dialect.base import SQLDialectBase
 from rhosocial.activerecord.backend.dialect.protocols import (
@@ -121,7 +123,6 @@ from rhosocial.activerecord.backend.dialect.mixins import (
     TypeNameMixin,
     DatabaseNameMixin,
     SchemaNameMixin,
-    NamespaceMixin,
     # Core infrastructure mixins (shared by all modern backends)
     PredicateMixin,
     ExpressionMixin,
@@ -148,6 +149,7 @@ from .mixins.version_boundaries import _norm_version
 from .reserved_words import FIREBIRD_RESERVED_WORDS
 from .mixins import (
     FirebirdAlterTableModifierMixin,
+    FirebirdConstraintMixin,
     FirebirdDMLOperationMixin,
     FirebirdLockingMixin,
     FirebirdTableMixin,
@@ -186,6 +188,7 @@ from .mixins import (
     FirebirdIdentityColumnMixin,
     FirebirdFunctionMixin,
     FirebirdTruncateMixin,
+    FirebirdLiteralValueMixin,
     FirebirdUnsupportedFeaturesMixin,
 )
 from .protocols import (
@@ -221,12 +224,6 @@ from .protocols import (
     FirebirdTypeSupport,
 )
 
-if TYPE_CHECKING:
-    from rhosocial.activerecord.backend.expression.statements import (
-        ColumnDefinition,
-        TableConstraint,
-    )
-
 _SUGGESTION_ARRAY = (
     "Firebird has array column types, but not the ARRAY[...] constructor this "
     "renderer writes: declare the column as T [n] and reach it with a subscript."
@@ -242,6 +239,14 @@ _SUGGESTION_TEMPORAL = "Firebird does not support temporal tables."
 
 
 class FirebirdDialect(
+    # The bases below come in bundles: a backend mixin, then the core bundle
+    # it stands in for. The backend's answer has to come first -- a mixin
+    # placed after the class it overrides never wins -- so a new mixin goes
+    # immediately before the core mixin it overrides, and the pairing is read
+    # off the list. Two positions sit outside that pairing and are called out
+    # where they occur: a mixin that overrides a method ``SQLDialectBase``
+    # defines has to precede the base, and a mixin that subclasses a core
+    # mixin has to precede it too (C3: a subclass precedes its base).
     # Firebird-specific mixins MUST precede their generic counterparts so that
     # the C3 linearization resolves the overrides to the Firebird versions.
     #
@@ -280,13 +285,19 @@ class FirebirdDialect(
     FirebirdLockingMixin,       # Before DQLMixin to override format_for_update_clause
     DQLMixin,
     FirebirdAlterTableModifierMixin,  # Before DDLColumnMixin to override format_*_action
+    FirebirdConstraintMixin,  # Before DDLColumnMixin and ConstraintMixin for the pins
+    # Firebird-specific overrides (before generic mixins to take precedence).
+    # The three that answer a DDL *entry point* sit above DDLColumnMixin, which
+    # defines format_column_definition of its own: listed below it, that core
+    # method is reached first and Firebird's column rendering is never asked.
+    # Position is the fix (expression-dialect 11.1) -- a bridge on this class
+    # that forwards to the mixin would make the same answer reachable twice.
+    FirebirdDMLOperationMixin,  # Must be before DMLMixin
+    FirebirdTableMixin,         # Before DDLColumnMixin and before TableMixin
+    FirebirdCommentMixin,       # Must be before TableMixin (supports_comment_on/format_comment_on_statement)
     DDLColumnMixin,
     UserDefinedTypeMixin,
     TransactionControlMixin,
-    # Firebird-specific overrides (before generic mixins to take precedence)
-    FirebirdDMLOperationMixin,  # Must be before DMLMixin
-    FirebirdTableMixin,         # Must be before TableMixin
-    FirebirdCommentMixin,       # Must be before TableMixin (supports_comment_on/format_comment_statement)
     TableMixin,
     ConstraintMixin,
     FirebirdTriggerMixin,       # Must be before TriggerMixin
@@ -314,6 +325,12 @@ class FirebirdDialect(
     FirebirdRoleMixin,
     FirebirdUserMixin,
     FirebirdDatabaseMixin,
+    # Value literals: ``format_literal`` is the one entry point (core
+    # 239678e5 collapsed the twelve value nodes into Literal + LiteralKind),
+    # and Firebird's tier-2 spellings -- the binary hex literal and the
+    # bare quoted UUID text -- sit ahead of the base by this position.
+    # INTERVAL stays refused: the base's explicit failure is the answer.
+    FirebirdLiteralValueMixin,
     # Core feature mixins (no duplicates)
     DMLMixin,
     CollationMixin,
@@ -535,11 +552,24 @@ class FirebirdDialect(
 
     # region Version-based feature detection
 
+    def version_at_least(self, floor: Tuple[int, int, int]) -> bool:
+        """Whether the server version reaches *floor*, without raising.
+
+        Firebird's capability questions are answered from versions that can
+        name only two components (``FirebirdDialect((4, 0))``), and a shorter
+        tuple compares less than the longer one it is a prefix of. The floor
+        and the version are therefore padded to three components first; an
+        unknown version answers ``False``, because a capability nobody
+        confirmed is not claimed.
+        """
+        version = _norm_version(self.version_or_none)
+        return version is not None and version >= _norm_version(floor)
+
     def supports_window_functions(self) -> bool:
-        return _norm_version(self.version) >= (3, 0, 0)
+        return self.version_at_least((3, 0, 0))
 
     def supports_window_frame_clause(self) -> bool:
-        return _norm_version(self.version) >= (3, 0, 0)
+        return self.version_at_least((3, 0, 0))
 
     def supports_merge_statement(self) -> bool:
         return True
@@ -550,11 +580,11 @@ class FirebirdDialect(
     def supports_skip_locked(self) -> bool:
         """SKIP LOCKED was introduced in Firebird 4.0; single source of
         truth for both this gate and FirebirdLockingMixin's rendering."""
-        return _norm_version(self.version) >= (4, 0, 0)
+        return self.version_at_least((4, 0, 0))
 
     def supports_lateral_join(self) -> bool:
         """Firebird 4.0 introduced joins with LATERAL derived tables."""
-        return _norm_version(self.version) >= (4, 0, 0)
+        return self.version_at_least((4, 0, 0))
 
 
 
@@ -602,12 +632,6 @@ class FirebirdDialect(
     # DDLColumnMixin precedes FirebirdTableMixin in the MRO, so the column and
     # constraint formatters need a bridge; the Firebird versions carry
     # IDENTITY auto-increment and the Firebird-only constraint refusals.
-    def format_column_definition(self, col_def: "ColumnDefinition") -> Tuple[str, tuple]:
-        return FirebirdTableMixin.format_column_definition(self, col_def)
-
-    def format_table_constraint(self, expr: "TableConstraint") -> Tuple[str, tuple]:
-        return FirebirdTableMixin.format_table_constraint(self, expr)
-
     def supports_trigger_position(self) -> bool:
         return True
 
@@ -647,22 +671,54 @@ class FirebirdDialect(
         return True
 
     def supports_boolean_type(self) -> bool:
-        return _norm_version(self.version) >= (3, 0, 0)
+        return self.version_at_least((3, 0, 0))
 
     def supports_decfloat(self) -> bool:
-        return _norm_version(self.version) >= (4, 0, 0)
+        return self.version_at_least((4, 0, 0))
 
     def supports_rows_syntax(self) -> bool:
         return True
 
     def supports_offset_fetch(self) -> bool:
-        return _norm_version(self.version) >= (3, 0, 0)
+        return self.version_at_least((3, 0, 0))
 
     def supports_database_triggers(self) -> bool:
-        return _norm_version(self.version) >= (3, 0, 0)
+        return self.version_at_least((3, 0, 0))
 
     def supports_cte(self) -> bool:
-        return _norm_version(self.version) >= (3, 0, 0)
+        return self.version_at_least((3, 0, 0))
+
+    # Set operations (SetOperationSupport). Firebird spells UNION / UNION ALL
+    # with the SQL-standard keywords, and both operators predate Firebird --
+    # they were supported in the InterBase lineage Firebird forked from, so
+    # they exist in every Firebird release this backend can target and carry
+    # no version gate. The inherited ``format_set_operation`` renders those
+    # spellings as-is, so no formatter override is needed either.
+    # INTERSECT / EXCEPT do not exist in Firebird: the request is still open
+    # as tracker CORE808 (checked 2026-10-20), so both stay refused by name
+    # (the core renders them only after the probe says yes). The testsuite
+    # gates its intersect/except cases behind these probes, so answering
+    # False also skips those cases instead of failing them.
+    def supports_union(self) -> bool:
+        """``UNION`` is available since the InterBase lineage Firebird forked
+        from, hence in every Firebird version: no gate applies."""
+        return True
+
+    def supports_union_all(self) -> bool:
+        """``UNION ALL`` arrived with ``UNION`` in the same lineage; Firebird
+        keeps duplicate rows, which is what the keyword means."""
+        return True
+
+    def supports_intersect(self) -> bool:
+        """Firebird has no ``INTERSECT`` operator -- tracker CORE808 was still
+        open on 2026-10-20 -- so rendering one would only produce SQL the
+        server rejects; the core refuses it by name instead."""
+        return False
+
+    def supports_except(self) -> bool:
+        """Firebird has no ``EXCEPT`` operator -- tracker CORE808 was still
+        open on 2026-10-20, same reasoning as ``supports_intersect``."""
+        return False
 
     def supports_udf(self) -> bool:
         return True
@@ -671,13 +727,13 @@ class FirebirdDialect(
         return True
 
     def supports_packages(self) -> bool:
-        return _norm_version(self.version) >= (3, 0, 0)
+        return self.version_at_least((3, 0, 0))
 
     def supports_create_package(self) -> bool:
-        return _norm_version(self.version) >= (3, 0, 0)
+        return self.version_at_least((3, 0, 0))
 
     def supports_create_package_body(self) -> bool:
-        return _norm_version(self.version) >= (3, 0, 0)
+        return self.version_at_least((3, 0, 0))
 
     def supports_global_temporary_table(self) -> bool:
         return True
@@ -694,13 +750,13 @@ class FirebirdDialect(
 
 
     def supports_autonomous_transaction(self) -> bool:
-        return _norm_version(self.version) >= (3, 0, 0)
+        return self.version_at_least((3, 0, 0))
 
     def supports_for_cursor(self) -> bool:
         return True
 
     def supports_as_cursor(self) -> bool:
-        return _norm_version(self.version) >= (3, 0, 0)
+        return self.version_at_least((3, 0, 0))
 
     def supports_collation(self) -> bool:
         return True
@@ -856,56 +912,13 @@ class FirebirdDialect(
     # endregion
 
     # region ConstraintSupport
-
-    def supports_primary_key_constraint(self) -> bool:
-        return True
-
-    def supports_unique_constraint(self) -> bool:
-        return True
-
-    def supports_not_null_constraint(self) -> bool:
-        return True
-
-    def supports_check_constraint(self) -> bool:
-        return True
-
-    def supports_foreign_key_constraint(self) -> bool:
-        return True
-
-    def supports_fk_on_delete(self) -> bool:
-        return True
-
-    def supports_fk_on_update(self) -> bool:
-        return True
-
-    def supports_fk_match(self) -> bool:
-        return False
-
-    def supports_deferrable_constraint(self) -> bool:
-        """Firebird has no DEFERRABLE / INITIALLY ... constraint attributes.
-
-        Measured on Firebird 5.0.4 and 6.0.0: ``DEFERRABLE``, ``NOT
-        DEFERRABLE``, ``INITIALLY DEFERRED`` and ``INITIALLY IMMEDIATE`` are
-        all answered with ``Token unknown`` on table and column constraints
-        alike. The formatter refuses a requested spelling by name.
-        """
-        return False
-
-    def supports_constraint_enforced(self) -> bool:
-        """Firebird has no ENFORCED / NOT ENFORCED constraint control.
-
-        Measured on Firebird 5.0.4 and 6.0.0: ``CHECK (...) ENFORCED`` and
-        ``CHECK (...) NOT ENFORCED`` are answered with ``Token unknown -
-        ENFORCED`` / ``Token unknown - NOT``, and so are the FOREIGN KEY and
-        column-constraint forms. The formatter refuses a requested spelling by
-        name rather than dropping it.
-        """
-        return False
-
-    def supports_add_constraint(self) -> bool:
-        return True
-
-    def supports_drop_constraint(self) -> bool:
-        return True
-
+    #
+    # Every constraint switch lives on FirebirdConstraintMixin
+    # (rhosocial.activerecord.backend.impl.firebird.mixins.constraint), not
+    # here.  It used to be declared inline in this region with bare ``return
+    # True`` bodies; the values were right but carried no evidence, so a
+    # measured correction had nowhere to live.  Each switch there states the
+    # Firebird 5.0.4 SQLCODE or message it came from, which is what keeps a
+    # moved core default from silently becoming Firebird's contract.
+    #
     # endregion

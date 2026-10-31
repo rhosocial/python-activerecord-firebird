@@ -21,6 +21,12 @@ from ..mixins import (
     untrack_firebird_connection,
 )
 from ..transaction import FirebirdTransactionManager
+from ..query_nodes import (
+    database_probe_sql,
+    engine_version_sql,
+    health_check_sql,
+    mon_version_sql,
+)
 
 
 class FirebirdBackend(
@@ -122,7 +128,8 @@ class FirebirdBackend(
                     return False
             return False
         try:
-            self._cursor.execute("SELECT 1 FROM RDB$DATABASE")
+            probe, probe_params = health_check_sql(self.dialect)
+            self._cursor.execute(probe, probe_params or None)
             self._cursor.fetchone()
             return True
         except Exception:
@@ -236,12 +243,14 @@ class FirebirdBackend(
             self.connect()
         cursor = self._get_cursor()
         try:
-            cursor.execute("SELECT RDB$GET_CONTEXT('SYSTEM', 'ENGINE_VERSION') FROM RDB$DATABASE")
+            context_sql, context_params = engine_version_sql(self.dialect)
+            cursor.execute(context_sql, context_params or None)
             row = cursor.fetchone()
             if row and row[0]:
                 version_str = str(row[0])
             else:
-                cursor.execute("SELECT MON$VERSION FROM MON$DATABASE")
+                mon_sql, mon_params = mon_version_sql(self.dialect)
+                cursor.execute(mon_sql, mon_params or None)
                 row = cursor.fetchone()
                 if row and row[0]:
                     version_str = str(row[0])
@@ -249,7 +258,8 @@ class FirebirdBackend(
                     return (2, 5, 0)
         except Exception:
             try:
-                cursor.execute("SELECT * FROM RDB$DATABASE")
+                probe_sql, probe_params = database_probe_sql(self.dialect)
+                cursor.execute(probe_sql, probe_params or None)
                 version_str = str(cursor.description[0][0]) if cursor.description else "2.5.0"
             except Exception:
                 return (2, 5, 0)
@@ -291,8 +301,8 @@ class FirebirdBackend(
             mapping = column_mapping or {}
             for row in rows:
                 row_dict = dict(zip(column_names, row, strict=False))
-                adapted_row = self._adapt_row_types(row_dict, adapters)
-                final_row = self._remap_row_columns(adapted_row, mapping)
+                adapted_row = self.adapt_row_types(row_dict, adapters)
+                final_row = self.remap_row_columns(adapted_row, mapping)
                 if char_columns:
                     for col in char_columns:
                         if isinstance(final_row.get(col), str):

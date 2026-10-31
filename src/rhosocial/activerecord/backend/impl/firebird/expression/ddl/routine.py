@@ -17,7 +17,12 @@ if TYPE_CHECKING:  # pragma: no cover
     from rhosocial.activerecord.backend.dialect import SQLDialectBase
 
 
-class FirebirdRoutineMode(Enum):
+class FirebirdRoutineMode(str, Enum):
+    #: A member *is* the word it carries: ``__str__ = str.__str__`` keeps the
+    #: artifact's spelling the bare word, because the Enum ``__str__`` that
+    #: would otherwise win writes ``ClassName.MEMBER`` (§11.3).
+    __str__ = str.__str__
+
     """Firebird routine DDL variant."""
 
     CREATE = "CREATE"
@@ -26,10 +31,30 @@ class FirebirdRoutineMode(Enum):
     DROP = "DROP"
 
 
+def _normalize_routine_mode(mode: FirebirdRoutineMode) -> FirebirdRoutineMode:
+    """The mode as the enum member, whatever spelling arrived.
+
+    The artifact carries the plain word (a string enum *is* a JSON string), so
+    the constructor accepts the word back and normalizes it.  Anything else is
+    refused here, by name, rather than at render time.
+    """
+    if isinstance(mode, FirebirdRoutineMode):
+        return mode
+    if isinstance(mode, str):
+        try:
+            return FirebirdRoutineMode(mode)
+        except ValueError as exc:
+            raise ValueError(f"unsupported routine DDL mode: {mode!r}") from exc
+    raise TypeError(
+        f"mode must be a FirebirdRoutineMode (or its word), "
+        f"got {type(mode).__name__}"
+    )
+
+
 RoutineParam = Union[tuple, dict]
 
 
-class FirebirdCreateProcedureExpression(BaseExpression):
+class FirebirdCreateProcedureStatement(BaseExpression):
     """CREATE [OR ALTER | RECREATE] PROCEDURE name (params) RETURNS (...) AS <body>."""
 
     def __init__(
@@ -46,14 +71,14 @@ class FirebirdCreateProcedureExpression(BaseExpression):
         self.params: List[RoutineParam] = params or []
         self.returns: List[RoutineParam] = returns or []
         self.body: str = body
-        self.mode: FirebirdRoutineMode = mode
+        self.mode: FirebirdRoutineMode = _normalize_routine_mode(mode)
 
     @property
     def format_method(self) -> str:
         return "format_create_procedure_statement"
 
 
-class FirebirdCreateFunctionExpression(BaseExpression):
+class FirebirdCreateFunctionStatement(BaseExpression):
     """CREATE [OR ALTER | RECREATE] FUNCTION name (params) RETURNS type AS <body>.
 
     Stored functions require Firebird 3.0 or later.
@@ -73,14 +98,14 @@ class FirebirdCreateFunctionExpression(BaseExpression):
         self.params: List[RoutineParam] = params or []
         self.returns: Any = returns
         self.body: str = body
-        self.mode: FirebirdRoutineMode = mode
+        self.mode: FirebirdRoutineMode = _normalize_routine_mode(mode)
 
     @property
     def format_method(self) -> str:
         return "format_create_function_statement"
 
 
-class FirebirdDropRoutineExpression(BaseExpression):
+class FirebirdDropRoutineStatement(BaseExpression):
     """DROP / CREATE OR ALTER / RECREATE for a PROCEDURE or FUNCTION.
 
     ``routine_type`` selects the object kind and ``mode`` the DDL variant.
@@ -101,7 +126,7 @@ class FirebirdDropRoutineExpression(BaseExpression):
         super().__init__(dialect)
         self.routine_name: str = routine_name
         self.routine_type: str = routine_type.upper()
-        self.mode: FirebirdRoutineMode = mode
+        self.mode: FirebirdRoutineMode = _normalize_routine_mode(mode)
         self.params: List[RoutineParam] = params or []
         self.returns: Any = returns
         self.body: str = body
@@ -113,7 +138,7 @@ class FirebirdDropRoutineExpression(BaseExpression):
 
 __all__ = [
     "FirebirdRoutineMode",
-    "FirebirdCreateProcedureExpression",
-    "FirebirdCreateFunctionExpression",
-    "FirebirdDropRoutineExpression",
+    "FirebirdCreateProcedureStatement",
+    "FirebirdCreateFunctionStatement",
+    "FirebirdDropRoutineStatement",
 ]

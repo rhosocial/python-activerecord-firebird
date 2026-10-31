@@ -7,16 +7,16 @@ All tests are pure construction — no database connection.
 
 from rhosocial.activerecord.backend.impl.firebird.dialect import FirebirdDialect
 from rhosocial.activerecord.backend.impl.firebird.expression import (
-    FirebirdAlterExternalFunctionExpression,
-    FirebirdCreateExternalFunctionExpression,
-    FirebirdDropExternalFunctionExpression,
+    FirebirdAlterExternalFunctionStatement,
+    FirebirdCreateExternalFunctionStatement,
+    FirebirdDropExternalFunctionStatement,
 )
 
 
 class TestDeclareExternalFunction:
     def test_declare_external_function_by_value(self):
         dialect = FirebirdDialect((4, 0, 0))
-        expr = FirebirdCreateExternalFunctionExpression(
+        expr = FirebirdCreateExternalFunctionStatement(
             dialect,
             "efunc",
             params=["INT"],
@@ -34,7 +34,7 @@ class TestDeclareExternalFunction:
 
     def test_declare_external_function_by_reference(self):
         dialect = FirebirdDialect((4, 0, 0))
-        expr = FirebirdCreateExternalFunctionExpression(
+        expr = FirebirdCreateExternalFunctionStatement(
             dialect,
             "add_day",
             params=["TIMESTAMP", "INT"],
@@ -52,7 +52,7 @@ class TestDeclareExternalFunction:
 
     def test_declare_external_function_free_it(self):
         dialect = FirebirdDialect((4, 0, 0))
-        expr = FirebirdCreateExternalFunctionExpression(
+        expr = FirebirdCreateExternalFunctionStatement(
             dialect,
             "efunc",
             params=["INT"],
@@ -73,7 +73,7 @@ class TestDeclareExternalFunction:
 class TestAlterExternalFunction:
     def test_alter_entry_point(self):
         dialect = FirebirdDialect((4, 0, 0))
-        sql, params = FirebirdAlterExternalFunctionExpression(
+        sql, params = FirebirdAlterExternalFunctionStatement(
             dialect, "efunc", entry_point="new_func"
         ).to_sql()
         assert sql == "ALTER EXTERNAL FUNCTION \"EFUNC\" ENTRY_POINT 'new_func'"
@@ -81,7 +81,7 @@ class TestAlterExternalFunction:
 
     def test_alter_module_name(self):
         dialect = FirebirdDialect((4, 0, 0))
-        sql, params = FirebirdAlterExternalFunctionExpression(
+        sql, params = FirebirdAlterExternalFunctionStatement(
             dialect, "efunc", module_name="fbudf2"
         ).to_sql()
         assert sql == "ALTER EXTERNAL FUNCTION \"EFUNC\" MODULE_NAME 'fbudf2'"
@@ -89,7 +89,7 @@ class TestAlterExternalFunction:
 
     def test_alter_both(self):
         dialect = FirebirdDialect((4, 0, 0))
-        sql, params = FirebirdAlterExternalFunctionExpression(
+        sql, params = FirebirdAlterExternalFunctionStatement(
             dialect, "efunc", entry_point="new_func", module_name="new_mod"
         ).to_sql()
         assert sql == (
@@ -102,7 +102,7 @@ class TestAlterExternalFunction:
 class TestDropExternalFunction:
     def test_drop_external_function(self):
         dialect = FirebirdDialect((4, 0, 0))
-        sql, params = FirebirdDropExternalFunctionExpression(dialect, "efunc").to_sql()
+        sql, params = FirebirdDropExternalFunctionStatement(dialect, "efunc").to_sql()
         assert sql == 'DROP EXTERNAL FUNCTION "EFUNC"'
         assert params == ()
 
@@ -131,7 +131,7 @@ class TestExternalFunctionDispatch:
 class TestExternalFunctionVersionGating:
     def test_declare_external_function_ok_on_fb2_5(self):
         dialect = FirebirdDialect((2, 5, 0))
-        sql, params = FirebirdCreateExternalFunctionExpression(
+        sql, params = FirebirdCreateExternalFunctionStatement(
             dialect,
             "efunc",
             params=["INT"],

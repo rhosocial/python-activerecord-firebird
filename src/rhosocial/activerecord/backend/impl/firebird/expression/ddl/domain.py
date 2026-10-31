@@ -7,17 +7,16 @@ from typing import Any, Optional, Sequence, Set, TYPE_CHECKING, Union
 from rhosocial.activerecord.backend.expression.bases import SQLPredicate
 from rhosocial.activerecord.backend.expression.objects import Domain
 from rhosocial.activerecord.backend.expression.operators import RawSQLPredicate
-from rhosocial.activerecord.backend.expression.serialization import ExpressionRegistry
 from rhosocial.activerecord.backend.expression.statements.ddl_domain import (
     AddDomainCheckAction,
-    AlterDomainExpression,
-    CreateDomainExpression,
+    AlterDomainStatement,
+    CreateDomainStatement,
     DomainAlterAction,
     DomainCheckConstraint,
     DomainNullability,
     DropDomainCheckAction,
     DropDomainDefaultAction,
-    DropDomainExpression,
+    DropDomainStatement,
     DropDomainNotNullAction,
     SetDomainDefaultAction,
     SetDomainNotNullAction,
@@ -33,7 +32,12 @@ if TYPE_CHECKING:
     from rhosocial.activerecord.backend.dialect import SQLDialectBase
 
 
-class FirebirdDomainAlterMode(Enum):
+class FirebirdDomainAlterMode(str, Enum):
+    #: A member *is* the word it carries: ``__str__ = str.__str__`` keeps the
+    #: artifact's spelling the bare word, because the Enum ``__str__`` that
+    #: would otherwise win writes ``ClassName.MEMBER`` (§11.3).
+    __str__ = str.__str__
+
     """Legacy ALTER DOMAIN clause selector."""
 
     SET_DEFAULT = "SET DEFAULT"
@@ -148,7 +152,7 @@ def _coalesce_checks(
     return check_items
 
 
-class FirebirdCreateDomainExpression(CreateDomainExpression):
+class FirebirdCreateDomainExpression(CreateDomainStatement):
     """Compatibility wrapper for the core CREATE DOMAIN expression."""
 
     def __init__(
@@ -192,7 +196,7 @@ class FirebirdCreateDomainExpression(CreateDomainExpression):
         self.check = check
 
 
-class FirebirdAlterDomainExpression(AlterDomainExpression):
+class FirebirdAlterDomainExpression(AlterDomainStatement):
     """Compatibility wrapper accepting either the legacy mode or core actions."""
 
     def __init__(
@@ -215,6 +219,17 @@ class FirebirdAlterDomainExpression(AlterDomainExpression):
             "constraint_sql": constraint_sql,
             "data_type_name": data_type_name,
         }
+        # The artifact carries the plain word (a string enum *is* a JSON
+        # string), so the legacy mode is normalized to its member here --
+        # before the spelling reaches the isinstance gate below, which would
+        # otherwise refuse the word the enum itself puts on the wire.
+        if isinstance(mode, str) and not isinstance(mode, FirebirdDomainAlterMode):
+            try:
+                mode = FirebirdDomainAlterMode(mode)
+            except ValueError as exc:
+                raise ValueError(
+                    f"unsupported ALTER DOMAIN mode: {mode!r}"
+                ) from exc
         if mode is None:
             if any(field is not None for field in legacy_fields.values()):
                 raise ValueError("legacy ALTER DOMAIN fields require mode")
@@ -353,14 +368,16 @@ class FirebirdAlterDomainExpression(AlterDomainExpression):
         return True
 
 
-class FirebirdDropDomainExpression(DropDomainExpression):
+class FirebirdDropDomainExpression(DropDomainStatement):
     """Firebird-named DROP DOMAIN expression."""
 
 
-ExpressionRegistry.register(FirebirdCreateDomainExpression)
-ExpressionRegistry.register(FirebirdAlterDomainExpression)
-ExpressionRegistry.register(FirebirdDropDomainExpression)
-ExpressionRegistry.register(FirebirdSetDomainDataTypeAction)
+# No registration calls: the class-path index they fed was removed with the
+# kind-based artifact format (core ``ee5f4b55``), and nothing replaces them
+# here -- a registry is assembled from the framework's packages at first
+# deserialization, and a deployment that wants to read this backend's own
+# kinds registers them into a registry of its own. Importing this module is
+# what makes the classes available to that walk.
 
 
 __all__ = [
