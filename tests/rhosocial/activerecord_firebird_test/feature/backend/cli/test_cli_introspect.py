@@ -151,6 +151,11 @@ def make_async_introspector(exc=None):
     base = FakeIntrospector()
 
     class AsyncFakeIntrospector:
+        def __init__(self):
+            # The same list the sync fake records into: this wrapper exists to
+            # make a method awaitable, not to hide which method was reached.
+            self.calls = base.calls
+
         def __getattr__(self, name):
             attr = getattr(base, name)
 
@@ -188,6 +193,26 @@ class FakeBackend:
         self.adapt_calls = getattr(self, "adapt_calls", 0) + 1
 
     def disconnect(self):
+        self.disconnect_calls += 1
+        self._connection = None
+
+
+class FakeAsyncBackend(FakeBackend):
+    """The same fake, awaited.
+
+    ``_handle_introspect_async`` connects, adapts and disconnects through
+    coroutines, so the stub has to answer in kind; everything else -- the
+    introspector it carries, the recording of that introspector's calls -- is
+    the sync fake's, which is what keeps the two paths comparable.
+    """
+
+    async def connect(self):
+        self._connection = object()
+
+    async def introspect_and_adapt(self):
+        self.adapt_calls = getattr(self, "adapt_calls", 0) + 1
+
+    async def disconnect(self):
         self.disconnect_calls += 1
         self._connection = None
 
@@ -279,31 +304,38 @@ class TestIntrospectParserContract:
         assert excinfo.value.code == 2
 
 
+# One case per advertised type: the argv that asks, something the answer has to
+# contain, and the introspector method the CLI must reach. Shared by the sync
+# and the async path, so a type wired into one and not the other fails a test
+# instead of being found by a user.
+HAPPY_PATH_TYPES = [
+    (["tables"], "ORDERS", "list_tables"),
+    (["views"], "ACTIVE_USERS", "list_views"),
+    (["columns", "USERS"], "VARCHAR", "list_columns"),
+    (["indexes", "USERS"], "IDX_USERS_NAME", "list_indexes"),
+    (["foreign-keys", "USERS"], "FK_USERS_ROLE", "list_foreign_keys"),
+    (["triggers"], "TRG_AUDIT", "list_triggers"),
+    (["database"], "page_size", "get_database_info"),
+    (["generators"], "GEN_SEQ", "list_generators"),
+    (["domains"], "DOMAIN_MONEY", "list_domains"),
+    (["exceptions"], "EXC_LIMIT", "list_exceptions"),
+    (["procedures"], "PROC_PING", "list_procedures"),
+    (["procedure-parameters", "PING"], "PPARAM_I", "list_procedure_parameters"),
+    (["functions"], "FUNC_DOUBLE", "list_functions"),
+    (["function-arguments", "DOUBLE"], "FARG_X", "list_function_arguments"),
+    (["constraints"], "CONS_PK", "list_constraints"),
+    (["roles"], "ROLE_READER", "list_roles"),
+    (["privileges"], "PRIV_SELECT", "list_privileges"),
+    (["charsets"], "CHARSET_UTF8", "list_charsets"),
+    (["collations"], "COLL_UCS_BASIC", "list_collations"),
+    (["dependencies"], "DEP_VIEW", "list_dependencies"),
+    (["view-relations"], "VREL_BASE", "list_view_relations"),
+    (["publications"], "PUB_DEFAULT", "list_publications"),
+]
+
+
 class TestIntrospectHandleHappyPaths:
-    @pytest.mark.parametrize("argv,marker,call_prefix", [
-        (["tables"], "ORDERS", "list_tables"),
-        (["views"], "ACTIVE_USERS", "list_views"),
-        (["columns", "USERS"], "VARCHAR", "list_columns"),
-        (["indexes", "USERS"], "IDX_USERS_NAME", "list_indexes"),
-        (["foreign-keys", "USERS"], "FK_USERS_ROLE", "list_foreign_keys"),
-        (["triggers"], "TRG_AUDIT", "list_triggers"),
-        (["database"], "page_size", "get_database_info"),
-        (["generators"], "GEN_SEQ", "list_generators"),
-        (["domains"], "DOMAIN_MONEY", "list_domains"),
-        (["exceptions"], "EXC_LIMIT", "list_exceptions"),
-        (["procedures"], "PROC_PING", "list_procedures"),
-        (["procedure-parameters", "PING"], "PPARAM_I", "list_procedure_parameters"),
-        (["functions"], "FUNC_DOUBLE", "list_functions"),
-        (["function-arguments", "DOUBLE"], "FARG_X", "list_function_arguments"),
-        (["constraints"], "CONS_PK", "list_constraints"),
-        (["roles"], "ROLE_READER", "list_roles"),
-        (["privileges"], "PRIV_SELECT", "list_privileges"),
-        (["charsets"], "CHARSET_UTF8", "list_charsets"),
-        (["collations"], "COLL_UCS_BASIC", "list_collations"),
-        (["dependencies"], "DEP_VIEW", "list_dependencies"),
-        (["view-relations"], "VREL_BASE", "list_view_relations"),
-        (["publications"], "PUB_DEFAULT", "list_publications"),
-    ])
+    @pytest.mark.parametrize("argv,marker,call_prefix", HAPPY_PATH_TYPES)
     def test_each_type_output(self, monkeypatch, capsys, argv, marker, call_prefix):
         monkeypatch.setattr(introspect_mod, "FirebirdBackend", FakeBackend)
         args = parse_introspect_args(["introspect", *argv, "--database", "/tmp/x.fdb", "-o", "json"])
@@ -366,6 +398,60 @@ class TestIntrospectHandleHappyPaths:
         assert "USERS" in capsys.readouterr().out
 
 
+class _RefusingDialect:
+    """A server one release older than the family being asked about.
+
+    Publications are Firebird 4; on 3 the switch answers False, and the CLI is
+    expected to say so rather than let the statement reach the server and come
+    back as a "table unknown" the caller has to translate.
+    """
+
+    def supports_publication_introspection(self):
+        return False
+
+
+class TestCapabilityGate:
+    def test_a_family_the_server_cannot_answer_exits_two(self, monkeypatch, capsys):
+        """Exit 2: the request does not hold *here*, which is not a failure of the run.
+
+        The distinction is what lets a caller script around it: 1 means "it did
+        not run", 2 means "this server cannot answer that", and the sentence on
+        stderr names the family rather than the statement.
+        """
+
+        class OldServer(FakeBackend):
+            dialect = _RefusingDialect()
+
+        monkeypatch.setattr(introspect_mod, "FirebirdBackend", OldServer)
+        args = parse_introspect_args(
+            ["introspect", "publications", "--database", "/tmp/x.fdb"]
+        )
+        with pytest.raises(SystemExit) as excinfo:
+            introspect_mod.handle(args)
+        assert excinfo.value.code == 2
+        assert "publications introspection is not supported by this server" in (
+            capsys.readouterr().err
+        )
+
+    def test_the_async_path_refuses_the_same_way(self, capsys):
+        """The gate is asked after adaptation on both paths, so both refuse alike."""
+        backend = FakeAsyncBackend()
+        backend.dialect = _RefusingDialect()
+        args = parse_introspect_args(
+            ["introspect", "publications", "--database", "/tmp/x.fdb"]
+        )
+        with pytest.raises(SystemExit) as excinfo:
+            asyncio.run(
+                introspect_mod._handle_introspect_async(
+                    args, backend, introspect_mod.create_provider("json")
+                )
+            )
+        assert excinfo.value.code == 2
+        assert "publications introspection is not supported by this server" in (
+            capsys.readouterr().err
+        )
+
+
 class TestIntrospectArgumentValidation:
     @pytest.mark.parametrize("introspect_type", ["columns", "indexes", "foreign-keys"])
     def test_missing_name_exits_nonzero(self, monkeypatch, capsys, introspect_type):
@@ -391,19 +477,30 @@ class TestIntrospectArgumentValidation:
 
 
 class TestIntrospectAsyncPath:
+    @pytest.mark.parametrize("argv,marker,call_prefix", HAPPY_PATH_TYPES)
+    def test_each_type_answers(self, capsys, argv, marker, call_prefix):
+        """The async path offers every type the sync one does.
+
+        Only ``tables`` was exercised before, so the other branches of the
+        async handler could have reached a method by the wrong name and passed:
+        the fake records which one was called, and this asserts it is the same
+        one the sync path asks for.
+        """
+        backend = FakeAsyncBackend()
+        backend.introspector = make_async_introspector()
+        args = parse_introspect_args(
+            ["introspect", *argv, "--database", "/tmp/x.fdb", "-o", "json"]
+        )
+        asyncio.run(
+            introspect_mod._handle_introspect_async(args, backend, introspect_mod.create_provider("json"))
+        )
+        out = capsys.readouterr().out
+        assert marker in out
+        assert backend.introspector.calls[0][0] == call_prefix
+        assert backend.disconnect_calls == 1
+
     def test_async_tables_json(self, capsys):
-        class AsyncBackend(FakeBackend):
-            async def connect(self):
-                self._connection = object()
-
-            async def introspect_and_adapt(self):
-                self.adapt_calls = getattr(self, "adapt_calls", 0) + 1
-
-            async def disconnect(self):
-                self.disconnect_calls += 1
-                self._connection = None
-
-        backend = AsyncBackend()
+        backend = FakeAsyncBackend()
         backend.introspector = make_async_introspector()
         args = parse_introspect_args(["introspect", "tables", "--database", "/tmp/x.fdb", "-o", "json"])
         asyncio.run(
@@ -413,17 +510,7 @@ class TestIntrospectAsyncPath:
         assert backend.disconnect_calls == 1
 
     def test_async_query_error_exits_nonzero(self):
-        class AsyncBackend(FakeBackend):
-            async def connect(self):
-                self._connection = object()
-
-            async def introspect_and_adapt(self):
-                self.adapt_calls = getattr(self, "adapt_calls", 0) + 1
-
-            async def disconnect(self):
-                self._connection = None
-
-        backend = AsyncBackend()
+        backend = FakeAsyncBackend()
         backend.introspector = make_async_introspector(exc=QueryError("no such table"))
         args = parse_introspect_args(["introspect", "tables", "--database", "/tmp/x.fdb"])
         with pytest.raises(SystemExit) as excinfo:

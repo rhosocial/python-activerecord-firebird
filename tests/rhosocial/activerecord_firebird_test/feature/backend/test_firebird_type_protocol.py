@@ -698,33 +698,31 @@ class TestDialectRangeValidation:
 
     def test_both_float_renderers_agree_on_every_precision(self, dialect,
                                                             dialect_3):
-        """The defect: two renderers, one Firebird type, two answers.
+        """One Firebird type, and the spelling each precision renders to.
 
         Checked against the whole accepted range and both sides of the version
-        boundary rather than case by case, because the way this failed was a
-        single case disagreeing — ``FloatType(precision=25)`` raising while
-        ``FloatType(precision=25)`` rendered.
+        boundary rather than case by case: the argument is *binary* precision on
+        4.0 and does not exist before it, so a renderer that accepted it on 3.0,
+        or spelled it as anything but ``FLOAT(n)``, would be wrong in exactly
+        one place — which is how this failed before.
         """
         for precision in (1, 12, 24, 25, 40, 53):
             assert dialect.format_data_type(FloatType(precision=precision)) == (
-                dialect.format_data_type(
-                    FloatType(precision=precision)
-                )
+                f"FLOAT({precision})",
+                (),
             )
         for precision in (0, 54):
-            with pytest.raises(ValueError):
-                dialect.format_data_type(FloatType(precision=precision))
             with pytest.raises(ValueError):
                 dialect.format_data_type(FloatType(precision=precision))
         for precision in (24, 53):
             with pytest.raises(UnsupportedFeatureError):
                 dialect_3.format_data_type(FloatType(precision=precision))
-            with pytest.raises(UnsupportedFeatureError):
-                dialect_3.format_data_type(FloatType(precision=precision))
         # Bare FLOAT means the same thing in both renderers and needs no gate:
-        # 32-bit single precision, 4 bytes, in every Firebird version.
+        # 32-bit single precision, 4 bytes, in every Firebird version. It is
+        # also the one case both version fixtures can render, so the two are
+        # compared here rather than left to agree by coincidence.
         assert dialect_3.format_data_type(FloatType()) == ("FLOAT", ())
-        assert dialect_3.format_data_type(FloatType()) == dialect_3.format_data_type(
+        assert dialect.format_data_type(FloatType()) == dialect_3.format_data_type(
             FloatType()
         )
 
