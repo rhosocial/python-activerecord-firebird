@@ -20,14 +20,14 @@ import pytest
 from rhosocial.activerecord.backend.impl.firebird.dialect import FirebirdDialect
 from rhosocial.activerecord.backend.introspection.types import TableType
 from rhosocial.activerecord.backend.impl.firebird.introspection.introspector import (
-    SyncFirebirdIntrospector,
+    FirebirdIntrospector,
 )
 from rhosocial.activerecord.backend.impl.firebird.introspection.status_introspector import (
     FirebirdStatusIntrospectorMixin,
 )
 
 
-class IntrospectionProbe(SyncFirebirdIntrospector):
+class IntrospectionProbe(FirebirdIntrospector):
     def __init__(self, dialect, cached_version=None):
         self._backend = type(
             "_B",

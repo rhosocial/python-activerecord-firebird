@@ -45,7 +45,7 @@ from rhosocial.activerecord.backend.impl.firebird.expression.dml import (
     UpdateOrInsertStatement,
 )
 from rhosocial.activerecord.backend.impl.firebird.introspection.introspector import (
-    SyncFirebirdIntrospector,
+    FirebirdIntrospector,
 )
 from rhosocial.activerecord.backend.impl.firebird.mixins.identifier import (
     FirebirdIdentifierMixin,
@@ -433,7 +433,7 @@ class TestNamespaceDeclaration:
 class TestIntrospectionNamespace:
     """Introspection takes the core's ``schema`` argument and refuses it."""
 
-    class _Probe(SyncFirebirdIntrospector):
+    class _Probe(FirebirdIntrospector):
         def __init__(self, dialect):
             self._backend = type("_B", (), {"dialect": dialect})()
 

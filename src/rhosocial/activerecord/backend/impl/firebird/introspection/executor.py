@@ -11,7 +11,7 @@ import asyncio
 from typing import Any, Dict, List, Tuple
 
 
-class SyncFirebirdIntrospectorExecutor:
+class FirebirdIntrospectorExecutor:
     """Executor that wraps a synchronous Firebird backend."""
 
     def __init__(self, backend: Any) -> None:
@@ -59,6 +59,6 @@ class AsyncFirebirdIntrospectorExecutor:
 
 
 __all__ = [
-    "SyncFirebirdIntrospectorExecutor",
+    "FirebirdIntrospectorExecutor",
     "AsyncFirebirdIntrospectorExecutor",
 ]

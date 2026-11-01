@@ -14,13 +14,13 @@ are declared below as the sync half of that pair.
 from typing import Dict, List, Optional
 
 from rhosocial.activerecord.backend.introspection.base import (
-    SyncAbstractIntrospector,
+    AbstractIntrospector,
 )
 from rhosocial.activerecord.backend.introspection.cache import (
     IntrospectionCache,
 )
 from rhosocial.activerecord.backend.introspection.executor import (
-    SyncIntrospectorExecutor,
+    IntrospectorExecutor,
 )
 from rhosocial.activerecord.backend.introspection.types import (
     IntrospectionScope,
@@ -28,7 +28,7 @@ from rhosocial.activerecord.backend.introspection.types import (
 )
 
 from .async_introspector import FirebirdAsyncIntrospectorMixin
-from .status_introspector import SyncFirebirdStatusIntrospector
+from .status_introspector import FirebirdStatusIntrospector
 from .types import (
     FirebirdCharsetInfo,
     FirebirdCollationInfo,
@@ -48,7 +48,7 @@ from .types import (
 )
 
 
-class SyncFirebirdIntrospector(FirebirdAsyncIntrospectorMixin, SyncAbstractIntrospector):
+class FirebirdIntrospector(FirebirdAsyncIntrospectorMixin, AbstractIntrospector):
     """Synchronous Firebird schema introspector."""
 
     def __init__(
@@ -56,15 +56,15 @@ class SyncFirebirdIntrospector(FirebirdAsyncIntrospectorMixin, SyncAbstractIntro
         backend,
         cache: Optional[IntrospectionCache] = None,
     ):
-        executor = SyncIntrospectorExecutor(backend)
+        executor = IntrospectorExecutor(backend)
         super().__init__(backend, executor, cache)
         self._status_instance = None
 
     @property
-    def status(self) -> SyncFirebirdStatusIntrospector:
+    def status(self) -> FirebirdStatusIntrospector:
         """Firebird status introspector (lazily created)."""
         if self._status_instance is None:
-            self._status_instance = SyncFirebirdStatusIntrospector(self._backend)
+            self._status_instance = FirebirdStatusIntrospector(self._backend)
         return self._status_instance
 
     def get_table_info(
@@ -405,4 +405,4 @@ class SyncFirebirdIntrospector(FirebirdAsyncIntrospectorMixin, SyncAbstractIntro
         return result
 
 
-__all__ = ["SyncFirebirdIntrospector"]
+__all__ = ["FirebirdIntrospector"]

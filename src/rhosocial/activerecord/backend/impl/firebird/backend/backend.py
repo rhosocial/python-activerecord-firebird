@@ -283,8 +283,8 @@ class FirebirdBackend(
             self.adapter_registry.register(bool_adapter, bool, str, allow_override=True)
 
     def _create_introspector(self):
-        from ..introspection.introspector import SyncFirebirdIntrospector
-        return SyncFirebirdIntrospector(self)
+        from ..introspection.introspector import FirebirdIntrospector
+        return FirebirdIntrospector(self)
 
     def _process_result_set(self, cursor, is_select, column_adapters=None, column_mapping=None):
         if not is_select:

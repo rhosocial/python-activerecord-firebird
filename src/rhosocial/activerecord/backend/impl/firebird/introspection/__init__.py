@@ -4,14 +4,14 @@
 from .async_introspector import AsyncFirebirdIntrospector
 
 try:
-    from .introspector import SyncFirebirdIntrospector
+    from .introspector import FirebirdIntrospector
 except ImportError:
-    SyncFirebirdIntrospector = None
+    FirebirdIntrospector = None
 
 from .types import FirebirdDomainInfo, FirebirdGeneratorInfo
 
 __all__ = [
-    "SyncFirebirdIntrospector",
+    "FirebirdIntrospector",
     "AsyncFirebirdIntrospector",
     "FirebirdDomainInfo",
     "FirebirdGeneratorInfo",

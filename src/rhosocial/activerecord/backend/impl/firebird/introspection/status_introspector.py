@@ -6,7 +6,7 @@ Provides server status information by querying Firebird's RDB$ system
 tables and MON$ monitoring tables.
 
 Design principle: Sync and Async are separate and cannot coexist.
-- SyncFirebirdStatusIntrospector: for synchronous backends
+- FirebirdStatusIntrospector: for synchronous backends
 - AsyncFirebirdStatusIntrospector: for asynchronous backends
 
 Every query below is built from expression nodes and rendered by the dialect
@@ -27,7 +27,7 @@ from rhosocial.activerecord.backend.introspection.status import (
     ConnectionInfo,
     StorageInfo,
     SessionInfo,
-    SyncAbstractStatusIntrospector,
+    AbstractStatusIntrospector,
     AsyncAbstractStatusIntrospector,
 )
 
@@ -228,7 +228,7 @@ class FirebirdStatusIntrospectorMixin:
         )
 
 
-class SyncFirebirdStatusIntrospector(FirebirdStatusIntrospectorMixin, SyncAbstractStatusIntrospector):
+class FirebirdStatusIntrospector(FirebirdStatusIntrospectorMixin, AbstractStatusIntrospector):
     """Synchronous Firebird status introspector.
 
     Uses RDB$ system tables and MON$ monitoring tables to gather server
@@ -685,6 +685,6 @@ class AsyncFirebirdStatusIntrospector(FirebirdStatusIntrospectorMixin, AsyncAbst
 
 
 __all__ = [
-    "SyncFirebirdStatusIntrospector",
+    "FirebirdStatusIntrospector",
     "AsyncFirebirdStatusIntrospector",
 ]
