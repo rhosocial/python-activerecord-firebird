@@ -76,7 +76,7 @@ from typing import Dict
 
 import pytest
 
-from rhosocial.activerecord.backend.dialect.exceptions import UnsupportedFeatureError
+from rhosocial.activerecord.backend.dialect.exceptions import (ProtocolNotImplementedError, UnsupportedFeatureError)
 from rhosocial.activerecord.backend.expression import graph as graph_mod
 from rhosocial.activerecord.backend.expression.advanced_functions import (
     CaseExpression,
@@ -960,7 +960,17 @@ _NO_DIALECT_METHOD = "mix in the mixin that provides it"
 #: in the test that asserts the dispatch table, not here, because these classes
 #: are constructible -- it is their *target* that is a string.
 LEGITIMATE_NON_RENDERS = {
-    # ---- bases that name an expression category, not a renderable thing ----
+        # ---- core introspection families this dialect does not answer ----
+    #  Firebird keeps no per-index use counter and no per-table access summary; its statistics are size-oriented. The
+    # probes answer False, and these classes stay a declared gap until the engine gains such a counter.
+    "rhosocial.activerecord.backend.expression.introspection.UnusedIndexesQueryStatement": (
+        ProtocolNotImplementedError, 'does not implement ',
+    ),
+    "rhosocial.activerecord.backend.expression.introspection.TableUsageStatsQueryStatement": (
+        ProtocolNotImplementedError, 'does not implement ',
+    ),
+
+# ---- bases that name an expression category, not a renderable thing ----
     # Each deliberately declares no `format_method`, so `to_sql()` reports there
     # is nothing to dispatch. They are not `inspect.isabstract` -- they are
     # concrete enough to construct -- so the collector keeps them.
