@@ -29,9 +29,12 @@ Three families are deliberately absent:
   objects in it, and are likewise status material.
 """
 
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Optional, Sequence
 
 from rhosocial.activerecord.backend.expression.bases import BaseExpression
+from rhosocial.activerecord.backend.expression.introspection import (
+    ColumnDataProfileQueryStatement,
+)
 
 if TYPE_CHECKING:  # pragma: no cover
     from rhosocial.activerecord.backend.dialect import SQLDialectBase
@@ -39,6 +42,7 @@ if TYPE_CHECKING:  # pragma: no cover
 __all__ = [
     "FirebirdCharsetListQueryStatement",
     "FirebirdCollationListQueryStatement",
+    "FirebirdColumnDataProfileQueryStatement",
     "FirebirdConstraintListQueryStatement",
     "FirebirdDependencyQueryStatement",
     "FirebirdDomainInfoQueryStatement",
@@ -599,3 +603,71 @@ class FirebirdPublicationListQueryStatement(BaseExpression):
             f"include_system={self.include_system!r})"
         )
 
+
+
+class FirebirdColumnDataProfileQueryStatement(ColumnDataProfileQueryStatement):
+    """Ask for one table's per-column profile, answered as a single row.
+
+    Core's class already carries the question: the table, the (empty) namespace,
+    and the column list an aggregating dialect cannot do without. This one adds
+    the fact the SQL needs beyond the names -- *which* columns the aggregates
+    can read at all.
+
+    Firebird's ``MIN`` and ``MAX`` are defined over comparable types only, and a
+    ``BLOB`` is not comparable: ``MIN(blob_col)`` is rejected when the statement
+    is prepared, not answered as ``NULL``. ``COUNT(DISTINCT blob_col)`` fails for
+    the same reason, because ``DISTINCT`` needs an ordering. So a profile that
+    named a BLOB column in those positions would be refused as a whole rather
+    than answer for the columns it can read. ``opaque_columns`` names them, and
+    the formatter leaves their distinct count and both bounds as SQL ``NULL``
+    while still counting their nulls and the table's rows.
+
+    The introspector supplies that list from the column catalogue it reads the
+    names from -- ``RDB$FIELDS.RDB$FIELD_TYPE`` is where the declared type is
+    known, and the profile itself cannot see it.
+
+    The profile is one row rather than one ``UNION ALL`` arm per column. Two
+    reasons, one of which is Firebird's own: the statement reads the table once
+    either way on this engine, but a union has to reconcile one type per column
+    position across every arm, and ``min_value`` carrying an ``INTEGER`` from one
+    column and a ``VARCHAR`` from another has no common type Firebird will
+    accept. A single projection keeps each column's own bounds type.
+
+    ``format_method`` is inherited deliberately: one formatter answers the
+    question, reading ``opaque_columns`` when the statement carries it so that
+    core's own statement -- which does not -- still renders, with every column
+    assumed readable.
+    """
+
+    def __init__(
+        self,
+        dialect: "SQLDialectBase",
+        table_name: str,
+        schema: Optional[str] = None,
+        columns: Sequence[str] = (),
+        opaque_columns: Sequence[str] = (),
+    ):
+        """Initialize the column data profile statement.
+
+        Args:
+            dialect: The dialect the statement is bound to.
+            table_name: The table whose columns are profiled.
+            schema: The namespace; Firebird has one unnamed namespace, so this
+                must be ``None`` or empty.
+            columns: Every column of the table, in the order the profile's slots
+                are projected.
+            opaque_columns: The subset of *columns* whose declared type the
+                aggregates cannot read. Their distinct count and bounds are
+                rendered as ``NULL``.
+        """
+        super().__init__(
+            dialect, table_name=table_name, schema=schema, columns=columns
+        )
+        self.opaque_columns = tuple(opaque_columns)
+
+    def __repr__(self) -> str:
+        return (
+            f"FirebirdColumnDataProfileQueryStatement("
+            f"table_name={self.table_name!r}, schema={self.schema!r}, "
+            f"columns={self.columns!r}, opaque_columns={self.opaque_columns!r})"
+        )

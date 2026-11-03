@@ -23,6 +23,7 @@ from rhosocial.activerecord.backend.introspection.executor import (
     IntrospectorExecutor,
 )
 from rhosocial.activerecord.backend.introspection.types import (
+    ColumnDataProfile,
     IntrospectionScope,
     IntrospectionTableInfo,
 )
@@ -87,6 +88,54 @@ class FirebirdIntrospector(FirebirdAsyncIntrospectorMixin, AbstractIntrospector)
         table.indexes = self.list_indexes(table_name, schema)
         table.foreign_keys = self.list_foreign_keys(table_name, schema)
         return table
+
+    def list_column_data_profiles(
+        self,
+        table_name: str,
+        schema: Optional[str] = None,
+    ) -> List[ColumnDataProfile]:
+        """Profile one table's columns from its rows.
+
+        Firebird keeps no per-column statistics catalogue, so the answer is one
+        aggregate over the table -- exact, and paid for in time rather than in
+        money. The response is one wide row, which this reshapes into the
+        per-column records the family promises.
+
+        The column catalogue is read first, and not only for the names: the
+        aggregates need the names, and the formatter needs each column's
+        declared type to know which figures Firebird will refuse to compute. A
+        BLOB is not comparable, so its distinct count and bounds are left
+        ``NULL`` while its null count and the table's row count are answered;
+        asking for all of them would make the server reject the whole query.
+
+        The cache key is core's, so a caller that reaches this method and one
+        that reaches it through the base class share an answer.
+
+        The catalogue read folds the name -- see :meth:`_catalogue_name` for
+        why the column question needs a hand here that no other family gives
+        it, and why the answer is still empty for a deliberately mixed-case
+        table.
+        """
+        key = self._cache.key(
+            IntrospectionScope.COLUMN, table_name, "data_profile", schema=schema
+        )
+        cached = self._cache.get(key)
+        if cached is not None:
+            return cached
+        # The table itself is read under its folded name: the statement's FROM
+        # renders ``Table``, which folds on its own, and the two agree.
+        target = self._catalogue_name(table_name)
+        columns = self.list_columns(target, schema)
+        sql, params = self.profile_statement(
+            table_name=target, schema=schema, columns=columns
+        ).to_sql()
+        result = self.parse_column_data_profiles(
+            self._executor.execute(sql, params),
+            schema if schema is not None else self.default_schema,
+            table_name,
+        )
+        self._cache.set(key, result)
+        return result
 
     # ------------------------------------------------------------------
     # Firebird-specific object families

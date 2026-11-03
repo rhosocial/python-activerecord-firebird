@@ -11,6 +11,8 @@ from rhosocial.activerecord.backend.introspection.cache import (
     IntrospectionCache,
 )
 from rhosocial.activerecord.backend.introspection.types import (
+    ColumnDataProfile,
+    ColumnValueFrequency,
     IntrospectionDatabaseInfo,
     IntrospectionTableInfo,
     TableType,
@@ -19,6 +21,7 @@ from rhosocial.activerecord.backend.introspection.types import (
     IndexColumnInfo,
     IndexType,
     IntrospectionForeignKeyInfo,
+    JoinCoverage,
     ReferentialAction,
     IntrospectionViewInfo,
     IntrospectionTriggerInfo,
@@ -1031,6 +1034,183 @@ class FirebirdAsyncIntrospectorMixin(IntrospectorMixin):
             )
         return result
 
+    # ------------------------------------------------------------------
+    # Core data-profile family
+    #
+    # The profile is answered as one wide row rather than one row per column,
+    # because Firebird's union has to reconcile one type per column position
+    # across every arm and a column's bounds do not share a type with its
+    # neighbour's. The reshape therefore happens here, and the per-column rules
+    # stay in core's parser.
+    # ------------------------------------------------------------------
+
+    def _catalogue_name(self, table_name: str) -> str:
+        """The name as the ``RDB$`` catalogue spells it.
+
+        Firebird folds *unquoted* identifiers to upper case, so a caller who
+        wrote ``"orders"`` and one who wrote ``"ORDERS"`` are asking about the
+        same table -- and the catalogue holds it once, folded. Every other
+        identifier this dialect renders goes through that folding; the column
+        question does not, because its relation name travels as a bind
+        parameter rather than as a quoted identifier, and
+        :meth:`column_info_statement` keeps the caller's spelling verbatim by
+        design (its own builder test pins the raw parameter). A profile must
+        therefore fold before asking, or a table a caller named in lower case
+        would answer with no columns at all -- an empty profile that reads
+        exactly like "this table has no columns".
+
+        A caller who quoted a mixed-case table name in its DDL gets the same
+        folding here, which is the one case this cannot resolve: the catalogue
+        holds the name as written, and no SQL comparison of an upper-folded
+        bind value against it can match. That is a property of the catalogue
+        comparison and not of this family.
+        """
+        return table_name.strip().upper()
+
+    def profile_statement(
+        self,
+        *,
+        table_name: str,
+        schema: Optional[str],
+        columns: List[Any],
+    ) -> "FirebirdColumnDataProfileQueryStatement":  # noqa: F821
+        """The profile question, told which columns its aggregates can read.
+
+        It lives here rather than on the dialect because the answer needs the
+        catalogue, not the SQL: the *names* come from the column listing this
+        introspector already read, and the *types* -- which decide whether
+        ``MIN``, ``MAX`` and ``COUNT(DISTINCT ...)`` may be asked of a column
+        at all -- come from the same rows. The dialect only renders what it is
+        handed.
+
+        Args:
+            table_name: The table whose columns are profiled.
+            schema: The namespace; Firebird has one, and it is unnamed.
+            columns: The table's columns as the catalogue reported them --
+                :class:`~rhosocial.activerecord.backend.introspection.types.IntrospectionColumnInfo`
+                values, not names, because each one's declared type decides
+                whether the aggregates may be asked of it.
+
+        Returns:
+            The statement. Render it with ``to_sql()``.
+        """
+        from ..expression.introspection import (
+            FirebirdColumnDataProfileQueryStatement,
+        )
+
+        return FirebirdColumnDataProfileQueryStatement(
+            self.dialect,
+            table_name=table_name,
+            schema=schema,
+            columns=tuple(column.name for column in columns),
+            opaque_columns=tuple(
+                column.name
+                for column in columns
+                if str(
+                    getattr(column, "data_type_full", None) or column.data_type or ""
+                )
+                .strip()
+                .upper()
+                .startswith("BLOB")
+            ),
+        )
+
+    @staticmethod
+    def _lower_keys(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """The same rows with lower-cased keys.
+
+        Firebird quotes every identifier it renders, so the result names come
+        back in the case the formatter spelled -- upper case, because this
+        dialect folds names. Core's parsers read lower-case slot names, and
+        normalising here keeps that one rule rather than teaching each parser a
+        second spelling.
+        """
+        return [
+            {str(key).lower(): value for key, value in row.items()}
+            for row in rows or []
+        ]
+
+    def parse_column_data_profiles(
+        self,
+        rows: List[Dict[str, Any]],
+        schema: str,
+        table_name: str,
+    ) -> List[ColumnDataProfile]:
+        """Pivot the profile's single row back into one row per column.
+
+        The statement projects every column's figures as one wide row -- which
+        is what keeps each column's bounds in its own type, and what Firebird's
+        union would not allow -- so the row is reshaped here into the per-column
+        rows core's parser already reads: ``column_name``, ``null_count``,
+        ``distinct_count``, ``min_value``, ``max_value``, ``row_count`` and
+        ``source``.
+
+        Reshaping rather than re-implementing is deliberate. "``None`` means not
+        measured", the derivation of ``null_fraction`` from a count and a row
+        count, and the skipping of a row with no column name are one set of
+        rules, and they live in core.
+
+        Slots the formatter projected as ``NULL`` -- the distinct count and the
+        bounds of a BLOB, which Firebird will not compare -- arrive as ``None``
+        and stay ``None``: their absence is a fact about the engine, not a zero
+        it measured.
+        """
+        shaped: List[Dict[str, Any]] = []
+        for row in self._lower_keys(rows):
+            index = 1
+            while f"c{index}_name" in row:
+                prefix = f"c{index}_"
+                shaped.append(
+                    {
+                        "column_name": row[prefix + "name"],
+                        "null_count": row.get(prefix + "null_count"),
+                        "distinct_count": row.get(prefix + "distinct_count"),
+                        "min_value": row.get(prefix + "min"),
+                        "max_value": row.get(prefix + "max"),
+                        "row_count": row.get("row_count"),
+                        "source": row.get("source"),
+                    }
+                )
+                index += 1
+        return super().parse_column_data_profiles(shaped, schema, table_name)
+
+    def parse_column_value_samples(
+        self, rows: List[Dict[str, Any]]
+    ) -> List[ColumnValueFrequency]:
+        """Read the value listing, whose slot names arrive upper-cased.
+
+        Same reason as :meth:`_lower_keys`: the formatter quotes ``value`` and
+        ``count``, so Firebird reports them folded. Nothing else about the
+        listing changes -- a NULL value is still a legitimate member of the
+        column's domain and is kept rather than skipped.
+        """
+        return super().parse_column_value_samples(self._lower_keys(rows))
+
+    def parse_join_coverage(
+        self,
+        rows: List[Dict[str, Any]],
+        *,
+        left_table: str,
+        left_column: str,
+        right_table: str,
+        right_column: str,
+        schema: Optional[str] = None,
+    ) -> Optional[JoinCoverage]:
+        """Read the single coverage row, whose slot names arrive upper-cased.
+
+        The two fractions are the whole answer, and ``None`` in either slot is
+        "this side has no value to match" rather than "nothing matched" -- which
+        is exactly the distinction the ``NULLIF`` in the statement preserves.
+        """
+        return super().parse_join_coverage(
+            self._lower_keys(rows),
+            left_table=left_table,
+            left_column=left_column,
+            right_table=right_table,
+            right_column=right_column,
+            schema=schema,
+        )
+
 
 class AsyncFirebirdIntrospector(FirebirdAsyncIntrospectorMixin, AsyncAbstractIntrospector):
     """Asynchronous Firebird schema introspector.
@@ -1069,6 +1249,44 @@ class AsyncFirebirdIntrospector(FirebirdAsyncIntrospectorMixin, AsyncAbstractInt
         table.indexes = await self.list_indexes(table_name, schema)
         table.foreign_keys = await self.list_foreign_keys(table_name, schema)
         return table
+
+    async def list_column_data_profiles(
+        self,
+        table_name: str,
+        schema: Optional[str] = None,
+    ) -> List[ColumnDataProfile]:
+        """Profile one table's columns from its rows (async).
+
+        The async twin of
+        :meth:`~.introspector.FirebirdIntrospector.list_column_data_profiles`:
+        same catalogue read, same one-row statement, same cache key, so the two
+        cannot disagree about which columns carry figures.
+        """
+        key = self._cache.key(
+            IntrospectionScope.COLUMN, table_name, "data_profile", schema=schema
+        )
+        cached = self._cache.get(key)
+        if cached is not None:
+            return cached
+        # The catalogue read folds the name, for the reason
+        # :meth:`_catalogue_name` records: the column question's relation name
+        # is a bind parameter and keeps the caller's spelling, so a table named
+        # in lower case would otherwise answer with no columns at all.
+        target = self._catalogue_name(table_name)
+        columns = await self.list_columns(target, schema)
+        sql, params = self.profile_statement(
+            table_name=target, schema=schema, columns=columns
+        ).to_sql()
+        sql, params = self.profile_statement(
+            table_name=table_name, schema=schema, columns=columns
+        ).to_sql()
+        result = self.parse_column_data_profiles(
+            await self._executor.execute(sql, params),
+            schema if schema is not None else self.default_schema,
+            table_name,
+        )
+        self._cache.set(key, result)
+        return result
 
     # ------------------------------------------------------------------
     # Firebird-specific object families
