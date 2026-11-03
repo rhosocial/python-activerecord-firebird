@@ -960,6 +960,17 @@ _NO_DIALECT_METHOD = "mix in the mixin that provides it"
 #: in the test that asserts the dispatch table, not here, because these classes
 #: are constructible -- it is their *target* that is a string.
 LEGITIMATE_NON_RENDERS = {
+    # ---- core data-profile families this dialect does not answer ----
+    #  Firebird has no column statistics catalogue and no value-distribution view. The probes answer False.
+    "rhosocial.activerecord.backend.expression.introspection.ColumnDataProfileQueryStatement": (
+        ProtocolNotImplementedError, 'does not implement ',
+    ),
+    "rhosocial.activerecord.backend.expression.introspection.ColumnValueSampleQueryStatement": (
+        ProtocolNotImplementedError, 'does not implement ',
+    ),
+    "rhosocial.activerecord.backend.expression.introspection.JoinCoverageQueryStatement": (
+        ProtocolNotImplementedError, 'does not implement ',
+    ),
     # ---- core operational families this dialect does not answer ----
     #  Firebird keeps no per-index use counter, no dependency catalogue and no per-object DDL retrieval; its statistics are size-oriented. The probes answer False.
     "rhosocial.activerecord.backend.expression.introspection.RuntimeMetricsQueryStatement": (
