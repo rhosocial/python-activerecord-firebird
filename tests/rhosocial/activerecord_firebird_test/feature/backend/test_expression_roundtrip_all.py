@@ -960,6 +960,20 @@ _NO_DIALECT_METHOD = "mix in the mixin that provides it"
 #: in the test that asserts the dispatch table, not here, because these classes
 #: are constructible -- it is their *target* that is a string.
 LEGITIMATE_NON_RENDERS = {
+    # ---- core operational families this dialect does not answer ----
+    #  Firebird keeps no per-index use counter, no dependency catalogue and no per-object DDL retrieval; its statistics are size-oriented. The probes answer False.
+    "rhosocial.activerecord.backend.expression.introspection.RuntimeMetricsQueryStatement": (
+        ProtocolNotImplementedError, 'does not implement ',
+    ),
+    "rhosocial.activerecord.backend.expression.introspection.IndexUsageStatsQueryStatement": (
+        ProtocolNotImplementedError, 'does not implement ',
+    ),
+    "rhosocial.activerecord.backend.expression.introspection.ObjectDependencyQueryStatement": (
+        ProtocolNotImplementedError, 'does not implement ',
+    ),
+    "rhosocial.activerecord.backend.expression.introspection.DDLStatementQueryStatement": (
+        ProtocolNotImplementedError, 'does not implement ',
+    ),
         # ---- core introspection families this dialect does not answer ----
     #  Firebird keeps no per-index use counter and no per-table access summary; its statistics are size-oriented. The
     # probes answer False, and these classes stay a declared gap until the engine gains such a counter.
