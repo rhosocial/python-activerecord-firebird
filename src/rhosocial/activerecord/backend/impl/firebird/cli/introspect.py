@@ -7,6 +7,28 @@ connection opens, and Firebird never qualifies a name with anything above
 it. An earlier version accepted ``--schema``, which named something that
 does not exist here; it is gone rather than aliased, so a caller cannot
 ask for a level the engine cannot express.
+
+**The families beyond the catalogue.** Beside the schema structure this
+backend answers two more kinds of question, and each is a type here:
+
+* the *operational* families -- how the server is behaving rather than
+  what it contains (unused indexes, usage counters, runtime metrics);
+* the *row* families -- what the data holds rather than what the
+  declaration promises (a column's profile, its most frequent values,
+  how much two columns' value domains overlap).
+
+Firebird answers the row families from the table itself: it keeps no
+per-column statistics catalogue, so a profile is one aggregate over the
+rows and a value listing is one grouped read. Both are exact and both are
+paid for in time. The operational families Firebird *declines* -- its
+catalogue describes objects, not a statistics collector, and there is no
+``RDB$`` relation answering for any of them. Those types are offered
+anyway and gated: the capability switch they name answers ``False`` on
+this dialect, so a run is refused with "this server cannot answer that"
+rather than reaching a statement the engine has no formatter for. That
+distinction is the whole point of the mapping below -- an offered type
+with an unanswered switch is a contract the CLI keeps by refusing, not by
+producing an empty row that reads like an answer of zero.
 """
 
 import argparse
@@ -60,6 +82,33 @@ _TYPE_CAPABILITIES = {
     "dependencies": "supports_dependency_introspection",
     "view-relations": "supports_view_relation_introspection",
     "publications": "supports_publication_introspection",
+    # ---- the four operational families ------------------------------
+    # Read from a statistics collector rather than the catalogue: how the
+    # server is behaving, not what it contains. Firebird has no collector
+    # and no ``RDB$`` relation standing in for one, so each switch answers
+    # False and the gate refuses the type. They are offered rather than
+    # omitted because the dialect's answer is "this engine cannot tell
+    # you", which is a fact worth letting a caller ask for and be told.
+    "unused-indexes": "supports_unused_indexes_detection",
+    "table-stats": "supports_table_stats",
+    "runtime": "supports_runtime_stats",
+    "index-stats": "supports_index_stats",
+    # ---- the one-object families ------------------------------------
+    # ``ddl`` uses ``supports_ddl_extraction``, the switch every backend
+    # answers for "can you rebuild this object's text"; it is False here
+    # because Firebird retrieves a source body from ``RDB$`` rather than
+    # assembling a full ``CREATE`` statement, and an assembled fragment
+    # would read as authoritative. ``dependencies`` above already names
+    # the dependency family -- answered from ``RDB$DEPENDENCIES`` -- so it
+    # is not repeated under the common switch.
+    "ddl": "supports_ddl_extraction",
+    # ---- the row families -------------------------------------------
+    # What the data holds rather than what the column declares. All three
+    # answer True here: they read the table itself, and the cost is a
+    # scan, which is time rather than money on this engine.
+    "column-profiles": "supports_column_data_profile",
+    "value-samples": "supports_column_value_sample",
+    "join-coverage": "supports_join_coverage",
 }
 
 INTROSPECT_TYPES = list(_TYPE_CAPABILITIES)
@@ -90,6 +139,100 @@ def _require_capability(backend, args) -> None:
     sys.exit(2)
 
 
+def _refuse_name(args: argparse.Namespace, hint: str) -> None:
+    """Refuse a ``NAME`` the type has no question for.
+
+    The operational families describe the database as a whole: dropping the
+    name instead would print the family listing under a one-object
+    question, which is a different answer than the one asked for.
+    """
+    print(f"Error: '{args.type}' does not take an object name; {hint}", file=sys.stderr)
+    sys.exit(2)
+
+
+def _display_ddl(provider, statement, args) -> None:
+    """Show a DDL statement in the form that stays readable.
+
+    A ``CREATE TABLE`` is text: a one-row table folds it into a cell that
+    wraps at the terminal width and interleaves with the other columns.
+    Table output therefore prints the statement itself, while the
+    structured formats keep the whole row so JSON and CSV still carry
+    ``object_type`` and ``native`` beside the text.
+    """
+    if args.output == "table":
+        print(statement.ddl or "")
+        return
+    data = _serialize_for_output([statement])
+    provider.display_results(data, title=f"DDL of {statement.object_name}")
+
+
+def _refuse_unused_arguments(args: argparse.Namespace) -> None:
+    """Refuse a flag the chosen type has no question for.
+
+    The same defect as a silently dropped name, one flag over: ``--column``
+    beside ``introspect tables`` would be ignored and the listing printed as
+    if the column had been part of the question. Only the two families whose
+    probe takes a column read ``--column``, and only ``join-coverage`` reads
+    the two right-hand names, so only they may be given them.
+
+    Read with ``getattr`` because the handler is also driven with hand-built
+    namespaces (the offline tests), which carry no flags at all -- an absent
+    attribute is "not given", not an error.
+    """
+    column = getattr(args, "column", None)
+    right_table = getattr(args, "right_table", None)
+    right_column = getattr(args, "right_column", None)
+
+    if column is not None and args.type not in ("value-samples", "join-coverage"):
+        print(
+            f"Error: '{args.type}' does not take --column; "
+            "use 'value-samples' or 'join-coverage'",
+            file=sys.stderr,
+        )
+        sys.exit(2)
+    if (right_table is not None or right_column is not None) and args.type != "join-coverage":
+        print(
+            f"Error: '{args.type}' does not take --right-table or --right-column; "
+            "use 'join-coverage'",
+            file=sys.stderr,
+        )
+        sys.exit(2)
+
+
+def _note_unmeasured_profiles(profiles, table_name: str) -> None:
+    """Say which figures the engine declined to compute, on stderr.
+
+    Firebird refuses ``MIN``, ``MAX`` and ``COUNT(DISTINCT ...)`` on a
+    ``BLOB`` at prepare time, so a BLOB column's profile carries its null
+    count and the table's row count and *nothing else*: those three slots
+    arrive as ``None``, which means "this engine will not measure that
+    about this type" rather than "it measured it as nothing". The row is
+    kept and the figures are shown as they are; hiding the column would
+    delete the one signal this family exists to deliver, and erroring
+    would fail a run whose remaining figures are correct.
+
+    The note goes to stderr so the machine formats stay parseable, exactly
+    as the profile listing's own row does on stdout.
+    """
+    blind = [
+        profile.column_name
+        for profile in profiles
+        if profile is not None
+        and getattr(profile, "distinct_count", None) is None
+        and getattr(profile, "min_value", None) is None
+        and getattr(profile, "max_value", None) is None
+    ]
+    if not blind:
+        return
+    print(
+        f"Note: {len(blind)} column(s) of {table_name} report no distinct "
+        "count and no bounds -- Firebird refuses those aggregates on a type "
+        "it cannot compare (BLOB), so the figures are not measured rather "
+        f"than measured as empty: {', '.join(blind)}",
+        file=sys.stderr,
+    )
+
+
 def create_parser(subparsers):
     """Create the introspect subcommand parser."""
     parser = subparsers.add_parser(
@@ -115,6 +258,19 @@ def create_parser(subparsers):
   # List domains, or one of them
   %(prog)s domains --database /path/to/test_db
   %(prog)s domains POSITIVE_INT --database /path/to/test_db
+
+  # The operational families this engine declines -- refused, not empty
+  %(prog)s unused-indexes --database /path/to/test_db
+  %(prog)s table-stats --database /path/to/test_db
+  %(prog)s runtime --database /path/to/test_db
+  %(prog)s index-stats --database /path/to/test_db
+
+  # What the rows hold, not what the columns declare
+  %(prog)s column-profiles orders --database /path/to/test_db
+  %(prog)s value-samples orders --column status --database /path/to/test_db
+  %(prog)s ddl orders --database /path/to/test_db
+  %(prog)s join-coverage orders --column customer_id --right-table customers \\
+    --right-column id --database /path/to/test_db
 
   # Output as JSON
   %(prog)s tables --database /path/to/test_db -o json
@@ -156,6 +312,29 @@ def create_parser(subparsers):
         nargs="?",
         default=None,
         help="Object name (required for some types, optional for most lists)",
+    )
+    # The flags the row families read. They stay flags rather than more
+    # positionals because ``name`` already means "the table" everywhere
+    # else, and ``value-samples orders.email`` would read as a dotted
+    # object name. A type that reads none of them refuses them (see
+    # :func:`_refuse_unused_arguments`) rather than parsing and dropping.
+    parser.add_argument(
+        "--column",
+        default=None,
+        help="Column name: the column to sample for value-samples, and the "
+        "left column for join-coverage",
+    )
+    parser.add_argument(
+        "--right-table",
+        dest="right_table",
+        default=None,
+        help="Right-hand table for the join-coverage type",
+    )
+    parser.add_argument(
+        "--right-column",
+        dest="right_column",
+        default=None,
+        help="Right-hand column for the join-coverage type",
     )
     parser.add_argument(
         "--include-system",
@@ -246,6 +425,7 @@ def _handle_introspect_sync(args, backend: FirebirdBackend, provider):
         # while the other families happened to work.
         backend.introspect_and_adapt()
         _require_capability(backend, args)
+        _refuse_unused_arguments(args)
 
         introspector = backend.introspector
 
@@ -464,6 +644,138 @@ def _handle_introspect_sync(args, backend: FirebirdBackend, provider):
                 title="Publications",
             )
 
+        # ---- the four operational families ----------------------------
+        # They describe the database as a whole, not one object, so none
+        # takes a name: ``unused-indexes`` asks which indexes the engine
+        # reports as never having served a query, and the three counter
+        # listings ask how much the rest have been used. All four are
+        # refused by the gate on this backend, so these branches are the
+        # contract rather than a path a real run reaches -- and they exist
+        # so the refusal is a capability answer rather than an
+        # NotImplementedError from a formatter the dialect does not have.
+
+        elif args.type == "unused-indexes":
+            if args.name:
+                _refuse_name(args, "it describes every index in the database")
+            indexes = introspector.list_unused_indexes(schema=None)
+            data = _serialize_for_output(indexes)
+            provider.display_results(data, title="Indexes with no recorded use")
+
+        elif args.type == "table-stats":
+            if args.name:
+                _refuse_name(args, "it describes every table in the database")
+            stats = introspector.list_table_usage_stats(schema=None)
+            data = _serialize_for_output(stats)
+            provider.display_results(data, title="Table usage counters")
+
+        elif args.type == "runtime":
+            if args.name:
+                _refuse_name(args, "it describes the server, not one object")
+            metrics = introspector.list_runtime_metrics(schema=None)
+            data = _serialize_for_output(metrics)
+            provider.display_results(data, title="Runtime metrics")
+
+        elif args.type == "index-stats":
+            if args.name:
+                _refuse_name(args, "it describes every index in the database")
+            stats = introspector.list_index_usage_stats(schema=None)
+            data = _serialize_for_output(stats)
+            provider.display_results(data, title="Index usage counters")
+
+        # ---- the one-object families ----------------------------------
+        # The DDL that recreates one table, and the profile of one table.
+        # ``name`` is the table and required; the column a value listing
+        # is about is named on its own flag.
+
+        elif args.type == "ddl":
+            if not args.name:
+                print("Error: Table name is required for 'ddl' introspection", file=sys.stderr)
+                sys.exit(1)
+            statement = introspector.get_ddl_statement(args.name, object_type=None, schema=None)
+            if statement is None:
+                # Not "no such table": the object exists, and this engine
+                # answers with no text rather than an assembled fragment
+                # that would read as authoritative. The two are worth
+                # telling apart, so this exits without printing an empty
+                # row.
+                print(
+                    f"Error: no DDL available for '{args.name}' "
+                    "(Firebird records a source body, not a rebuildable statement)",
+                    file=sys.stderr,
+                )
+                sys.exit(1)
+            _display_ddl(provider, statement, args)
+
+        elif args.type == "column-profiles":
+            if not args.name:
+                print(
+                    "Error: Table name is required for 'column-profiles' introspection",
+                    file=sys.stderr,
+                )
+                sys.exit(1)
+            profiles = introspector.list_column_data_profiles(args.name, schema=None)
+            # Which figures this engine refused, said on stderr so the
+            # rows on stdout stay parseable. A BLOB's distinct count and
+            # bounds are ``None`` in the rows themselves; the note names
+            # them rather than letting a reader mistake the nulls for
+            # zeroes the engine measured.
+            _note_unmeasured_profiles(profiles, args.name)
+            data = _serialize_for_output(profiles)
+            provider.display_results(data, title=f"Column profiles of {args.name}")
+
+        elif args.type == "value-samples":
+            if not args.name:
+                print(
+                    "Error: Table name is required for 'value-samples' introspection",
+                    file=sys.stderr,
+                )
+                sys.exit(1)
+            if not args.column:
+                print(
+                    "Error: --column is required for 'value-samples' introspection",
+                    file=sys.stderr,
+                )
+                sys.exit(1)
+            samples = introspector.sample_column_values(args.name, args.column, schema=None)
+            data = _serialize_for_output(samples)
+            provider.display_results(data, title=f"Values of {args.name}.{args.column}")
+
+        elif args.type == "join-coverage":
+            if not args.name:
+                print(
+                    "Error: Left table name is required for 'join-coverage' introspection",
+                    file=sys.stderr,
+                )
+                sys.exit(1)
+            if not args.column:
+                print(
+                    "Error: --column is required for 'join-coverage' introspection",
+                    file=sys.stderr,
+                )
+                sys.exit(1)
+            if not args.right_table or not args.right_column:
+                print(
+                    "Error: --right-table and --right-column are required for "
+                    "'join-coverage' introspection",
+                    file=sys.stderr,
+                )
+                sys.exit(1)
+            coverage = introspector.estimate_join_coverage(
+                args.name, args.column, args.right_table, args.right_column, schema=None
+            )
+            if coverage is None:
+                # A column with nothing to match answers "no measurement",
+                # which is not zero overlap; printing a row of nulls would
+                # read as a measured zero.
+                print(
+                    f"Error: no coverage could be measured for {args.name}.{args.column} "
+                    f"and {args.right_table}.{args.right_column}",
+                    file=sys.stderr,
+                )
+                sys.exit(1)
+            data = _serialize_for_output([coverage])
+            provider.display_results(data, title="Join Coverage")
+
     except ConnectionError as e:
         provider.display_connection_error(e)
         sys.exit(1)
@@ -486,6 +798,7 @@ async def _handle_introspect_async(args, backend: AsyncFirebirdBackend, provider
         # version before a formatter can render.
         await backend.introspect_and_adapt()
         _require_capability(backend, args)
+        _refuse_unused_arguments(args)
 
         introspector = backend.introspector
 
@@ -711,6 +1024,120 @@ async def _handle_introspect_async(args, backend: AsyncFirebirdBackend, provider
                 ),
                 title="Publications",
             )
+
+        # The async twins of the nine branches above: same method, same
+        # argument and same title, awaited. They are written out rather than
+        # shared with the sync chain because the executor is the only thing
+        # that differs, and a shared body would have to carry an ``await``
+        # flag that reads worse than the duplicate.
+
+        elif args.type == "unused-indexes":
+            if args.name:
+                _refuse_name(args, "it describes every index in the database")
+            indexes = await introspector.list_unused_indexes(schema=None)
+            data = _serialize_for_output(indexes)
+            provider.display_results(data, title="Indexes with no recorded use")
+
+        elif args.type == "table-stats":
+            if args.name:
+                _refuse_name(args, "it describes every table in the database")
+            stats = await introspector.list_table_usage_stats(schema=None)
+            data = _serialize_for_output(stats)
+            provider.display_results(data, title="Table usage counters")
+
+        elif args.type == "runtime":
+            if args.name:
+                _refuse_name(args, "it describes the server, not one object")
+            metrics = await introspector.list_runtime_metrics(schema=None)
+            data = _serialize_for_output(metrics)
+            provider.display_results(data, title="Runtime metrics")
+
+        elif args.type == "index-stats":
+            if args.name:
+                _refuse_name(args, "it describes every index in the database")
+            stats = await introspector.list_index_usage_stats(schema=None)
+            data = _serialize_for_output(stats)
+            provider.display_results(data, title="Index usage counters")
+
+        elif args.type == "ddl":
+            if not args.name:
+                print("Error: Table name is required for 'ddl' introspection", file=sys.stderr)
+                sys.exit(1)
+            statement = await introspector.get_ddl_statement(
+                args.name, object_type=None, schema=None
+            )
+            if statement is None:
+                print(
+                    f"Error: no DDL available for '{args.name}' "
+                    "(Firebird records a source body, not a rebuildable statement)",
+                    file=sys.stderr,
+                )
+                sys.exit(1)
+            _display_ddl(provider, statement, args)
+
+        elif args.type == "column-profiles":
+            if not args.name:
+                print(
+                    "Error: Table name is required for 'column-profiles' introspection",
+                    file=sys.stderr,
+                )
+                sys.exit(1)
+            profiles = await introspector.list_column_data_profiles(args.name, schema=None)
+            _note_unmeasured_profiles(profiles, args.name)
+            data = _serialize_for_output(profiles)
+            provider.display_results(data, title=f"Column profiles of {args.name}")
+
+        elif args.type == "value-samples":
+            if not args.name:
+                print(
+                    "Error: Table name is required for 'value-samples' introspection",
+                    file=sys.stderr,
+                )
+                sys.exit(1)
+            if not args.column:
+                print(
+                    "Error: --column is required for 'value-samples' introspection",
+                    file=sys.stderr,
+                )
+                sys.exit(1)
+            samples = await introspector.sample_column_values(
+                args.name, args.column, schema=None
+            )
+            data = _serialize_for_output(samples)
+            provider.display_results(data, title=f"Values of {args.name}.{args.column}")
+
+        elif args.type == "join-coverage":
+            if not args.name:
+                print(
+                    "Error: Left table name is required for 'join-coverage' introspection",
+                    file=sys.stderr,
+                )
+                sys.exit(1)
+            if not args.column:
+                print(
+                    "Error: --column is required for 'join-coverage' introspection",
+                    file=sys.stderr,
+                )
+                sys.exit(1)
+            if not args.right_table or not args.right_column:
+                print(
+                    "Error: --right-table and --right-column are required for "
+                    "'join-coverage' introspection",
+                    file=sys.stderr,
+                )
+                sys.exit(1)
+            coverage = await introspector.estimate_join_coverage(
+                args.name, args.column, args.right_table, args.right_column, schema=None
+            )
+            if coverage is None:
+                print(
+                    f"Error: no coverage could be measured for {args.name}.{args.column} "
+                    f"and {args.right_table}.{args.right_column}",
+                    file=sys.stderr,
+                )
+                sys.exit(1)
+            data = _serialize_for_output([coverage])
+            provider.display_results(data, title="Join Coverage")
 
     except ConnectionError as e:
         provider.display_connection_error(e)
