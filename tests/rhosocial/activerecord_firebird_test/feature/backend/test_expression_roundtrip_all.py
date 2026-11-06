@@ -197,7 +197,10 @@ from rhosocial.activerecord.backend.expression.statements.ddl_trigger import (
     TriggerEvent,
     TriggerTiming,
 )
-from rhosocial.activerecord.backend.expression.statements.dql import QueryStatement
+from rhosocial.activerecord.backend.expression.statements.dql import (
+    QueryStatement,
+    SetOperationStatement,
+)
 from rhosocial.activerecord.backend.expression.transaction import (
     BeginTransactionStatement,
     SetTransactionStatement,
@@ -296,6 +299,20 @@ def _one_column_query(dialect):
     )
 
 
+def _compound_arms(dialect):
+    """Two single-column SELECTs over two tables, no bind parameters."""
+    return [
+        QueryStatement(
+            dialect, select=[Column(dialect, "id")], from_=_table_obj(dialect)
+        ),
+        QueryStatement(
+            dialect,
+            select=[Column(dialect, "id")],
+            from_=_table_obj(dialect, "other"),
+        ),
+    ]
+
+
 def _integer_column(dialect, name="col"):
     """A column definition carrying a *dialect-bound* type.
 
@@ -323,6 +340,15 @@ def register_specials():
             op="union",
             left=_one_column_query(d),
             right=_one_column_query(d),
+        ),
+    )
+    # The statement half of the same pair: the word-form enum refuses the
+    # guess's bare string at construction, and Firebird spells a compound
+    # SELECT, so a factory turns it into an instance the matrix can assert.
+    register_special_constructor(
+        "statements.dql.SetOperationStatement",
+        lambda d: SetOperationStatement(
+            d, op="union_all", parts=_compound_arms(d)
         ),
     )
 
@@ -961,7 +987,9 @@ _NO_DIALECT_METHOD = "mix in the mixin that provides it"
 #: are constructible -- it is their *target* that is a string.
 LEGITIMATE_NON_RENDERS = {
     # ---- core operational families this dialect does not answer ----
-    #  Firebird keeps no per-index use counter, no dependency catalogue and no per-object DDL retrieval; its statistics are size-oriented. The probes answer False.
+    #  Firebird keeps no per-index use counter, no dependency catalogue and no
+#  per-object DDL retrieval; its statistics are size-oriented. The probes answer
+#  False.
     "rhosocial.activerecord.backend.expression.introspection.RuntimeMetricsQueryStatement": (
         ProtocolNotImplementedError, 'does not implement ',
     ),
@@ -2323,3 +2351,95 @@ class TestValueKindSpellings:
         assert {member.wire for member in LiteralKind} == {
             case[0] for case in VALUE_KIND_SPELLINGS
         }
+
+
+# ---------------------------------------------------------------------------
+# The set-operation statement, rendered
+# ---------------------------------------------------------------------------
+#
+# The matrix says ``SetOperationStatement`` renders, which is a verdict about
+# the dialect rather than a claim about the bytes, so the bytes are pinned here.
+# Firebird is the only backend in this set whose set-operation probes refuse
+# two of the four words: ``INTERSECT`` and ``EXCEPT`` are not Firebird
+# operators, so the mixin's probe answers False and the formatter refuses
+# before any SQL is built. ``UNION`` and ``UNION ALL`` render, and the second
+# one is the word the tests below pin because it is the one that keeps every
+# row rather than de-duplicating -- which is what a data profile wants.
+
+
+def test_set_operation_statement_renders_the_pinned_sql(fb4_dialect):
+    """``UNION ALL`` over two arms, with Firebird's upper-cased quoted names."""
+    node = SetOperationStatement(
+        fb4_dialect, op="union_all", parts=_compound_arms(fb4_dialect)
+    )
+
+    rendered, params = node.to_sql()
+
+    assert rendered == 'SELECT "ID" FROM "T" UNION ALL SELECT "ID" FROM "OTHER"'
+    assert params == ()
+
+
+def test_set_operation_statement_spells_the_bare_union(fb4_dialect):
+    """The word form alone decides the keyword, so ``union`` differs."""
+    node = SetOperationStatement(
+        fb4_dialect, op="union", parts=_compound_arms(fb4_dialect)
+    )
+
+    rendered, params = node.to_sql()
+
+    assert rendered == 'SELECT "ID" FROM "T" UNION SELECT "ID" FROM "OTHER"'
+    assert params == ()
+
+
+def test_set_operation_statement_parameters_concatenate_in_part_order(
+    fb4_dialect,
+):
+    """Each arm's parameters arrive in the order the operator joins them."""
+    dialect = fb4_dialect
+    parts = [
+        QueryStatement(
+            dialect,
+            select=[Column(dialect, "id"), Literal(dialect, 1)],
+            from_=_table_obj(dialect),
+            where=ComparisonPredicate(
+                dialect, "=", Column(dialect, "id"), Literal(dialect, 5)
+            ),
+        ),
+        QueryStatement(
+            dialect,
+            select=[Column(dialect, "id"), Literal(dialect, 2)],
+            from_=_table_obj(dialect, "u"),
+        ),
+    ]
+    node = SetOperationStatement(dialect, op="union_all", parts=parts)
+
+    rendered, params = node.to_sql()
+
+    assert rendered == (
+        'SELECT "ID", ? FROM "T" WHERE "ID" = ? '
+        "UNION ALL "
+        'SELECT "ID", ? FROM "U"'
+    )
+    assert params == (1, 5, 2)
+
+
+@pytest.mark.parametrize("op", ["intersect", "except"])
+def test_set_operation_statement_refuses_what_firebird_has_no_operator_for(
+    fb4_dialect, op
+):
+    """The probe refuses before any SQL is built.
+
+    Firebird has neither INTERSECT nor EXCEPT, so the mixin's per-operation
+    probe answers False and the formatter raises rather than rendering text
+    the engine will not parse. The reason the dialect gives is the one the
+    probe owns, and it names the operation.
+    """
+    node = SetOperationStatement(
+        fb4_dialect, op=op, parts=_compound_arms(fb4_dialect)
+    )
+
+    with pytest.raises(UnsupportedFeatureError) as excinfo:
+        node.to_sql()
+
+    assert op.upper() in str(excinfo.value)
+    assert "does not support" in str(excinfo.value)
