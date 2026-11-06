@@ -239,7 +239,7 @@ def build_cases(
             "whole database",
         ),
         (
-            "dependencies",
+            "rdb-dependencies",
             lambda: FirebirdDependencyQueryStatement(dialect),
             "whole database",
         ),
@@ -300,7 +300,7 @@ def build_cases(
             f"object {table}" if table else "no user table in this database",
         ),
         (
-            "dependencies(one object)",
+            "rdb-dependencies(one object)",
             (
                 lambda: FirebirdDependencyQueryStatement(dialect, object_name=table)
                 if table

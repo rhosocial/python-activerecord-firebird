@@ -49,7 +49,7 @@ NEW_FAMILIES = {
     "table-stats": "supports_table_stats",
     "runtime": "supports_runtime_stats",
     "index-stats": "supports_index_stats",
-    "dependencies": "supports_dependency_introspection",
+    "rdb-dependencies": "supports_dependency_introspection",
     "ddl": "supports_ddl_extraction",
     "column-profiles": "supports_column_data_profile",
     "value-samples": "supports_column_value_sample",
@@ -524,14 +524,14 @@ class TestTheDependenciesBranch:
     def test_a_named_object_is_asked_for_by_name(self, monkeypatch):
         introspector = _RecordingIntrospector({"list_dependencies": []})
 
-        _run_sync(monkeypatch, introspector, _args("dependencies", "ORDERS"))
+        _run_sync(monkeypatch, introspector, _args("rdb-dependencies", "ORDERS"))
 
         assert introspector.calls == [("list_dependencies", ("ORDERS",), {})]
 
     def test_an_unnamed_run_asks_for_the_whole_graph(self, monkeypatch):
         introspector = _RecordingIntrospector({"list_dependencies": []})
 
-        _run_sync(monkeypatch, introspector, _args("dependencies"))
+        _run_sync(monkeypatch, introspector, _args("rdb-dependencies"))
 
         assert introspector.calls == [("list_dependencies", (None,), {})]
 
@@ -662,7 +662,7 @@ class TestTheAsyncPath:
                 [],
                 (("ORDERS", "CUSTOMER_ID", "CUSTOMERS", "ID"), {"schema": None}),
             ),
-            ("dependencies", "list_dependencies", {"name": "ORDERS"}, [], (("ORDERS",), {})),
+            ("rdb-dependencies", "list_dependencies", {"name": "ORDERS"}, [], (("ORDERS",), {})),
         ],
     )
     def test_the_async_branch_calls_the_same_method_with_the_same_arguments(

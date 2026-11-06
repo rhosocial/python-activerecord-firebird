@@ -328,7 +328,7 @@ HAPPY_PATH_TYPES = [
     (["privileges"], "PRIV_SELECT", "list_privileges"),
     (["charsets"], "CHARSET_UTF8", "list_charsets"),
     (["collations"], "COLL_UCS_BASIC", "list_collations"),
-    (["dependencies"], "DEP_VIEW", "list_dependencies"),
+    (["rdb-dependencies"], "DEP_VIEW", "list_dependencies"),
     (["view-relations"], "VREL_BASE", "list_view_relations"),
     (["publications"], "PUB_DEFAULT", "list_publications"),
 ]

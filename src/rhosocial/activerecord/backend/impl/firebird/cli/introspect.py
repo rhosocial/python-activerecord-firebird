@@ -79,7 +79,7 @@ _TYPE_CAPABILITIES = {
     "privileges": "supports_privilege_introspection",
     "charsets": "supports_charset_introspection",
     "collations": "supports_collation_introspection",
-    "dependencies": "supports_dependency_introspection",
+    "rdb-dependencies": "supports_dependency_introspection",
     "view-relations": "supports_view_relation_introspection",
     "publications": "supports_publication_introspection",
     # ---- the four operational families ------------------------------
@@ -98,9 +98,15 @@ _TYPE_CAPABILITIES = {
     # answers for "can you rebuild this object's text"; it is False here
     # because Firebird retrieves a source body from ``RDB$`` rather than
     # assembling a full ``CREATE`` statement, and an assembled fragment
-    # would read as authoritative. ``dependencies`` above already names
+    # would read as authoritative. ``rdb-dependencies`` above already names
     # the dependency family -- answered from ``RDB$DEPENDENCIES`` -- so it
-    # is not repeated under the common switch.
+    # is not repeated under the common switch. It is spelled after the
+    # relation it reads rather than ``dependencies`` because the common
+    # switch it does *not* use gates a different family: core's
+    # ``supports_object_dependencies``, whose formatter this dialect does not
+    # implement and whose parser spells ``RDB$DEPENDED_ON_NAME`` as
+    # ``referenced_name``. Sharing the name across the two would have a
+    # caller believe one switch answered for both.
     "ddl": "supports_ddl_extraction",
     # ---- the row families -------------------------------------------
     # What the data holds rather than what the column declares. All three
@@ -624,7 +630,7 @@ def _handle_introspect_sync(args, backend: FirebirdBackend, provider):
                 title="Collations",
             )
 
-        elif args.type == "dependencies":
+        elif args.type == "rdb-dependencies":
             provider.display_results(
                 _serialize_for_output(introspector.list_dependencies(args.name)),
                 title="Dependencies",
@@ -1001,7 +1007,7 @@ async def _handle_introspect_async(args, backend: AsyncFirebirdBackend, provider
                 title="Collations",
             )
 
-        elif args.type == "dependencies":
+        elif args.type == "rdb-dependencies":
             provider.display_results(
                 _serialize_for_output(
                     await introspector.list_dependencies(args.name)

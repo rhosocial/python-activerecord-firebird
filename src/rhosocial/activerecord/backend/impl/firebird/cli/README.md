@@ -41,7 +41,7 @@ with an empty row.
 | `privileges` | `rdb$user_privileges` | Grants per object and grantee. `--object` and `--grantee` narrow it. |
 | `charsets` | `rdb$character_sets` | Character sets with their form of use, character width and default collation. |
 | `collations` | `rdb$collations` | Collations with the charset they belong to and their base collation. |
-| `dependencies` | `rdb$dependencies` | What depends on what, by name and type. |
+| `rdb-dependencies` | `rdb$dependencies` | What depends on what, by name and type. |
 | `view-relations` | `rdb$view_relations` | The relations a view selects from, with each one's context name. |
 | `publications` | `rdb$publications` | Logical-replication publications. Version-gated: `rdb$publications` does not exist before Firebird 4, so an older server is refused (exit 2) rather than answered "none". |
 | `unused-indexes` | refused here | Offered and gated: `supports_unused_indexes_detection` answers False here, so the run is refused rather than answered empty. |
@@ -63,11 +63,11 @@ with an empty row.
 | The **object itself**, optional — given, it answers for that one object and exits 1 if there is no such object | `views`, `generators`, `domains`, `exceptions`, `procedures`, `functions` |
 | A **filter** | `privileges` (`--object`, `--grantee`), `constraints` (`--constraint-type`) |
 | The whole database, and a stray NAME is refused (exit 2) | `unused-indexes`, `table-stats`, `runtime`, `index-stats` |
-| The whole database, and the parser accepts a NAME that the branch does not read | `tables`, `database`, `roles`, `charsets`, `dependencies`, `view-relations`, `publications` |
+| The whole database, and the parser accepts a NAME that the branch does not read | `tables`, `database`, `roles`, `charsets`, `rdb-dependencies`, `view-relations`, `publications` |
 | A **table**, required, though its switch answers False here | `ddl`, `column-profiles`, `value-samples` |
 | The **left table**, required — the column is `--column` and the right-hand side is `--right-table` / `--right-column` | `join-coverage` |
 
-`collations` takes an optional charset as its `NAME`, and `dependencies` and
+`collations` takes an optional charset as its `NAME`, and `rdb-dependencies` and
 `view-relations` accept one to narrow the answer; they are not in the refused
 row for that reason. The `NAME` for `ddl` and the two row families is the table,
 and the column a question is about is a flag rather than a second positional,
