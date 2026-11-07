@@ -224,19 +224,6 @@ from .protocols import (
     FirebirdTypeSupport,
 )
 
-_SUGGESTION_ARRAY = (
-    "Firebird has array column types, but not the ARRAY[...] constructor this "
-    "renderer writes: declare the column as T [n] and reach it with a subscript."
-)
-_SUGGESTION_GRAPH_MATCH = "Firebird does not support graph MATCH clause."
-_SUGGESTION_ORDERED_SET_AGG = "Firebird does not support ordered-set aggregate functions (WITHIN GROUP)."
-_SUGGESTION_QUALIFY = "Firebird does not support QUALIFY clause. Use subquery or CTE."
-_SUGGESTION_MERGE = "Firebird does not support MERGE with standard SQL merge syntax. Use UPDATE OR INSERT instead."
-_SUGGESTION_JSON = "Firebird does not support native JSON type. Use BLOB SUB_TYPE TEXT with JSON content."
-_SUGGESTION_FULLTEXT = "Firebird does not support native full-text search indexes. Use LIKE or external search."
-_SUGGESTION_ILIIKE = "Firebird does not support ILIKE. Use UPPER(column) LIKE UPPER(pattern)."
-_SUGGESTION_TEMPORAL = "Firebird does not support temporal tables."
-
 
 class FirebirdDialect(
     # The bases below come in bundles: a backend mixin, then the core bundle

@@ -29,6 +29,7 @@ from rhosocial.activerecord.backend.expression.core import (
     Subquery,
 )
 from rhosocial.activerecord.backend.expression.objects import Table
+from rhosocial.activerecord.backend.introspection.types import ProfileSource
 
 from ..query_nodes import (
     call,
@@ -1780,7 +1781,7 @@ class FirebirdIntrospectionMixin:
                 self._profile_column_slots(index, column_name, column_name in opaque)
             )
         select.append(call(self, "COUNT", row_count(self), alias="row_count"))
-        select.append(self._profile_label("aggregate", "source"))
+        select.append(self._profile_label(ProfileSource.AGGREGATE.value, "source"))
         return select_sql(self, select, from_=relation(self, expr.table_name))
 
     def format_column_value_sample_query_statement(
