@@ -368,7 +368,7 @@ class TestTheColumnProfilesBranch:
 
 
 class TestTheValueSamplesBranch:
-    """A table and a column, and the flag that names it."""
+    """A table and a column, and a limit that is not sent unasked."""
 
     def test_the_table_column_and_limit_reach_the_introspector(self, monkeypatch):
         introspector = _RecordingIntrospector(
@@ -383,6 +383,44 @@ class TestTheValueSamplesBranch:
 
         assert introspector.calls == [
             ("sample_column_values", ("ORDERS", "STATUS"), {"schema": None})
+        ]
+
+    def test_no_limit_is_sent_when_the_flag_is_omitted(self, monkeypatch):
+        introspector = _RecordingIntrospector({"sample_column_values": []})
+
+        _run_sync(
+            monkeypatch,
+            introspector,
+            _args("value-samples", "ORDERS", column="STATUS"),
+        )
+
+        # Absent ``--limit`` means absent from the call: the introspector's own
+        # signature answers with its own default, and the CLI does not restate
+        # it. A number here would fail the day the signature's default moved.
+        assert "limit" not in introspector.calls[0][2]
+
+    def test_a_limit_is_forwarded_only_when_the_flag_names_one(self, monkeypatch):
+        """The discipline's other half, driven by a hand-built namespace.
+
+        This parser declares no ``--limit``, so the flag cannot reach the CLI
+        here; the namespace override is how the five backends that do declare
+        it drive the same helper, and it keeps the forwarder honest on this
+        backend too rather than leaving the branch permanently one-sided.
+        """
+        introspector = _RecordingIntrospector({"sample_column_values": []})
+
+        _run_sync(
+            monkeypatch,
+            introspector,
+            _args("value-samples", "ORDERS", column="STATUS", limit=3),
+        )
+
+        assert introspector.calls == [
+            (
+                "sample_column_values",
+                ("ORDERS", "STATUS"),
+                {"schema": None, "limit": 3},
+            )
         ]
 
     def test_a_missing_table_is_an_incomplete_invocation(self, monkeypatch, capsys):

@@ -36,7 +36,7 @@ import asyncio
 import sys
 from dataclasses import asdict, is_dataclass
 from enum import Enum
-from typing import Any
+from typing import Any, Dict
 
 from rhosocial.activerecord.backend.impl.firebird.backend import FirebirdBackend
 from rhosocial.activerecord.backend.impl.firebird.backend.async_backend import AsyncFirebirdBackend
@@ -418,6 +418,26 @@ def _serialize_for_output(obj: Any) -> Any:
     return str(obj)
 
 
+def _value_sample_arguments(args) -> Dict[str, int]:
+    """The optional arguments ``value-samples`` sends, given the parsed argument.
+
+    ``limit`` is forwarded only when the caller supplied ``--limit``. When the
+    flag is absent the introspector's signature answers with its own default,
+    so a forwarder that filled in ``100`` would be a second place writing a
+    number the signature already owns -- and a place no test could keep in
+    step with it.
+
+    This parser declares no ``--limit``, so ``getattr`` can only answer ``None``
+    here and the value samples this backend lists are always the introspector's
+    own default. The helper exists anyway so the discipline has one spelling in
+    this repository too: a run that does not name a limit must not send one,
+    and the day the flag arrives it is forwarded here rather than written into
+    both branches as a number of their own.
+    """
+    limit = getattr(args, "limit", None)
+    return {} if limit is None else {"limit": limit}
+
+
 def _handle_introspect_sync(args, backend: FirebirdBackend, provider):
     """Handle introspect subcommand synchronously."""
     try:
@@ -740,7 +760,12 @@ def _handle_introspect_sync(args, backend: FirebirdBackend, provider):
                     file=sys.stderr,
                 )
                 sys.exit(1)
-            samples = introspector.sample_column_values(args.name, args.column, schema=None)
+            samples = introspector.sample_column_values(
+                args.name,
+                args.column,
+                schema=None,
+                **_value_sample_arguments(args),
+            )
             data = _serialize_for_output(samples)
             provider.display_results(data, title=f"Values of {args.name}.{args.column}")
 
@@ -1105,7 +1130,10 @@ async def _handle_introspect_async(args, backend: AsyncFirebirdBackend, provider
                 )
                 sys.exit(1)
             samples = await introspector.sample_column_values(
-                args.name, args.column, schema=None
+                args.name,
+                args.column,
+                schema=None,
+                **_value_sample_arguments(args),
             )
             data = _serialize_for_output(samples)
             provider.display_results(data, title=f"Values of {args.name}.{args.column}")
