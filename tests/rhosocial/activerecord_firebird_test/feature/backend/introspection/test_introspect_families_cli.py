@@ -218,7 +218,7 @@ class TestTheSchemaWideFamilies:
     @pytest.mark.parametrize("type_", WHOLE_DATABASE_FAMILIES)
     def test_a_name_is_refused(self, type_, capsys):
         with pytest.raises(SystemExit) as excinfo:
-            introspect_cli._refuse_name(_args(type_, "orders"), "the whole database")
+            introspect_cli._validate_name(_args(type_, "orders"))
 
         assert excinfo.value.code == 2
         assert "does not take an object name" in capsys.readouterr().err
@@ -743,6 +743,115 @@ class TestTheTypeSurfaceExtension:
         for type_, switch in NEW_FAMILIES.items():
             assert _TYPE_CAPABILITIES[type_] == switch
             assert hasattr(FirebirdDialect, switch), type_
+
+    def test_every_advertised_type_has_a_name_rule(self):
+        """A type without a rule is a type whose NAME decision nobody made."""
+        assert set(introspect_cli._NAME_RULE) == set(INTROSPECT_TYPES)
+
+    def test_the_name_rule_says_what_each_types_name_means(self):
+        """The table, pinned as data: a change is a visible edit, not a drift.
+
+        A table nobody asserts is text nobody guarantees, which is the
+        cross-repository clause of ``.claude/rules/constants.md`` -- the
+        private name is legitimate because one validator reads it, and this
+        is what makes the reading checkable.
+        """
+        assert introspect_cli._NAME_RULE == {
+            "tables": "forbidden",
+            "views": "optional",
+            "columns": "required",
+            "indexes": "required",
+            "foreign-keys": "required",
+            "triggers": "optional",
+            "database": "forbidden",
+            "generators": "optional",
+            "domains": "optional",
+            "exceptions": "optional",
+            "procedures": "optional",
+            "procedure-parameters": "required",
+            "functions": "optional",
+            "function-arguments": "required",
+            "constraints": "optional",
+            "roles": "forbidden",
+            "privileges": "forbidden",
+            "charsets": "forbidden",
+            "collations": "optional",
+            "rdb-dependencies": "optional",
+            "view-relations": "optional",
+            "publications": "forbidden",
+            "unused-indexes": "forbidden",
+            "table-stats": "forbidden",
+            "runtime": "forbidden",
+            "index-stats": "forbidden",
+            "ddl": "required",
+            "column-profiles": "required",
+            "value-samples": "required",
+            "join-coverage": "required",
+        }
+
+    @pytest.mark.parametrize(
+        "type_",
+        [
+            "tables",
+            "database",
+            "roles",
+            "privileges",
+            "charsets",
+            "publications",
+            "unused-indexes",
+            "table-stats",
+            "runtime",
+            "index-stats",
+        ],
+    )
+    def test_a_refused_type_is_refused_by_the_table(self, type_, capsys):
+        with pytest.raises(SystemExit) as excinfo:
+            introspect_cli._validate_name(_args(type_, "ORDERS"))
+
+        assert excinfo.value.code == 2
+        assert f"'{type_}' does not take an object name" in capsys.readouterr().err
+
+    @pytest.mark.parametrize(
+        "type_",
+        [
+            "columns",
+            "indexes",
+            "foreign-keys",
+            "procedure-parameters",
+            "function-arguments",
+            "ddl",
+            "column-profiles",
+            "value-samples",
+            "join-coverage",
+        ],
+    )
+    def test_a_required_name_is_required_by_the_table(self, type_, capsys):
+        """Exit 1 like a missing ``--database``: the invocation is incomplete."""
+        with pytest.raises(SystemExit) as excinfo:
+            introspect_cli._validate_name(_args(type_))
+
+        assert excinfo.value.code == 1
+        assert f"Table name is required for '{type_}'" in capsys.readouterr().err
+
+    @pytest.mark.parametrize(
+        "type_",
+        [
+            "views",
+            "triggers",
+            "generators",
+            "domains",
+            "exceptions",
+            "procedures",
+            "functions",
+            "constraints",
+            "collations",
+            "rdb-dependencies",
+            "view-relations",
+        ],
+    )
+    def test_an_optional_name_may_be_given_or_not(self, type_):
+        introspect_cli._validate_name(_args(type_))
+        introspect_cli._validate_name(_args(type_, "ORDERS"))
 
     def test_every_type_has_a_branch_in_both_paths(self):
         """A type with no branch prints nothing and exits 0 -- the worst shape."""

@@ -20,7 +20,13 @@ backend answers two more kinds of question, and each is a type here:
 Firebird answers the row families from the table itself: it keeps no
 per-column statistics catalogue, so a profile is one aggregate over the
 rows and a value listing is one grouped read. Both are exact and both are
-paid for in time. The operational families Firebird *declines* -- its
+paid for in time.
+
+``NAME`` is required, optional or refused per type, and the rule for each
+lives in ``_NAME_RULE`` rather than in a branch of its own: a name a type
+has no question for is refused with exit 2, never parsed and dropped,
+because a dropped name prints the family listing under a one-object
+question. The operational families Firebird *declines* -- its
 catalogue describes objects, not a statistics collector, and there is no
 ``RDB$`` relation answering for any of them. Those types are offered
 anyway and gated: the capability switch they name answers ``False`` on
@@ -117,6 +123,77 @@ _TYPE_CAPABILITIES = {
 
 INTROSPECT_TYPES = list(_TYPE_CAPABILITIES)
 
+#: What the optional NAME positional means for each type.
+#:
+#: ``required`` -- the type asks about one object and cannot be answered
+#: without it. ``optional`` -- a family that can also answer for one member,
+#: so a given name narrows it (and a name that matches nothing is an error,
+#: not an empty list). ``forbidden`` -- the family has no single-member
+#: question here, so a name would read as a filter that matched everything.
+#:
+#: The order is the order ``_TYPE_CAPABILITIES`` declares and the parser and
+#: ``--help`` print, and the two tables cover the same keys: a type offered
+#: without a rule is a type whose NAME decision nobody has made.
+#:
+#: ``tables`` must stay one. Answering for one table would fill in its
+#: columns, indexes and foreign keys, which is the aggregate this command
+#: deliberately dropped. ``database`` answers for the database the run
+#: connected to, so a name there is the same kind of mistake.
+_NAME_RULE = {
+    "tables": "forbidden",
+    "views": "optional",
+    "columns": "required",
+    "indexes": "required",
+    "foreign-keys": "required",
+    "triggers": "optional",
+    "database": "forbidden",
+    # The catalogue families that can also answer for one member: the name
+    # selects the row, and a name that matches nothing is an error rather
+    # than an empty listing.
+    "generators": "optional",
+    "domains": "optional",
+    "exceptions": "optional",
+    "procedures": "optional",
+    # A routine's parameters and arguments are that routine's own, so the
+    # name is the routine and the question cannot be asked without it.
+    "procedure-parameters": "required",
+    "functions": "optional",
+    "function-arguments": "required",
+    # Constraints, collations, the dependency graph and a view's relations all
+    # read a name into their own filter, so one narrows rather than being
+    # refused.
+    "constraints": "optional",
+    "charsets": "forbidden",
+    "collations": "optional",
+    "rdb-dependencies": "optional",
+    "view-relations": "optional",
+    # Whole-catalogue listings with no single-member question here: the
+    # connecting user's roles, the grants it holds, the character sets the
+    # engine knows and the publications it serves. ``privileges`` names its
+    # object and grantee on flags, which is a different question from one
+    # positional.
+    "roles": "forbidden",
+    "privileges": "forbidden",
+    "publications": "forbidden",
+    # The four operational families describe the database as a whole: which
+    # indexes the engine reports as never having served a query, and how much
+    # the rest have been used. All four are refused by the gate on this
+    # backend, so these rules are the contract rather than a path a real run
+    # reaches.
+    "unused-indexes": "forbidden",
+    "table-stats": "forbidden",
+    "runtime": "forbidden",
+    "index-stats": "forbidden",
+    # The one-object families: the DDL that recreates one table, the profile
+    # of one table's columns, and the samples of one of them.
+    "ddl": "required",
+    "column-profiles": "required",
+    "value-samples": "required",
+    # ``join-coverage`` asks about two tables; the left one is NAME, so it is
+    # required here the way the right one is required on its own flag.
+    "join-coverage": "required",
+}
+
 
 def _require_capability(backend, args) -> None:
     """Refuse a type the connected server cannot answer.
@@ -143,15 +220,32 @@ def _require_capability(backend, args) -> None:
     sys.exit(2)
 
 
-def _refuse_name(args: argparse.Namespace, hint: str) -> None:
-    """Refuse a ``NAME`` the type has no question for.
+def _validate_name(args: argparse.Namespace) -> None:
+    """Apply the NAME rule table, once, instead of leaving it to each branch.
 
-    The operational families describe the database as a whole: dropping the
-    name instead would print the family listing under a one-object
-    question, which is a different answer than the one asked for.
+    A silently ignored argument is the worst of the three outcomes: the run
+    succeeds, prints a full listing, and reads as though it had been narrowed.
+    So the table above is read here, once -- a branch that forgot would answer
+    a wider question than the one asked and look successful doing it.
+
+    A *missing* name is an incomplete invocation and leaves with 1, the code a
+    missing ``--database`` gets; a name the type has no question for is a
+    request this command declines and leaves with 2.
     """
-    print(f"Error: '{args.type}' does not take an object name; {hint}", file=sys.stderr)
-    sys.exit(2)
+    rule = _NAME_RULE.get(args.type)
+    if rule == "required" and not args.name:
+        print(
+            f"Error: Table name is required for '{args.type}' introspection",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    if rule == "forbidden" and args.name:
+        print(
+            f"Error: '{args.type}' does not take an object name; "
+            "it answers for the whole database",
+            file=sys.stderr,
+        )
+        sys.exit(2)
 
 
 def _display_ddl(provider, statement, args) -> None:
@@ -315,7 +409,15 @@ def create_parser(subparsers):
         "name",
         nargs="?",
         default=None,
-        help="Object name (required for some types, optional for most lists)",
+        help="Object name. Required for columns, indexes, foreign-keys, "
+        "procedure-parameters, function-arguments, ddl, column-profiles, "
+        "value-samples and join-coverage (the table they belong to); "
+        "optional for the catalogue families that can also answer for one "
+        "member (views, triggers, generators, domains, exceptions, "
+        "procedures, functions, constraints, collations, rdb-dependencies "
+        "and view-relations); refused for tables, database, roles, "
+        "privileges, charsets, publications and the four operational "
+        "families. The rule per type is _NAME_RULE",
     )
     # The flags the row families read. They stay flags rather than more
     # positionals because ``name`` already means "the table" everywhere
@@ -450,6 +552,7 @@ def _handle_introspect_sync(args, backend: FirebirdBackend, provider):
         backend.introspect_and_adapt()
         _require_capability(backend, args)
         _refuse_unused_arguments(args)
+        _validate_name(args)
 
         introspector = backend.introspector
 
@@ -471,25 +574,16 @@ def _handle_introspect_sync(args, backend: FirebirdBackend, provider):
                 provider.display_results(data, title="Views")
 
         elif args.type == "columns":
-            if not args.name:
-                print("Error: Table name is required for 'columns' introspection", file=sys.stderr)
-                sys.exit(1)
             columns = introspector.list_columns(args.name, schema=None)
             data = _serialize_for_output(columns)
             provider.display_results(data, title=f"Columns of {args.name}")
 
         elif args.type == "indexes":
-            if not args.name:
-                print("Error: Table name is required for 'indexes' introspection", file=sys.stderr)
-                sys.exit(1)
             indexes = introspector.list_indexes(args.name, schema=None)
             data = _serialize_for_output(indexes)
             provider.display_results(data, title=f"Indexes of {args.name}")
 
         elif args.type == "foreign-keys":
-            if not args.name:
-                print("Error: Table name is required for 'foreign-keys' introspection", file=sys.stderr)
-                sys.exit(1)
             fks = introspector.list_foreign_keys(args.name, schema=None)
             data = _serialize_for_output(fks)
             provider.display_results(data, title=f"Foreign Keys of {args.name}")
@@ -568,12 +662,6 @@ def _handle_introspect_sync(args, backend: FirebirdBackend, provider):
                 )
 
         elif args.type == "procedure-parameters":
-            if not args.name:
-                print(
-                    "Error: Procedure name is required for 'procedure-parameters'",
-                    file=sys.stderr,
-                )
-                sys.exit(1)
             provider.display_results(
                 _serialize_for_output(
                     introspector.list_procedure_parameters(args.name)
@@ -599,12 +687,6 @@ def _handle_introspect_sync(args, backend: FirebirdBackend, provider):
                 )
 
         elif args.type == "function-arguments":
-            if not args.name:
-                print(
-                    "Error: Function name is required for 'function-arguments'",
-                    file=sys.stderr,
-                )
-                sys.exit(1)
             provider.display_results(
                 _serialize_for_output(introspector.list_function_arguments(args.name)),
                 title=f"Arguments of {args.name}",
@@ -679,29 +761,21 @@ def _handle_introspect_sync(args, backend: FirebirdBackend, provider):
         # NotImplementedError from a formatter the dialect does not have.
 
         elif args.type == "unused-indexes":
-            if args.name:
-                _refuse_name(args, "it describes every index in the database")
             indexes = introspector.list_unused_indexes(schema=None)
             data = _serialize_for_output(indexes)
             provider.display_results(data, title="Indexes with no recorded use")
 
         elif args.type == "table-stats":
-            if args.name:
-                _refuse_name(args, "it describes every table in the database")
             stats = introspector.list_table_usage_stats(schema=None)
             data = _serialize_for_output(stats)
             provider.display_results(data, title="Table usage counters")
 
         elif args.type == "runtime":
-            if args.name:
-                _refuse_name(args, "it describes the server, not one object")
             metrics = introspector.list_runtime_metrics(schema=None)
             data = _serialize_for_output(metrics)
             provider.display_results(data, title="Runtime metrics")
 
         elif args.type == "index-stats":
-            if args.name:
-                _refuse_name(args, "it describes every index in the database")
             stats = introspector.list_index_usage_stats(schema=None)
             data = _serialize_for_output(stats)
             provider.display_results(data, title="Index usage counters")
@@ -712,9 +786,6 @@ def _handle_introspect_sync(args, backend: FirebirdBackend, provider):
         # is about is named on its own flag.
 
         elif args.type == "ddl":
-            if not args.name:
-                print("Error: Table name is required for 'ddl' introspection", file=sys.stderr)
-                sys.exit(1)
             statement = introspector.get_ddl_statement(args.name, object_type=None, schema=None)
             if statement is None:
                 # Not "no such table": the object exists, and this engine
@@ -731,12 +802,6 @@ def _handle_introspect_sync(args, backend: FirebirdBackend, provider):
             _display_ddl(provider, statement, args)
 
         elif args.type == "column-profiles":
-            if not args.name:
-                print(
-                    "Error: Table name is required for 'column-profiles' introspection",
-                    file=sys.stderr,
-                )
-                sys.exit(1)
             profiles = introspector.list_column_data_profiles(args.name, schema=None)
             # Which figures this engine refused, said on stderr so the
             # rows on stdout stay parseable. A BLOB's distinct count and
@@ -748,12 +813,6 @@ def _handle_introspect_sync(args, backend: FirebirdBackend, provider):
             provider.display_results(data, title=f"Column profiles of {args.name}")
 
         elif args.type == "value-samples":
-            if not args.name:
-                print(
-                    "Error: Table name is required for 'value-samples' introspection",
-                    file=sys.stderr,
-                )
-                sys.exit(1)
             if not args.column:
                 print(
                     "Error: --column is required for 'value-samples' introspection",
@@ -770,12 +829,6 @@ def _handle_introspect_sync(args, backend: FirebirdBackend, provider):
             provider.display_results(data, title=f"Values of {args.name}.{args.column}")
 
         elif args.type == "join-coverage":
-            if not args.name:
-                print(
-                    "Error: Left table name is required for 'join-coverage' introspection",
-                    file=sys.stderr,
-                )
-                sys.exit(1)
             if not args.column:
                 print(
                     "Error: --column is required for 'join-coverage' introspection",
@@ -828,6 +881,7 @@ async def _handle_introspect_async(args, backend: AsyncFirebirdBackend, provider
         await backend.introspect_and_adapt()
         _require_capability(backend, args)
         _refuse_unused_arguments(args)
+        _validate_name(args)
 
         introspector = backend.introspector
 
@@ -849,25 +903,16 @@ async def _handle_introspect_async(args, backend: AsyncFirebirdBackend, provider
                 provider.display_results(data, title="Views")
 
         elif args.type == "columns":
-            if not args.name:
-                print("Error: Table name is required for 'columns' introspection", file=sys.stderr)
-                sys.exit(1)
             columns = await introspector.list_columns(args.name, schema=None)
             data = _serialize_for_output(columns)
             provider.display_results(data, title=f"Columns of {args.name}")
 
         elif args.type == "indexes":
-            if not args.name:
-                print("Error: Table name is required for 'indexes' introspection", file=sys.stderr)
-                sys.exit(1)
             indexes = await introspector.list_indexes(args.name, schema=None)
             data = _serialize_for_output(indexes)
             provider.display_results(data, title=f"Indexes of {args.name}")
 
         elif args.type == "foreign-keys":
-            if not args.name:
-                print("Error: Table name is required for 'foreign-keys' introspection", file=sys.stderr)
-                sys.exit(1)
             fks = await introspector.list_foreign_keys(args.name, schema=None)
             data = _serialize_for_output(fks)
             provider.display_results(data, title=f"Foreign Keys of {args.name}")
@@ -944,12 +989,6 @@ async def _handle_introspect_async(args, backend: AsyncFirebirdBackend, provider
                 )
 
         elif args.type == "procedure-parameters":
-            if not args.name:
-                print(
-                    "Error: Procedure name is required for 'procedure-parameters'",
-                    file=sys.stderr,
-                )
-                sys.exit(1)
             provider.display_results(
                 _serialize_for_output(
                     await introspector.list_procedure_parameters(args.name)
@@ -975,12 +1014,6 @@ async def _handle_introspect_async(args, backend: AsyncFirebirdBackend, provider
                 )
 
         elif args.type == "function-arguments":
-            if not args.name:
-                print(
-                    "Error: Function name is required for 'function-arguments'",
-                    file=sys.stderr,
-                )
-                sys.exit(1)
             provider.display_results(
                 _serialize_for_output(
                     await introspector.list_function_arguments(args.name)
@@ -1061,37 +1094,26 @@ async def _handle_introspect_async(args, backend: AsyncFirebirdBackend, provider
         # flag that reads worse than the duplicate.
 
         elif args.type == "unused-indexes":
-            if args.name:
-                _refuse_name(args, "it describes every index in the database")
             indexes = await introspector.list_unused_indexes(schema=None)
             data = _serialize_for_output(indexes)
             provider.display_results(data, title="Indexes with no recorded use")
 
         elif args.type == "table-stats":
-            if args.name:
-                _refuse_name(args, "it describes every table in the database")
             stats = await introspector.list_table_usage_stats(schema=None)
             data = _serialize_for_output(stats)
             provider.display_results(data, title="Table usage counters")
 
         elif args.type == "runtime":
-            if args.name:
-                _refuse_name(args, "it describes the server, not one object")
             metrics = await introspector.list_runtime_metrics(schema=None)
             data = _serialize_for_output(metrics)
             provider.display_results(data, title="Runtime metrics")
 
         elif args.type == "index-stats":
-            if args.name:
-                _refuse_name(args, "it describes every index in the database")
             stats = await introspector.list_index_usage_stats(schema=None)
             data = _serialize_for_output(stats)
             provider.display_results(data, title="Index usage counters")
 
         elif args.type == "ddl":
-            if not args.name:
-                print("Error: Table name is required for 'ddl' introspection", file=sys.stderr)
-                sys.exit(1)
             statement = await introspector.get_ddl_statement(
                 args.name, object_type=None, schema=None
             )
@@ -1105,24 +1127,12 @@ async def _handle_introspect_async(args, backend: AsyncFirebirdBackend, provider
             _display_ddl(provider, statement, args)
 
         elif args.type == "column-profiles":
-            if not args.name:
-                print(
-                    "Error: Table name is required for 'column-profiles' introspection",
-                    file=sys.stderr,
-                )
-                sys.exit(1)
             profiles = await introspector.list_column_data_profiles(args.name, schema=None)
             _note_unmeasured_profiles(profiles, args.name)
             data = _serialize_for_output(profiles)
             provider.display_results(data, title=f"Column profiles of {args.name}")
 
         elif args.type == "value-samples":
-            if not args.name:
-                print(
-                    "Error: Table name is required for 'value-samples' introspection",
-                    file=sys.stderr,
-                )
-                sys.exit(1)
             if not args.column:
                 print(
                     "Error: --column is required for 'value-samples' introspection",
@@ -1139,12 +1149,6 @@ async def _handle_introspect_async(args, backend: AsyncFirebirdBackend, provider
             provider.display_results(data, title=f"Values of {args.name}.{args.column}")
 
         elif args.type == "join-coverage":
-            if not args.name:
-                print(
-                    "Error: Left table name is required for 'join-coverage' introspection",
-                    file=sys.stderr,
-                )
-                sys.exit(1)
             if not args.column:
                 print(
                     "Error: --column is required for 'join-coverage' introspection",
