@@ -119,7 +119,7 @@ def _load_backend_config() -> FirebirdConnectionConfig:
         pass
     return FirebirdConnectionConfig(
         host="127.0.0.1",
-        port=19583,
+        port=3050,
         database="/var/lib/firebird/data/test_db",
         username="root",
         password="password",
@@ -223,7 +223,7 @@ def _load_fb_config() -> FirebirdConnectionConfig:
     if config is None:
         config = FirebirdConnectionConfig(
             host="127.0.0.1",
-            port=19583,
+            port=3050,
             database="/var/lib/firebird/data/test_db",
             username="SYSDBA",
             password="password",

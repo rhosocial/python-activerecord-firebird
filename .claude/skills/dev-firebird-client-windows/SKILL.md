@@ -106,8 +106,7 @@ no venv to install into.
 ## 5. Verify against the live server
 
 The scenarios users of this repository test against are in
-`tests/config/firebird_scenarios.yaml` (`firebird_5` on port 19582, `firebird_6`
-on 19583, user `SYSDBA`). That directory is gitignored, so a **worktree does not
+`tests/config/firebird_scenarios.yaml` (`firebird_5` / `firebird_6`, user `SYSDBA`). That directory is gitignored, so a **worktree does not
 have it** — copy it from the main checkout before running the suite:
 
 ```powershell

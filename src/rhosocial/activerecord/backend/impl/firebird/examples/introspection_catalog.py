@@ -18,7 +18,7 @@ Two things are deliberately *not* done here:
 Run it against the server the test suite uses (the same variables the CLI
 reads):
 
-    FIREBIRD_HOST=db-dev-1-n.rho.im FIREBIRD_PORT=19582 \
+    FIREBIRD_HOST=<firebird-host> FIREBIRD_PORT=<firebird-port> \
     FIREBIRD_DATABASE=/var/lib/firebird/data/test_db \
     FIREBIRD_USER=SYSDBA FIREBIRD_PASSWORD=password \
     python introspection_catalog.py

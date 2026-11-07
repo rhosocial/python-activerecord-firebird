@@ -10,7 +10,7 @@ coming back.
 It lives here, in the DDL feature area, rather than beside them because
 expression-dialect 12 draws exactly that line: the expression layer does no
 I/O, and a check that needs a connection is an integration check. The
-scenarios are reachable from this machine (192.168.1.3, 19582 / 19583) but
+scenarios are reachable from this machine (the ``firebird_5`` / ``firebird_6`` scenario servers, both on the default port 3050) but
 the Firebird *client library* is not installed here, so the driver answers
 "The location of Firebird Client Library could not be determined" and the
 fixture skips rather than errors; these cases execute wherever the client
