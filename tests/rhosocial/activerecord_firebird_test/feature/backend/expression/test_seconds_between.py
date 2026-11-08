@@ -35,7 +35,8 @@ class TestSpelling:
             Column(dialect, "started_at"),
         ).to_sql()
         assert sql == (
-            '(DATEDIFF(MILLISECOND FROM "QUEUED_AT" TO "STARTED_AT") * 0.001)'
+            '(CAST(DATEDIFF(MILLISECOND FROM "QUEUED_AT" TO "STARTED_AT") '
+            '* 0.001 AS NUMERIC(18, 4)))'
         )
         assert params == ()
 
@@ -48,8 +49,8 @@ class TestSpelling:
         ).as_("queue_seconds")
         sql, params = QueryStatement(dialect, select=[elapsed]).to_sql()
         assert sql == (
-            'SELECT (DATEDIFF(MILLISECOND FROM "QUEUED_AT" TO "STARTED_AT") '
-            '* 0.001) AS "QUEUE_SECONDS"'
+            'SELECT (CAST(DATEDIFF(MILLISECOND FROM "QUEUED_AT" TO "STARTED_AT") '
+            '* 0.001 AS NUMERIC(18, 4))) AS "QUEUE_SECONDS"'
         )
         assert params == ()
 
@@ -60,7 +61,7 @@ class TestSpelling:
             Literal(dialect, datetime(2026, 6, 4, 10, 0, 0)),
             Literal(dialect, datetime(2026, 6, 4, 11, 0, 0)),
         ).as_("elapsed").to_sql()
-        assert sql == '(DATEDIFF(MILLISECOND FROM ? TO ?) * 0.001) AS "ELAPSED"'
+        assert sql == '(CAST(DATEDIFF(MILLISECOND FROM ? TO ?) * 0.001 AS NUMERIC(18, 4))) AS "ELAPSED"'
         assert params == (datetime(2026, 6, 4, 10, 0, 0), datetime(2026, 6, 4, 11, 0, 0))
 
 
@@ -76,7 +77,7 @@ class TestBindOrder:
             Literal(dialect, start),
             Literal(dialect, end),
         ).to_sql()
-        assert sql == '(DATEDIFF(MILLISECOND FROM ? TO ?) * 0.001)'
+        assert sql == '(CAST(DATEDIFF(MILLISECOND FROM ? TO ?) * 0.001 AS NUMERIC(18, 4)))'
         assert params == (start, end)
 
     def test_distinct_values_prove_the_order_is_not_reversed(self):

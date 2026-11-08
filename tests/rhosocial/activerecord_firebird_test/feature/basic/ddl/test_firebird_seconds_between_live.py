@@ -1,8 +1,9 @@
 # tests/rhosocial/activerecord_firebird_test/feature/basic/ddl/test_firebird_seconds_between_live.py
 """What only a running Firebird can say about ``seconds_between``.
 
-The expression tests pin the rendered ``DATEDIFF(MILLISECOND ...) * 0.001``
-spelling and the bind order. This file is the other half: that Firebird
+The expression tests pin the rendered
+``CAST(DATEDIFF(MILLISECOND ...) * 0.001 AS NUMERIC(18, 4))`` spelling and the
+bind order. This file is the other half: that Firebird
 accepts the spelling, keeps the sign, keeps the fraction and reads the value
 back as seconds. It lives in the integration area rather than beside the
 expression tests because the expression layer does no I/O.

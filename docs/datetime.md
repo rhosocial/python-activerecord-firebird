@@ -12,7 +12,7 @@ Firebird has no interval value to subtract and no `EXTRACT(EPOCH FROM ...)`.
 The distance is asked of `DATEDIFF`, whose unit is a keyword of the call:
 
 ```sql
-(DATEDIFF(MILLISECOND FROM <start> TO <end>) * 0.001)
+(CAST(DATEDIFF(MILLISECOND FROM <start> TO <end>) * 0.001 AS NUMERIC(18, 4)))
 ```
 
 `DATEDIFF(MILLISECOND, ...)` is the finest unit Firebird keeps. A Firebird
@@ -36,6 +36,14 @@ decimal places (`0.5000`, `0.0001`). Do **not** spell this as a division by
 | `2026-06-04 10:00:00.0001` | `2026-06-04 10:00:00.0002` | `0.0001` |
 | `2026-06-04 11:00:00.0000` | `2026-06-04 10:00:00.0000` | `-3600.0000` |
 | `2026-06-04 10:00:00.0000` | `2026-06-04 10:00:00.0000` | `0.0000` |
+
+The product is cast back to `NUMERIC(18, 4)`. Left bare, the multiplication
+widens to `INT128`, and the Firebird 3 client library packaged by many Linux
+distributions cannot decode that answer: the prepare fails with "Data type
+unknown" even though the server can compute it. The cast keeps the same four
+exact decimal places inside the `INT64` the older client understands, and the
+whole Firebird timestamp range (about 3.16e11 seconds) still fits in 18 digits
+at scale 4.
 
 ## Resolution and rounding
 
@@ -63,7 +71,7 @@ start = Literal(dialect, datetime(2026, 6, 4, 10, 0))
 end = Literal(dialect, datetime(2026, 6, 4, 11, 0))
 expr = seconds_between(dialect, start, end).as_("queue_seconds")
 sql, params = expr.to_sql()
-# sql:    '(DATEDIFF(MILLISECOND FROM ? TO ?) * 0.001) AS "QUEUE_SECONDS"'
+# sql:    '(CAST(DATEDIFF(MILLISECOND FROM ? TO ?) * 0.001 AS NUMERIC(18, 4))) AS "QUEUE_SECONDS"'
 # params: (datetime(2026, 6, 4, 10, 0), datetime(2026, 6, 4, 11, 0))
 ```
 

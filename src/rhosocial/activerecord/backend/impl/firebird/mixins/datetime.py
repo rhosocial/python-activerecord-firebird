@@ -78,6 +78,14 @@ class FirebirdDateTimeMixin:
         scale of a division by ``1000.0`` (which would truncate a
         tenth-millisecond difference to ``0.00``).
 
+        The product is cast back to ``NUMERIC(18, 4)``: left bare, the
+        multiplication widens to ``INT128``, and the Firebird 3 client
+        library still installed by many Linux distributions cannot decode
+        that answer -- it fails the prepare with "Data type unknown". The
+        cast keeps the same four exact decimal places inside the ``INT64``
+        the older client understands, and the whole Firebird timestamp range
+        (about 3.16e11 seconds) still fits in 18 digits at scale 4.
+
         ``DATEDIFF`` is signed -- moment2 before moment1 is negative -- so
         the rendered ``end`` minus ``start`` keeps the direction without a
         ``CASE``. The parameters are collected in SQL order: ``start`` first,
@@ -85,5 +93,8 @@ class FirebirdDateTimeMixin:
         """
         start_sql, start_params = expr.start.to_sql()
         end_sql, end_params = expr.end.to_sql()
-        sql = f"(DATEDIFF(MILLISECOND FROM {start_sql} TO {end_sql}) * 0.001)"
+        sql = (
+            f"(CAST(DATEDIFF(MILLISECOND FROM {start_sql} TO {end_sql}) "
+            f"* 0.001 AS NUMERIC(18, 4)))"
+        )
         return self.apply_alias(sql, start_params + end_params, expr)
