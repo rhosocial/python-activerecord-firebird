@@ -63,3 +63,38 @@ class FirebirdDateTimeMixin:
         if expr.unit.value == "week":
             sql = f"({sql} / 7)"
         return self.apply_alias(sql, start_params + end_params, expr)
+
+    def format_seconds_between_expression(self, expr: "Any") -> Tuple[str, tuple]:
+        """Signed seconds from ``start`` to ``end`` in Firebird's spelling.
+
+        Firebird has no interval value to subtract, so the distance is asked
+        of ``DATEDIFF``: the unit is a keyword of the call, not a bind value.
+        ``MILLISECOND`` is the finest unit it keeps -- Firebird timestamps
+        store four fractional digits, i.e. tenths of a millisecond, and
+        ``DATEDIFF(MILLISECOND, ...)`` returns ``NUMERIC(18, 1)``, so no
+        stored digit is lost. Multiplying that count by ``0.001`` converts
+        it to seconds and keeps the fraction; Firebird's exact numeric
+        arithmetic yields four decimal places rather than rounding to the
+        scale of a division by ``1000.0`` (which would truncate a
+        tenth-millisecond difference to ``0.00``).
+
+        The product is cast back to ``NUMERIC(18, 4)``: left bare, the
+        multiplication widens to ``INT128``, and the Firebird 3 client
+        library still installed by many Linux distributions cannot decode
+        that answer -- it fails the prepare with "Data type unknown". The
+        cast keeps the same four exact decimal places inside the ``INT64``
+        the older client understands, and the whole Firebird timestamp range
+        (about 3.16e11 seconds) still fits in 18 digits at scale 4.
+
+        ``DATEDIFF`` is signed -- moment2 before moment1 is negative -- so
+        the rendered ``end`` minus ``start`` keeps the direction without a
+        ``CASE``. The parameters are collected in SQL order: ``start`` first,
+        because it is the first placeholder, then ``end``.
+        """
+        start_sql, start_params = expr.start.to_sql()
+        end_sql, end_params = expr.end.to_sql()
+        sql = (
+            f"(CAST(DATEDIFF(MILLISECOND FROM {start_sql} TO {end_sql}) "
+            f"* 0.001 AS NUMERIC(18, 4)))"
+        )
+        return self.apply_alias(sql, start_params + end_params, expr)
