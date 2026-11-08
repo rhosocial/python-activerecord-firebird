@@ -73,11 +73,9 @@ from rhosocial.activerecord.backend.impl.firebird.protocols import (
 )
 
 from .connection import add_connection_args, add_version_arg, resolve_connection_config_from_args
-from .output import create_provider
+from .output import INFO_OUTPUT_CHOICES, create_provider
 
 logger = logging.getLogger(__name__)
-
-OUTPUT_CHOICES = ["table", "json"]
 
 # Groups that are specific to Firebird dialect
 DIALECT_SPECIFIC_GROUPS = {"Firebird-specific"}
@@ -188,7 +186,7 @@ def create_parser(subparsers):
     parser.add_argument(
         "-o",
         "--output",
-        choices=OUTPUT_CHOICES,
+        choices=INFO_OUTPUT_CHOICES,
         default="table",
         help="Output format (default: table)",
     )

@@ -5,7 +5,7 @@ Every verdict asserted here was measured by running the statement against the
 live instance ``tests/config/firebird_scenarios.yaml`` names ``firebird_5`` and
 reading the server's own answer:
 
-* **Firebird 5.0.4** at ``192.168.1.3:19582``, database
+* **Firebird 5.0.4** on the ``firebird_5`` scenario server, database
   ``/var/lib/firebird/data/test_db`` (UTF8), user ``SYSDBA``, driven by
   ``firebird-driver`` 2.0.3. ``rdb$get_context('SYSTEM','ENGINE_VERSION')``
   returns ``5.0.4``.

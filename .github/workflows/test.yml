@@ -66,11 +66,6 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libfbclient2
 
-      - name: Install dependencies
-        run: |
-          pip install -r requirements.txt
-          pip install -r requirements-dev.txt
-
       - name: Install activerecord and testsuite
         run: |
           pip install "rhosocial-activerecord @ git+https://github.com/rhosocial/python-activerecord.git@release/v1.0.0.dev30"
@@ -80,7 +75,12 @@ jobs:
           # branch until it merges, and neither repository publishes a lock file to
           # pin against -- a hash-pinned install of a moving branch would be a pin
           # that goes stale on the next commit instead of a safety property.
-          pip install "rhosocial-activerecord-testsuite @ git+https://github.com/rhosocial/python-activerecord-testsuite.git@fix/column-constraint-gates"  # NOSONAR
+          pip install "rhosocial-activerecord-testsuite @ git+https://github.com/rhosocial/python-activerecord-testsuite.git@release/v1.0.0.dev17"  # NOSONAR
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install -r requirements-dev.txt
 
       - name: Verify Firebird connection and create test user
         run: |

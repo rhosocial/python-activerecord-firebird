@@ -14,9 +14,7 @@ from rhosocial.activerecord.backend.impl.firebird.backend.async_backend import A
 from rhosocial.activerecord.backend.errors import ConnectionError, QueryError
 
 from .connection import add_connection_args, resolve_connection_config_from_args, warn_if_async_requested
-from .output import create_provider
-
-OUTPUT_CHOICES = ["table", "json", "csv", "tsv"]
+from .output import OUTPUT_CHOICES, create_provider
 
 STATUS_TYPES = ["all", "config", "performance", "connections", "storage", "databases", "users"]
 

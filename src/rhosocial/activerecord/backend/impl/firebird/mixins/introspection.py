@@ -20,9 +20,16 @@ throughout:
   here" and "here is everything" are different answers.
 """
 
-from typing import List, Optional, TYPE_CHECKING
+from typing import Any, List, Optional, TYPE_CHECKING
 
 from rhosocial.activerecord.backend.dialect.exceptions import UnsupportedFeatureError
+from rhosocial.activerecord.backend.expression.core import (
+    CastExpression,
+    Column,
+    Subquery,
+)
+from rhosocial.activerecord.backend.expression.objects import Table
+from rhosocial.activerecord.backend.introspection.types import ProfileSource
 
 from ..query_nodes import (
     call,
@@ -33,8 +40,10 @@ from ..query_nodes import (
     join,
     like,
     literal,
+    multiply,
     null_test,
     relation,
+    row_count,
     select_sql,
 )
 
@@ -42,10 +51,13 @@ if TYPE_CHECKING:  # pragma: no cover
     from rhosocial.activerecord.backend.introspection.types import IntrospectionScope
 
     from rhosocial.activerecord.backend.expression.introspection import (
+        ColumnDataProfileQueryStatement,
         ColumnInfoQueryStatement,
+        ColumnValueSampleQueryStatement,
         DatabaseInfoQueryStatement,
         ForeignKeyQueryStatement,
         IndexInfoQueryStatement,
+        JoinCoverageQueryStatement,
         TableInfoQueryStatement,
         TableListQueryStatement,
         TriggerInfoQueryStatement,
@@ -119,6 +131,68 @@ class FirebirdIntrospectionMixin:
 
     def supports_trigger_introspection(self) -> bool:
         """``RDB$TRIGGERS`` carries the timing, the events and the source."""
+        return True
+
+    def supports_table_storage_introspection(self) -> bool:
+        """Firebird's catalogue keeps no per-table storage fact to answer.
+
+        The ``RDB$`` relations that mention pages -- ``RDB$PAGES`` above all
+        -- describe the database file, not the objects in it: the module
+        docstring of :mod:`...expression.introspection` classifies them as
+        status material, and a per-relation page count is what the external
+        ``gstat`` tool exists to produce rather than a catalogue question.
+        So the family answers False here, and the slots of
+        ``IntrospectionTableInfo`` stay ``None``: an engine that cannot
+        answer says so, and a caller gating on the switch is offered
+        "not supported here" rather than an empty list that looks like
+        storage of zero (``.claude/rules/introspection.md`` §2, §5).
+        """
+        return False
+
+    # ------------------------------------------------------------------ #
+    # Data profiles: the rows, not the declaration
+    # ------------------------------------------------------------------ #
+
+    def supports_column_data_profile(self) -> bool:
+        """Firebird answers a profile by aggregating the table's rows.
+
+        Its catalogue has no column statistics at all. ``RDB$FIELDS`` describes
+        what a column *declares* -- type, length, charset, nullability -- and
+        ``SET STATISTICS`` maintains an index's selectivity for the optimiser and
+        publishes no per-column distribution. So the answer is exact and paid for
+        in time: one aggregate over the table, projecting every column's null
+        count, distinct count and bounds together.
+
+        ``COUNT(DISTINCT ...)`` is the engine's own spelling and works on every
+        comparable type; ``MIN``/``MAX`` and ``COUNT(DISTINCT ...)`` are refused
+        by the server on ``BLOB`` columns, which are not comparable. Those
+        columns still get a row -- their nulls and the table's row count are
+        answerable -- with the three unreadable figures left ``NULL``, so "this
+        engine will not measure that about this type" stays distinguishable from
+        a zero it measured.
+        """
+        return True
+
+    def supports_column_value_sample(self) -> bool:
+        """Firebird lists values by grouping the column, and pays for the scan.
+
+        Nothing is precomputed, so this costs a ``GROUP BY`` over the column and
+        a sort of the groups -- the same order as the profile, which is why the
+        two are separate probes rather than one call that would force the cheap
+        half to pay for the dear one. A ``BLOB`` column cannot be grouped, and
+        the server says so rather than answering a shorter list.
+        """
+        return True
+
+    def supports_join_coverage(self) -> bool:
+        """Firebird measures overlap by counting distinct values on both sides.
+
+        Exact, and paid for with a read of each column for the overlap and
+        another for the denominator, in both directions. Answering ``True`` is
+        right because the probe asks whether the engine *can* answer, not whether
+        it can answer cheaply -- the cost belongs in the docstring, not in a
+        ``False`` that would claim Firebird cannot measure its own rows.
+        """
         return True
 
     def supports_domain_introspection(self) -> bool:
@@ -1555,4 +1629,351 @@ class FirebirdIntrospectionMixin:
             from_=relation(self, "RDB$PUBLICATIONS"),
             where=conjunction(self, *conditions) if conditions else None,
             order_by=[column(self, "RDB$PUBLICATION_NAME")],
+        )
+
+    # ------------------------------------------------------------------ #
+    # Data profiles: the rows themselves
+    # ------------------------------------------------------------------ #
+
+    def _profile_slot(self, index: int, suffix: str) -> str:
+        """The result name of one slot of one column's group.
+
+        Positional rather than column-named: a Firebird identifier is folded to
+        upper case and limited to 63 characters, while the column's own name
+        travels beside these words as a text label, so the answer says which
+        column each group is about without the result names having to spell it.
+        """
+        return f"c{index}_{suffix}"
+
+    def _profile_label(self, text: Optional[str], alias: str):
+        """A constant label as a named projection.
+
+        A :class:`~...expression.core.Literal` is deliberately unaliasable -- a
+        value has nothing to name -- so the constant is cast to ``VARCHAR``, the
+        smallest node that carries a result name. ``None`` is the same node
+        holding SQL ``NULL``, which projects an absent figure without inventing
+        one. ``VARCHAR`` rather than ``CHAR``: Firebird blank-pads ``CHAR``, and
+        a padded label is a different string.
+        """
+        from rhosocial.activerecord.backend.expression.types.string import VarCharType
+
+        width = len(text) if text is not None else 1
+        return CastExpression(
+            self,
+            literal(self, text, inline=True),
+            VarCharType(self, length=width),
+            alias=alias,
+        )
+
+    def _profile_column_slots(
+        self, index: int, column_name: str, opaque: bool
+    ) -> List[Any]:
+        """The five entries one column contributes to the profile row.
+
+        ``null_count`` is a ``SUM`` over a ``CASE`` so an empty table answers
+        ``NULL`` rather than a fabricated zero; ``COUNT(DISTINCT ...)`` and the
+        bounds are the two figures a BLOB's declared type puts out of reach, and
+        for a BLOB they are projected as ``NULL`` because Firebird rejects the
+        aggregate rather than answering ``NULL`` for it.
+
+        The name label is ``VARCHAR(63)``: a Firebird identifier cannot be wider
+        than that, so the cast cannot truncate a name the engine accepted.
+        """
+        from rhosocial.activerecord.backend.expression import (
+            CaseExpression,
+            CountFunction,
+            IsNullPredicate,
+            SumFunction,
+        )
+        from rhosocial.activerecord.backend.expression.types.string import VarCharType
+
+        column = Column(self, column_name)
+        slots: List[Any] = [
+            CastExpression(
+                self,
+                literal(self, column_name, inline=True),
+                VarCharType(self, length=63),
+                alias=self._profile_slot(index, "name"),
+            ),
+            SumFunction(
+                self,
+                CaseExpression(
+                    self,
+                    cases=[
+                        (
+                            IsNullPredicate(self, column),
+                            literal(self, 1, inline=True),
+                        )
+                    ],
+                    else_result=literal(self, 0, inline=True),
+                ),
+            ).as_(self._profile_slot(index, "null_count")),
+        ]
+        if opaque:
+            slots.extend(
+                [
+                    self._profile_label(None, self._profile_slot(index, "distinct_count")),
+                    self._profile_label(None, self._profile_slot(index, "min")),
+                    self._profile_label(None, self._profile_slot(index, "max")),
+                ]
+            )
+        else:
+            slots.extend(
+                [
+                    CountFunction(self, column, distinct=True).as_(
+                        self._profile_slot(index, "distinct_count")
+                    ),
+                    call(
+                        self,
+                        "MIN",
+                        column,
+                        alias=self._profile_slot(index, "min"),
+                    ),
+                    call(
+                        self,
+                        "MAX",
+                        column,
+                        alias=self._profile_slot(index, "max"),
+                    ),
+                ]
+            )
+        return slots
+
+    def format_column_data_profile_query_statement(
+        self, expr: "ColumnDataProfileQueryStatement"
+    ) -> tuple:
+        """Format a per-column profile as one aggregate row.
+
+        Firebird keeps no statistics catalogue, so the answer is the rows
+        themselves: one ``SELECT`` projecting, for every column, its name, its
+        null count, its distinct count, its bounds and the table's row count,
+        plus the provenance ``'aggregate'``.
+
+        **One row, not one ``UNION ALL`` arm per column**, and the reason is
+        Firebird's rather than a preference. A union has to reconcile one type
+        per column position across every arm, and ``min_value`` carrying an
+        ``INTEGER`` from one column and a ``VARCHAR`` from another has no common
+        type this engine will accept -- so the arms would have to be cast to a
+        common text type, which is a bound truncation waiting to happen and a
+        type the caller then has to parse back. A single projection keeps each
+        column's own bounds type, and it is still one read of the table.
+
+        The named columns are positional: the catalogue's names are labels in
+        the row rather than result-column names, because an identifier can be
+        folded, quoted or 63 characters long and these words cannot.
+
+        ``NULL`` for a BLOB's distinct count and bounds is a figure Firebird
+        refuses to compute, not one it measured as absent: BLOBs are not
+        comparable, so ``MIN``, ``MAX`` and ``COUNT(DISTINCT ...)`` are rejected
+        at prepare time on them. Their null count and the table's row count are
+        answerable and are answered.
+
+        An empty column list renders the row with the table's own facts and no
+        column groups; the parser reads it as an empty profile, which is the
+        truth about a table with no columns and not an error.
+        """
+        schema = expr.get_params().get("schema")
+        self.reject_namespace(schema)
+        opaque = frozenset(getattr(expr, "opaque_columns", ()))
+        select: List[Any] = []
+        for index, column_name in enumerate(expr.columns, start=1):
+            select.extend(
+                self._profile_column_slots(index, column_name, column_name in opaque)
+            )
+        select.append(call(self, "COUNT", row_count(self), alias="row_count"))
+        select.append(self._profile_label(ProfileSource.AGGREGATE.value, "source"))
+        return select_sql(self, select, from_=relation(self, expr.table_name))
+
+    def format_column_value_sample_query_statement(
+        self, expr: "ColumnValueSampleQueryStatement"
+    ) -> tuple:
+        """Format a most-frequent-values listing with a grouped scan.
+
+        Nothing is precomputed in Firebird, so this costs a ``GROUP BY`` over the
+        column and a sort of the groups -- the same order as the profile, which
+        is why the two are separate probes rather than one call that would make
+        the cheap half pay for the dear one.
+
+        ``ORDER BY COUNT(*) DESC`` is what makes the answer "the most frequent
+        values" rather than "the first values"; ties break by the value so two
+        runs of the same query agree. NULLs group together, as they do in every
+        SQL engine, so a column that contains them has a NULL entry in its
+        listing -- NULL is a legitimate member of a column's domain.
+
+        The row bound goes through the dialect's own ``LIMIT``/``OFFSET``
+        renderer, which spells ``FETCH NEXT ... ROWS ONLY`` from Firebird 3 and
+        ``ROWS m TO n`` before it. Writing either word here would pin the family
+        to a version floor this backend does not otherwise impose, and the
+        caller's integer stays a bind parameter rather than being spliced into
+        statement text.
+        """
+        from rhosocial.activerecord.backend.expression import (
+            CountFunction,
+            GroupByHavingClause,
+            LimitOffsetClause,
+            OrderByClause,
+            QueryStatement,
+            RowCountWildcard,
+        )
+
+        schema = expr.get_params().get("schema")
+        self.reject_namespace(schema)
+        query = QueryStatement(
+            self,
+            select=[
+                column(self, expr.column_name, alias="value"),
+                CountFunction(self, RowCountWildcard(self)).as_("count"),
+            ],
+            from_=relation(self, expr.table_name),
+            group_by_having=GroupByHavingClause(
+                self, group_by=[column(self, expr.column_name)]
+            ),
+            order_by=OrderByClause(
+                self,
+                expressions=[
+                    (CountFunction(self, RowCountWildcard(self)), "DESC"),
+                    (column(self, expr.column_name), "ASC"),
+                ],
+            ),
+            limit_offset=LimitOffsetClause(self, limit=int(expr.limit)),
+        )
+        return query.to_sql()
+
+    def _coverage_fraction(self, column_expr, source, other_column, other_source):
+        """One side of the overlap: the share of *column* the other side holds.
+
+        The numerator counts the *distinct* values of *column* that also occur in
+        *other_column*, by counting ``DISTINCT column`` under an ``IN`` predicate
+        over the other side's non-NULL values. Distinct on both sides is what
+        makes the figure a coverage of values rather than of rows -- a key
+        repeated a thousand times that matches once would otherwise read as well
+        covered -- and counting under the predicate needs no derived table, so
+        no alias has to be invented for one.
+
+        ``IS NOT NULL`` is written on both halves rather than relied upon. In the
+        numerator it says what the predicate means, since a value list made of
+        NULLs matches nothing. In the divisor ``COUNT(DISTINCT ...)`` skips NULLs
+        on its own, but the share is of the values that could join, and that is
+        the fact being measured. ``NULLIF(..., 0)`` then makes a column with no
+        value at all answer ``NULL`` rather than ``0``, which the parser reads as
+        "no fraction": the difference between "nothing matched" and "nothing to
+        match" survives to the caller.
+
+        The ``* 1.0`` is load-bearing here rather than decorative: Firebird's
+        ``/`` over two integer counts is integer arithmetic, so three quarters
+        would answer zero. Multiplying first makes one operand a floating-point
+        number, and the fraction is the fraction.
+        """
+        from rhosocial.activerecord.backend.expression import (
+            CountFunction,
+            InPredicate,
+            QueryStatement,
+        )
+
+        overlap = QueryStatement(
+            self,
+            select=[CountFunction(self, column_expr, distinct=True)],
+            from_=source,
+            where=conjunction(
+                self,
+                null_test(self, column_expr, is_not=True),
+                InPredicate(
+                    self,
+                    column_expr,
+                    Subquery(
+                        self,
+                        QueryStatement(
+                            self,
+                            select=[other_column],
+                            from_=other_source,
+                            where=null_test(self, other_column, is_not=True),
+                        ),
+                    ),
+                ),
+            ),
+        )
+        total = QueryStatement(
+            self,
+            select=[
+                call(
+                    self,
+                    "NULLIF",
+                    CountFunction(self, column_expr, distinct=True),
+                    literal(self, 0, inline=True),
+                )
+            ],
+            from_=source,
+            where=null_test(self, column_expr, is_not=True),
+        )
+        return multiply(self, Subquery(self, overlap), literal(self, 1.0, inline=True)) / Subquery(
+            self, total
+        )
+
+    def format_join_coverage_query_statement(
+        self, expr: "JoinCoverageQueryStatement"
+    ) -> tuple:
+        """Format a two-sided measurement of two columns' value domains.
+
+        Unlike every other statement in this module, this one names two user
+        tables rather than one ``RDB$`` relation: the question is a relation
+        between two objects, so both sides are carried explicitly and their
+        identifiers are the dialect's to quote. The aliases ``l`` and ``r`` are
+        what keep the two columns apart in the rendered statement, and they are
+        quoted like every other identifier.
+
+        The row carries both fractions because neither is meaningful alone. A
+        left share of 1.0 beside a right share of 0.2 says every tested value
+        exists on the other side while most of that other domain is
+        unaccounted for; a single similarity score would average the two and
+        describe neither. A caller deciding whether a join is worth writing
+        needs to know which direction is incomplete.
+
+        Both figures are counted over *distinct* values, with NULLs excluded from
+        the numerators and the denominators alike -- a NULL is not a value that
+        could ever join, so it belongs in neither half of the fraction. The
+        denominators are ``NULLIF``-guarded so a column with nothing to match
+        answers ``NULL``, which the parser reports as "no measurement" instead
+        of a zero overlap that would read as a real answer. See
+        :meth:`_coverage_fraction` for both rules in place.
+
+        Firebird has no ``SELECT`` without a ``FROM``, so the two measurements
+        hang off ``RDB$DATABASE`` -- the one-row relation this backend already
+        uses for every projection that reads no table.
+
+        The cost is the two sides read for their distinct domains plus the
+        intersection between them, twice, because both directions are reported.
+        That is why this belongs behind an explicit call rather than in any
+        automatic pass.
+
+        Collations are not reconciled. Firebird compares the two columns under
+        whichever collation applies, so values the database would treat as equal
+        may be counted as distinct here, and the fractions are a *lower* bound
+        across mismatched collations -- never an upper one.
+        """
+        from rhosocial.activerecord.backend.expression.sources import (
+            NamedRelationRef,
+        )
+
+        schema = expr.get_params().get("schema")
+        self.reject_namespace(schema)
+        left_source = NamedRelationRef(
+            self, Table(self, expr.left_table), alias="l"
+        )
+        right_source = NamedRelationRef(
+            self, Table(self, expr.right_table), alias="r"
+        )
+        left_column = Column(self, expr.left_column, table="l")
+        right_column = Column(self, expr.right_column, table="r")
+
+        return select_sql(
+            self,
+            [
+                self._coverage_fraction(
+                    left_column, left_source, right_column, right_source
+                ).as_("left_coverage"),
+                self._coverage_fraction(
+                    right_column, right_source, left_column, left_source
+                ).as_("right_coverage"),
+            ],
+            from_=relation(self, "RDB$DATABASE"),
         )

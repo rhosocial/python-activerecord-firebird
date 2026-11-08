@@ -110,7 +110,7 @@ def resolve_config() -> Optional[FirebirdConnectionConfig]:
 class _CountingExecutor:
     """Delegate to an introspector executor, counting the statements it runs.
 
-    ``execute`` is the one method both ``SyncIntrospectorExecutor`` and this
+    ``execute`` is the one method both ``IntrospectorExecutor`` and this
     backend's own executor expose, so wrapping it measures every catalogue
     question without touching the introspector that asks them.
     """
