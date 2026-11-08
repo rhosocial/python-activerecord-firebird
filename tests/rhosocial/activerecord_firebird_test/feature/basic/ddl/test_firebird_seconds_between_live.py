@@ -127,18 +127,18 @@ class TestLiveSecondsBetween:
                 f")",
                 fetch=False,
             )
-            live_backend.execute(
-                f"INSERT INTO {table} (id, started_at, ended_at) VALUES"
-                f" (1, TIMESTAMP '2026-03-01 00:00:00.0000',"
-                f"     TIMESTAMP '2026-03-02 00:00:00.0000'),"
-                f" (2, TIMESTAMP '2026-03-02 00:00:00.0000',"
-                f"     TIMESTAMP '2026-03-01 00:00:00.0000'),"
-                f" (3, TIMESTAMP '2026-03-01 00:00:00.7500',"
-                f"     TIMESTAMP '2026-03-01 00:00:01.0000'),"
-                f" (4, TIMESTAMP '2026-03-01 00:00:00.0001',"
-                f"     TIMESTAMP '2026-03-01 00:00:00.0002')",
-                fetch=False,
+            rows_to_insert = (
+                (1, "2026-03-01 00:00:00.0000", "2026-03-02 00:00:00.0000"),
+                (2, "2026-03-02 00:00:00.0000", "2026-03-01 00:00:00.0000"),
+                (3, "2026-03-01 00:00:00.7500", "2026-03-01 00:00:01.0000"),
+                (4, "2026-03-01 00:00:00.0001", "2026-03-01 00:00:00.0002"),
             )
+            for row_id, started, ended in rows_to_insert:
+                live_backend.execute(
+                    f"INSERT INTO {table} (id, started_at, ended_at) VALUES"
+                    f" ({row_id}, TIMESTAMP '{started}', TIMESTAMP '{ended}')",
+                    fetch=False,
+                )
 
             dialect = live_backend.dialect
             expr = seconds_between(

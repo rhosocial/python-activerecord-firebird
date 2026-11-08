@@ -205,10 +205,12 @@ class FirebirdDatetimeAdapter(SQLTypeAdapter):
             if value.tzinfo is not None and self._store_as_utc:
                 value = value.astimezone(timezone.utc)
             value = value.replace(tzinfo=None)
-            if value.microsecond % 10000:
-                # Firebird TIMESTAMP has 1/10000 s precision; truncate the
-                # excess microseconds so the stored value round-trips exactly.
-                value = value.replace(microsecond=(value.microsecond // 10000) * 10000)
+            if value.microsecond % 100:
+                # Firebird TIMESTAMP stores 1/10000 s, i.e. 100-microsecond
+                # units; truncate the excess microseconds so the stored value
+                # round-trips exactly. Truncating to 10000 would coarsen the
+                # value a hundredfold (10 ms) and lose sub-10ms differences.
+                value = value.replace(microsecond=(value.microsecond // 100) * 100)
             return value
         if isinstance(value, str):
             return datetime.strptime(value, '%Y-%m-%d %H:%M:%S')

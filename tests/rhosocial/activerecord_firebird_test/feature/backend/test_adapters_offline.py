@@ -195,7 +195,7 @@ class TestFirebirdDatetimeAdapter:
 
     def test_microseconds_truncated_to_firebird_precision(self):
         value = datetime(2024, 1, 2, 3, 4, 5, 123456)
-        assert FirebirdDatetimeAdapter().to_database(value, datetime) == datetime(2024, 1, 2, 3, 4, 5, 120000)
+        assert FirebirdDatetimeAdapter().to_database(value, datetime) == datetime(2024, 1, 2, 3, 4, 5, 123400)
 
     def test_to_database_string_and_invalid(self):
         adapter = FirebirdDatetimeAdapter()
