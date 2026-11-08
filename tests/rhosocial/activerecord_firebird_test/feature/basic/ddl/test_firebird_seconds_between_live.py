@@ -26,8 +26,10 @@ from rhosocial.activerecord.backend.expression import (
     Column,
     Literal,
     QueryStatement,
+    cast,
     seconds_between,
 )
+from rhosocial.activerecord.backend.expression.types import TimestampType
 from rhosocial.activerecord.backend.impl.firebird.backend import FirebirdBackend
 
 
@@ -103,8 +105,16 @@ class TestLiveSecondsBetween:
         dialect = live_backend.dialect
         expr = seconds_between(
             dialect,
-            Literal(dialect, start),
-            Literal(dialect, end),
+            cast(
+                dialect,
+                Literal(dialect, start, inline=True),
+                TimestampType(dialect=dialect),
+            ),
+            cast(
+                dialect,
+                Literal(dialect, end, inline=True),
+                TimestampType(dialect=dialect),
+            ),
         ).as_("elapsed")
         query = QueryStatement(dialect, select=[expr], from_="RDB$DATABASE")
         sql, params = query.to_sql()
