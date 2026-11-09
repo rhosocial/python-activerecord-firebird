@@ -44,6 +44,7 @@ from .types import (
     FirebirdPrivilegeInfo,
     FirebirdRoleInfo,
     FirebirdViewRelationInfo,
+    IDENTITY_GENERATION_NAMES,
     object_type_name,
 )
 
@@ -283,6 +284,26 @@ class FirebirdAsyncIntrospectorMixin(IntrospectorMixin):
                 else None
             )
 
+            # ``RDB$RELATION_FIELDS`` already carried these facts in the
+            # projection; before this parser read them, an identity column
+            # looked exactly like an ordinary column and a computed column's
+            # expression was lost. ``IDENTITY_TYPE`` is NULL for a non-identity
+            # column and 0/1 for the two modes, so ``0`` must not be read as
+            # "absent".
+            identity_type = row.get("IDENTITY_TYPE")
+            generator_name = self._text_or_none(row.get("GENERATOR_NAME"))
+            computed_source = self._text_or_none(row.get("COMPUTED_SOURCE"))
+            description = self._text_or_none(row.get("DESCRIPTION"))
+
+            extra: Dict[str, Any] = {}
+            if identity_type is not None:
+                extra["identity_type"] = identity_type
+                extra["identity_generation"] = IDENTITY_GENERATION_NAMES.get(
+                    identity_type, str(identity_type)
+                )
+            if generator_name:
+                extra["generator_name"] = generator_name
+
             columns.append(
                 IntrospectionColumnInfo(
                     name=str(row.get("COLUMN_NAME", "")).strip() if row.get("COLUMN_NAME") else None,
@@ -294,11 +315,15 @@ class FirebirdAsyncIntrospectorMixin(IntrospectorMixin):
                     parsed_data_type=parsed_data_type,
                     nullable=row.get("NULL_FLAG") is None,
                     default_value=str(row.get("DEFAULT_SOURCE", "")).strip() if row.get("DEFAULT_SOURCE") else None,
-                    comment=None,
+                    is_auto_increment=identity_type is not None,
+                    is_generated=computed_source is not None,
+                    generated_expression=computed_source,
+                    comment=description,
                     character_maximum_length=char_len,
                     numeric_precision=precision,
                     numeric_scale=scale,
                     collation=None,
+                    extra=extra,
                 )
             )
         return columns
@@ -532,7 +557,12 @@ class FirebirdAsyncIntrospectorMixin(IntrospectorMixin):
         rows: List[Dict[str, Any]],
         values: Dict[str, int],
     ) -> List[FirebirdGeneratorInfo]:
-        """Pair each generator row with the value read for that generator."""
+        """Pair each generator row with the value read for that generator.
+
+        The ownership slots stay ``None`` for a user-created generator (the
+        left join in the listing found no identity column) and for a server
+        older than 3.0 (the ownership columns were not projected at all).
+        """
         generators: List[FirebirdGeneratorInfo] = []
         for row in rows:
             name = self._row_name(row, "GENERATOR_NAME")
@@ -543,6 +573,9 @@ class FirebirdAsyncIntrospectorMixin(IntrospectorMixin):
                     name=name,
                     value=values[name],
                     is_system=bool(row.get("SYSTEM_FLAG")),
+                    owner_table=self._text_or_none(row.get("OWNER_TABLE")),
+                    owner_column=self._text_or_none(row.get("OWNER_COLUMN")),
+                    identity_type=row.get("IDENTITY_TYPE"),
                 )
             )
         return generators

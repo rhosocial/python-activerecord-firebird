@@ -75,7 +75,7 @@ jobs:
           # branch until it merges, and neither repository publishes a lock file to
           # pin against -- a hash-pinned install of a moving branch would be a pin
           # that goes stale on the next commit instead of a safety property.
-          pip install "rhosocial-activerecord-testsuite @ git+https://github.com/rhosocial/python-activerecord-testsuite.git@feature/extract-epoch"  # NOSONAR
+          pip install "rhosocial-activerecord-testsuite @ git+https://github.com/rhosocial/python-activerecord-testsuite.git@release/v1.0.0.dev17"  # NOSONAR
 
       - name: Install dependencies
         run: |

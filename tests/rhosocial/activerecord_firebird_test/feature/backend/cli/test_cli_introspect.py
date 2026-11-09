@@ -298,6 +298,13 @@ class TestIntrospectParserContract:
             parse_introspect_args(["introspect", "stored-procs"])
         assert excinfo.value.code == 2
 
+    def test_the_ddl_type_is_not_offered(self):
+        """A type whose capability is permanently False is not advertised."""
+        assert "ddl" not in INTROSPECT_TYPES
+        with pytest.raises(SystemExit) as excinfo:
+            parse_introspect_args(["introspect", "ddl", "ORDERS"])
+        assert excinfo.value.code == 2
+
     def test_no_dsn_form_exists(self):
         with pytest.raises(SystemExit) as excinfo:
             parse_introspect_args(["introspect", "--dsn", "x"])

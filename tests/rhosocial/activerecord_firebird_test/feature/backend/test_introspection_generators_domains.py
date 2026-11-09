@@ -66,9 +66,15 @@ class TestGeneratorStatements:
     def test_list_asks_the_catalogue_by_name(self, probe):
         sql, params = probe.generator_list_statement().to_sql()
         assert sql == (
-            'SELECT "RDB$GENERATOR_NAME" AS "GENERATOR_NAME", '
-            '"RDB$SYSTEM_FLAG" AS "SYSTEM_FLAG" FROM "RDB$GENERATORS" '
-            'WHERE "RDB$SYSTEM_FLAG" = 0 ORDER BY "RDB$GENERATOR_NAME"'
+            'SELECT "G"."RDB$GENERATOR_NAME" AS "GENERATOR_NAME", '
+            '"G"."RDB$SYSTEM_FLAG" AS "SYSTEM_FLAG", '
+            '"RF"."RDB$RELATION_NAME" AS "OWNER_TABLE", '
+            '"RF"."RDB$FIELD_NAME" AS "OWNER_COLUMN", '
+            '"RF"."RDB$IDENTITY_TYPE" AS "IDENTITY_TYPE" '
+            'FROM "RDB$GENERATORS" AS "G" '
+            'LEFT JOIN "RDB$RELATION_FIELDS" AS "RF" '
+            'ON "RF"."RDB$GENERATOR_NAME" = "G"."RDB$GENERATOR_NAME" '
+            'WHERE "G"."RDB$SYSTEM_FLAG" = 0 ORDER BY "G"."RDB$GENERATOR_NAME"'
         )
         assert params == ()
 
@@ -76,6 +82,19 @@ class TestGeneratorStatements:
         sql, params = probe.generator_list_statement(include_system=True).to_sql()
         assert "WHERE" not in sql
         assert params == ()
+
+    def test_identity_ownership_is_a_left_join(self, probe):
+        """A plain sequence owns no column; an inner join would delete it."""
+        sql, _ = probe.generator_list_statement().to_sql()
+        assert 'LEFT JOIN "RDB$RELATION_FIELDS" AS "RF"' in sql
+        assert '"RF"."RDB$GENERATOR_NAME" = "G"."RDB$GENERATOR_NAME"' in sql
+
+    def test_the_ownership_columns_are_not_asked_before_firebird_3(self):
+        """``RDB$RELATION_FIELDS`` has no generator link before 3.0."""
+        old = _Probe(FirebirdDialect(version=(2, 5, 0)))
+        sql, _ = old.generator_list_statement().to_sql()
+        assert "RDB$RELATION_FIELDS" not in sql
+        assert "OWNER_TABLE" not in sql
 
     def test_value_is_a_zero_increment_named_as_an_identifier(self, probe):
         """``GEN_ID(name, 0)``: a read, and the name is an identifier, not a value.
@@ -269,6 +288,104 @@ class TestGeneratorParsing:
 
     def test_nameless_rows_are_skipped(self, probe):
         assert probe.parse_generators([{"GENERATOR_NAME": None}], {}) == []
+
+
+class TestGeneratorOwnershipParsing:
+    def test_an_identity_generator_names_the_column_it_backs(self, probe):
+        """The left join's ownership columns are the generator -> column link."""
+        rows = [
+            {
+                "GENERATOR_NAME": "RDB$123 ",
+                "SYSTEM_FLAG": 6,
+                "OWNER_TABLE": "ORDERS  ",
+                "OWNER_COLUMN": "ID  ",
+                "IDENTITY_TYPE": 1,
+            },
+            {
+                "GENERATOR_NAME": "USER_GEN",
+                "SYSTEM_FLAG": 0,
+                "OWNER_TABLE": None,
+                "OWNER_COLUMN": None,
+                "IDENTITY_TYPE": None,
+            },
+        ]
+        identity, user = probe.parse_generators(rows, {"RDB$123": 5, "USER_GEN": 7})
+        assert identity.owner_table == "ORDERS"
+        assert identity.owner_column == "ID"
+        assert identity.identity_type == 1
+        assert identity.is_system is True
+        assert user.owner_table is None
+        assert user.owner_column is None
+        assert user.identity_type is None
+
+
+class TestColumnIdentityParsing:
+    def _row(self, **overrides):
+        row = {
+            "COLUMN_NAME": "ID",
+            "FIELD_TYPE": 8,
+            "FIELD_SUB_TYPE": 0,
+            "CHAR_LENGTH": None,
+            "PRECISION": None,
+            "SCALE": 0,
+            "NULL_FLAG": 1,
+            "DEFAULT_SOURCE": None,
+            "POSITION": 0,
+            "COMPUTED_SOURCE": None,
+            "IDENTITY_TYPE": None,
+            "GENERATOR_NAME": None,
+            "COLLATION_ID": None,
+            "DESCRIPTION": None,
+        }
+        row.update(overrides)
+        return row
+
+    def test_generated_always_is_auto_increment(self, probe):
+        """``IDENTITY_TYPE = 0`` is GENERATED ALWAYS, not "no identity"."""
+        (column,) = probe.parse_columns(
+            [self._row(IDENTITY_TYPE=0, GENERATOR_NAME="RDB$GEN_1")],
+            "ORDERS",
+            None,
+        )
+        assert column.is_auto_increment is True
+        assert column.extra["identity_type"] == 0
+        assert column.extra["identity_generation"] == "ALWAYS"
+        assert column.extra["generator_name"] == "RDB$GEN_1"
+
+    def test_generated_by_default_is_auto_increment(self, probe):
+        (column,) = probe.parse_columns(
+            [self._row(IDENTITY_TYPE=1, GENERATOR_NAME="RDB$GEN_2")],
+            "ORDERS",
+            None,
+        )
+        assert column.is_auto_increment is True
+        assert column.extra["identity_type"] == 1
+        assert column.extra["identity_generation"] == "BY DEFAULT"
+
+    def test_a_plain_column_is_not_auto_increment(self, probe):
+        (column,) = probe.parse_columns([self._row()], "ORDERS", None)
+        assert column.is_auto_increment is False
+        assert column.extra == {}
+
+    def test_a_computed_column_carries_its_expression(self, probe):
+        """``RDB$COMPUTED_SOURCE`` is the declaration, not a missing measurement."""
+        (column,) = probe.parse_columns(
+            [self._row(COMPUTED_SOURCE="QUANTITY * PRICE")],
+            "ORDERS",
+            None,
+        )
+        assert column.is_auto_increment is False
+        assert column.is_generated is True
+        assert column.generated_expression == "QUANTITY * PRICE"
+        assert column.extra == {}
+
+    def test_the_column_comment_is_read(self, probe):
+        (column,) = probe.parse_columns(
+            [self._row(DESCRIPTION="the order's key")],
+            "ORDERS",
+            None,
+        )
+        assert column.comment == "the order's key"
 
 
 class TestLookupByName:

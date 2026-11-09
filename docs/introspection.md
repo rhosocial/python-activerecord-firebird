@@ -59,7 +59,7 @@ The families beyond core's set are this backend's own: core has no probe for dom
 
 ### Left False by Inheritance
 
-The families core defines but this backend does not answer stay on the base mixin's `False`, and their CLI types are refused at the gate (exit 2) rather than run to an empty listing:
+The families core defines but this backend does not answer stay on the base mixin's `False`. Where the CLI offers the family -- the four operational types -- a run is refused at the gate (exit 2) rather than reaching an empty listing. Where it does not, the absence is deliberate: `ddl` has no CLI type because its capability is permanently `False`, while `object dependencies`, `partitions` and `extensions` have no stable answer to model here.
 
 | Family | Probe | Why |
 |--------|-------|-----|
@@ -75,6 +75,27 @@ The families core defines but this backend does not answer stay on the base mixi
 The distinction that matters is between `False` and an empty answer. A `False` tells a caller not to ask; an empty list would tell it the question was asked and nothing was found. An operator reading "no unused indexes" for an engine that keeps no such counter would be reading a report nobody produced.
 
 The probes do not test grants. If the connected user may not read a relation, the engine's own error arrives at execution; the probe answered about the server, not about this user's privileges.
+
+### Engine Objects With No Family
+
+These are real catalogue objects, or real engine absences, that this backend does not answer for. They are listed rather than offered as empty CLI types: an offered family that always returns nothing reads as "the database has none".
+
+| Object | Catalogue | Why there is no family |
+|--------|-----------|------------------------|
+| `types` | none; domains live in `RDB$FIELDS` | Firebird has no standalone user-defined type. Domains *are* its reusable type layer, and `domains` already answers them; a second `types` family would duplicate the same rows under another name. |
+| Table partitioning | none | Firebird 5 and 6 have no partitioned tables; `supports_partition_info()` is `False` and the mixin refuses every partition clause. |
+| Tablespaces | none | Firebird has no tablespace object. Its file objects (`RDB$FILES`) describe secondary and shadow files, not a table's storage placement. |
+| `packages` | `RDB$PACKAGES` | The relation exists and Firebird 5's language reference documents `CREATE PACKAGE`, but this backend's measured probe recorded `CREATE PACKAGE` refused on 5.0.4 and the 6.0.0 server, so the relation is treated as reserved. This is a contradiction worth re-measuring before a family is added. |
+| `filters` | `RDB$FILTERS` | `DECLARE FILTER` is a real schema object (a declared BLOB converter); no family answers it. |
+| `auth-mappings` | `RDB$AUTH_MAPPING` | An authentication mapping is instance/security configuration, not a table-scoped schema object. |
+| `publication-tables` | `RDB$PUBLICATION_TABLES` | The `publications` family answers the publication, not the tables each publication replicates. |
+| `security-classes` | `RDB$SECURITY_CLASSES` | Access-control lists. The `privileges` family already answers grants; a class listing was not requested and is not model material. |
+| `array-dimensions` | `RDB$FIELD_DIMENSIONS` | Array bounds are part of a column's declaration; the column family composes the type from `RDB$FIELDS` and does not expose per-dimension bounds. |
+| `db-creators` | `RDB$DB_CREATORS` | A grant in the security database, not a schema object of this database. |
+| engine lookups | `RDB$TIME_ZONES`, `RDB$TYPES`, `RDB$KEYWORDS` | Engine-owned lookup tables (time zones from Firebird 4), not user objects. |
+| status material | `RDB$PAGES`, `RDB$FILES`, `RDB$FORMATS`, `RDB$TRANSACTIONS`, `RDB$CONFIG`, `RDB$BACKUP_HISTORY`, `RDB$LOG_FILES` | File/runtime state rather than schema; the `status` introspector and the declined statistical families answer what can be answered. |
+
+The rule is the same as for the families above: a type is added when the engine backs a stable, model-relevant answer, not to make the catalogue look complete. Each absent object here has an owning relation, and each would get a typed result and its own probe rather than a generic bag that hides what the engine guarantees.
 
 ## Basic Usage
 
@@ -144,7 +165,7 @@ Each of these is a read of `RDB$` relations or of `MON$DATABASE`; none of them s
 | Foreign keys | `list_foreign_keys()` | `RDB$REF_CONSTRAINTS`, `RDB$RELATION_CONSTRAINTS` |
 | Triggers | `list_triggers()` | `RDB$TRIGGERS` |
 | Views | `list_views()`, `get_view_info()` | `RDB$RELATIONS`, `RDB$VIEW_SOURCE` |
-| Generators | `list_generators()`, `get_generator_info()` | `RDB$GENERATORS` + `GEN_ID(name, 0)` |
+| Generators | `list_generators()`, `get_generator_info()` | `RDB$GENERATORS` + `GEN_ID(name, 0)`, joined to `RDB$RELATION_FIELDS` for identity ownership |
 | Domains | `list_domains()`, `get_domain_info()` | `RDB$FIELDS` |
 | Exceptions | `list_exceptions()`, `get_exception_info()` | `RDB$EXCEPTIONS` |
 | Procedures | `list_procedures()`, `get_procedure_info()` | `RDB$PROCEDURES` |
@@ -174,7 +195,9 @@ A view's definition comes from `RDB$VIEW_SOURCE`, and `view-relations` answers w
 
 The question joins `RDB$RELATION_FIELDS` to `RDB$FIELDS` through `RDB$FIELD_SOURCE`, so each column carries both its per-column facts and the domain it was declared from. The type string is composed from the catalogue: `BLOB` keeps its `SUB_TYPE` word, `VARCHAR` and `CHAR` carry their character length, and the remainder is parsed by the dialect. `data_type` is the lower-cased spelling and `data_type_full` the composed one.
 
-`nullable` is `NULL_FLAG IS NULL` -- Firebird records nullability by the absence of a flag. `comment` and `collation` stay `None`: the column question does not join the description blob or the collation id, so it does not claim to answer them.
+`nullable` is `NULL_FLAG IS NULL` -- Firebird records nullability by the absence of a flag. `comment` is read from `RDB$DESCRIPTION`; `collation` stays `None` because the catalogue gives an id rather than a name and the question does not resolve it.
+
+An identity column is reported as `is_auto_increment=True` from `RDB$RELATION_FIELDS.RDB$IDENTITY_TYPE` (`NULL` means "not identity", `0` is `GENERATED ALWAYS`, `1` is `GENERATED BY DEFAULT`), with the raw code, the generation mode and the backing `RDB$GENERATOR_NAME` in `extra`. That is the generator-to-column ownership link for model inference: a system generator and the column it fills are named by the same row. A computed column is `is_generated=True` with its declaration in `generated_expression`, read from `RDB$COMPUTED_SOURCE`. Both facts were projected by the column question before the parser read them; a caller could not tell an identity key from an ordinary one.
 
 **The relation name is a bind value, not an identifier.** The column question keeps the caller's spelling verbatim, while the catalogue stores unquoted names folded to upper case. A table created with an unquoted `orders` is stored as `ORDERS`, so passing the lower-case `"orders"` gets an empty column list, which reads exactly like a table with no columns. Pass the catalogue's spelling, or read it from `list_tables()` first. The profile family folds the name itself before asking, precisely because an empty profile would otherwise be indistinguishable from a table that has no columns.
 
@@ -193,6 +216,8 @@ The foreign-key listing reads `RDB$REF_CONSTRAINTS` with `RDB$RELATION_CONSTRAIN
 ### Generators and Domains
 
 A generator is Firebird's sequence, and its value is not in the catalogue: `RDB$GENERATORS` names them and `GEN_ID(<name>, 0)` reads one. A generator name cannot be bound as a parameter, so the catalogue read and the value reads cannot be one statement: `list_generators()` issues one `GEN_ID` per generator. The result is cached, so the cost is paid once per cache generation rather than once per call. `get_generator_info()` answers from the user list first and only falls back to `include_system=True` for a name that list does not contain, which keeps a user lookup from paying the system generators' `GEN_ID` calls.
+
+From Firebird 3.0 the listing also answers *which column a generator backs*. `RDB$RELATION_FIELDS.RDB$GENERATOR_NAME` names the internal generator of an identity column, so the listing LEFT joins that relation and projects `owner_table`, `owner_column` and `identity_type`. The join is left deliberately: a user-created generator has no owning column, and an inner join would delete every plain sequence. Below 3.0 the catalogue has no such column, so the ownership fields are not projected and stay `None` rather than producing a `-206 column unknown`.
 
 A domain is Firebird's reusable type layer, and `RDB$FIELDS` answers the same question a column's type descriptor does. `list_domains()` and `get_domain_info()` follow the same user-first, system-second lookup as generators.
 
@@ -229,7 +254,7 @@ Firebird has no statistics collector and no `RDB$` relation standing in for one,
 
 ## DDL Extraction
 
-`ddl` is offered by the CLI and refused at the gate (exit 2). `supports_ddl_extraction()` is `False` because Firebird records a source body, not a rebuildable `CREATE` statement: the text that would recreate a table with its constraints, defaults and computed expressions is not retained anywhere the catalogue exposes, and this backend does not assemble one. An assembled fragment would read as authoritative while being this library's guess, so the type is declined instead.
+DDL extraction is not offered by this backend's CLI. `supports_ddl_extraction()` is `False` because Firebird records a source body, not a rebuildable `CREATE` statement: the text that would recreate a table with its constraints, defaults and computed expressions is not retained anywhere the catalogue exposes, and this backend does not assemble one. An assembled fragment would read as authoritative while being this library's guess, so the type is not advertised. The backend keeps `format_ddl_statement_query_statement` and the `DDLStatement` expression so a future real implementation can reuse them, but the CLI does not offer a type whose capability is permanently `False`.
 
 ## Data Families
 
@@ -341,7 +366,7 @@ A probe answering `False` is "the question cannot be asked here", not "nothing w
 
 ## Command Line Introspection
 
-The backend provides a command-line surface over the same introspector: thirty types -- twenty-two catalogue families, the four operational families it declines, `ddl`, and the three data families.
+The backend provides a command-line surface over the same introspector: twenty-nine types -- twenty-two catalogue families, the four operational families it declines, and the three data families.
 
 ```bash
 python -m rhosocial.activerecord.backend.impl.firebird introspect tables \
@@ -393,7 +418,6 @@ The largest surface of the nine backends, because each `RDB$` relation that answ
 | `table-stats` | Declined: `False` | refused | - |
 | `runtime` | Declined: `False` | refused | - |
 | `index-stats` | Declined: `False` | refused | - |
-| `ddl` | Declined: `False` | required (table) | - |
 | `column-profiles` | What each column of a table holds, `source='aggregate'` | required (table) | - |
 | `value-samples` | Most frequent values of one column | required (table) | `--column` |
 | `join-coverage` | Overlap of two columns' value domains | required (left table) | `--column`, `--right-table`, `--right-column` |
@@ -424,8 +448,6 @@ python -m rhosocial.activerecord.backend.impl.firebird introspect publications \
 ```bash
 # Declined families: exit 2, no query run
 python -m rhosocial.activerecord.backend.impl.firebird introspect unused-indexes \
-  --database /path/to/test_db
-python -m rhosocial.activerecord.backend.impl.firebird introspect ddl ORDERS \
   --database /path/to/test_db
 
 # The data families
@@ -491,4 +513,4 @@ python -m rhosocial.activerecord.backend.impl.firebird introspect tables \
 | `clear_cache()` | Clear all cached answers |
 | `invalidate_cache(scope, ...)` | Invalidate one scope, or one name |
 
-The operational and DDL methods exist on the base introspector and are refused by this dialect's probes; check the probe before calling, and let the `False` be the answer.
+The operational families' methods exist on the base introspector and are refused by this dialect's probes; check the probe before calling, and let the `False` be the answer. `get_ddl_statement()` is likewise on the base introspector and `supports_ddl_extraction()` is `False`, so the CLI does not offer a `ddl` type.

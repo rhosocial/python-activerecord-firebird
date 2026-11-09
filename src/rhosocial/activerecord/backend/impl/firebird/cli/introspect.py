@@ -97,21 +97,6 @@ _TYPE_CAPABILITIES = {
     "table-stats": "supports_table_stats",
     "runtime": "supports_runtime_stats",
     "index-stats": "supports_index_stats",
-    # ---- the one-object families ------------------------------------
-    # ``ddl`` uses ``supports_ddl_extraction``, the switch every backend
-    # answers for "can you rebuild this object's text"; it is False here
-    # because Firebird retrieves a source body from ``RDB$`` rather than
-    # assembling a full ``CREATE`` statement, and an assembled fragment
-    # would read as authoritative. ``rdb-dependencies`` above already names
-    # the dependency family -- answered from ``RDB$DEPENDENCIES`` -- so it
-    # is not repeated under the common switch. It is spelled after the
-    # relation it reads rather than ``dependencies`` because the common
-    # switch it does *not* use gates a different family: core's
-    # ``supports_object_dependencies``, whose formatter this dialect does not
-    # implement and whose parser spells ``RDB$DEPENDED_ON_NAME`` as
-    # ``referenced_name``. Sharing the name across the two would have a
-    # caller believe one switch answered for both.
-    "ddl": "supports_ddl_extraction",
     # ---- the row families -------------------------------------------
     # What the data holds rather than what the column declares. All three
     # answer True here: they read the table itself, and the cost is a
@@ -184,9 +169,8 @@ _NAME_RULE = {
     "table-stats": "forbidden",
     "runtime": "forbidden",
     "index-stats": "forbidden",
-    # The one-object families: the DDL that recreates one table, the profile
-    # of one table's columns, and the samples of one of them.
-    "ddl": "required",
+    # The row families: the profile of one table's columns, and the samples
+    # of one of them.
     "column-profiles": "required",
     "value-samples": "required",
     # ``join-coverage`` asks about two tables; the left one is NAME, so it is
@@ -246,22 +230,6 @@ def _validate_name(args: argparse.Namespace) -> None:
             file=sys.stderr,
         )
         sys.exit(2)
-
-
-def _display_ddl(provider, statement, args) -> None:
-    """Show a DDL statement in the form that stays readable.
-
-    A ``CREATE TABLE`` is text: a one-row table folds it into a cell that
-    wraps at the terminal width and interleaves with the other columns.
-    Table output therefore prints the statement itself, while the
-    structured formats keep the whole row so JSON and CSV still carry
-    ``object_type`` and ``native`` beside the text.
-    """
-    if args.output == "table":
-        print(statement.ddl or "")
-        return
-    data = _serialize_for_output([statement])
-    provider.display_results(data, title=f"DDL of {statement.object_name}")
 
 
 def _refuse_unused_arguments(args: argparse.Namespace) -> None:
@@ -366,7 +334,6 @@ def create_parser(subparsers):
   # What the rows hold, not what the columns declare
   %(prog)s column-profiles orders --database /path/to/test_db
   %(prog)s value-samples orders --column status --database /path/to/test_db
-  %(prog)s ddl orders --database /path/to/test_db
   %(prog)s join-coverage orders --column customer_id --right-table customers \\
     --right-column id --database /path/to/test_db
 
@@ -410,7 +377,7 @@ def create_parser(subparsers):
         nargs="?",
         default=None,
         help="Object name. Required for columns, indexes, foreign-keys, "
-        "procedure-parameters, function-arguments, ddl, column-profiles, "
+        "procedure-parameters, function-arguments, column-profiles, "
         "value-samples and join-coverage (the table they belong to); "
         "optional for the catalogue families that can also answer for one "
         "member (views, triggers, generators, domains, exceptions, "
@@ -780,26 +747,10 @@ def _handle_introspect_sync(args, backend: FirebirdBackend, provider):
             data = _serialize_for_output(stats)
             provider.display_results(data, title="Index usage counters")
 
-        # ---- the one-object families ----------------------------------
-        # The DDL that recreates one table, and the profile of one table.
+        # ---- the row families -----------------------------------------
+        # The profile of one table, and the samples of one of its columns.
         # ``name`` is the table and required; the column a value listing
         # is about is named on its own flag.
-
-        elif args.type == "ddl":
-            statement = introspector.get_ddl_statement(args.name, object_type=None, schema=None)
-            if statement is None:
-                # Not "no such table": the object exists, and this engine
-                # answers with no text rather than an assembled fragment
-                # that would read as authoritative. The two are worth
-                # telling apart, so this exits without printing an empty
-                # row.
-                print(
-                    f"Error: no DDL available for '{args.name}' "
-                    "(Firebird records a source body, not a rebuildable statement)",
-                    file=sys.stderr,
-                )
-                sys.exit(1)
-            _display_ddl(provider, statement, args)
 
         elif args.type == "column-profiles":
             profiles = introspector.list_column_data_profiles(args.name, schema=None)
@@ -1112,19 +1063,6 @@ async def _handle_introspect_async(args, backend: AsyncFirebirdBackend, provider
             stats = await introspector.list_index_usage_stats(schema=None)
             data = _serialize_for_output(stats)
             provider.display_results(data, title="Index usage counters")
-
-        elif args.type == "ddl":
-            statement = await introspector.get_ddl_statement(
-                args.name, object_type=None, schema=None
-            )
-            if statement is None:
-                print(
-                    f"Error: no DDL available for '{args.name}' "
-                    "(Firebird records a source body, not a rebuildable statement)",
-                    file=sys.stderr,
-                )
-                sys.exit(1)
-            _display_ddl(provider, statement, args)
 
         elif args.type == "column-profiles":
             profiles = await introspector.list_column_data_profiles(args.name, schema=None)

@@ -4,7 +4,7 @@ The `introspect` subcommand asks a live Firebird database what it holds, and
 prints the answer. Every question runs through the backend's introspector, so
 what the CLI reports is what the library sees — the same objects, the same
 types, the same parsing — rather than a second implementation that can drift
-from it. Thirty types are advertised, derived from `_TYPE_CAPABILITIES` in the
+from it. Twenty-nine types are advertised, derived from `_TYPE_CAPABILITIES` in the
 source rather than written out a second time, so a family cannot be answerable
 and unaskable at once.
 
@@ -14,9 +14,9 @@ python -m rhosocial.activerecord.backend.impl.firebird introspect <TYPE> [NAME] 
 
 ## What it can ask about
 
-Thirty types, in the order `--help` prints them. The twenty-two catalogue
-families each answer `True`; the eight offered beyond the catalogue answer
-`True` for the three that read the rows and `False` for the five the engine
+Twenty-nine types, in the order `--help` prints them. The twenty-two catalogue
+families each answer `True`; the seven offered beyond the catalogue answer
+`True` for the three that read the rows and `False` for the four the engine
 declines, so a run of those is refused (exit 2) rather than reached and answered
 with an empty row.
 
@@ -29,7 +29,7 @@ with an empty row.
 | `foreign-keys` | `rdb$ref_constraints`, `rdb$relation_constraints` | One table's constraints and the columns each side names. |
 | `triggers` | `rdb$triggers` | Triggers, optionally narrowed to one table. |
 | `database` | `rdb$database`, `mon$` | Server version and the database's own facts. |
-| `generators` | `rdb$generators` | Firebird's sequences. The value is read with `GEN_ID(<name>, 0)`, which is a read and not an advance. |
+| `generators` | `rdb$generators`, `rdb$relation_fields` | Firebird's sequences. The value is read with `GEN_ID(<name>, 0)`, which is a read and not an advance; a system generator also names the identity column it backs. |
 | `domains` | `rdb$fields` | Domains with base type, length, charset, nullability, `DEFAULT` source and check source. |
 | `exceptions` | `rdb$exceptions` | Exception messages with their number and owner. |
 | `procedures` | `rdb$procedures` | Stored procedures with their source, input/output arity, type and security class. |
@@ -48,7 +48,6 @@ with an empty row.
 | `table-stats` | refused here | Offered and gated on `supports_table_stats`, which answers False here. |
 | `runtime` | refused here | Offered and gated on `supports_runtime_stats`, which answers False here. |
 | `index-stats` | refused here | Offered and gated on `supports_index_stats`, which answers False here. |
-| `ddl` | refused here | Offered and gated on `supports_ddl_extraction`: Firebird records a source body rather than a rebuildable `CREATE`, so an assembled fragment would read as authoritative. |
 | `column-profiles` | the rows themselves | Answers True here: the profile is one aggregate over the rows. A `BLOB` reports its null count and the row count and nothing else — Firebird refuses `MIN`, `MAX` and `COUNT(DISTINCT ...)` on a type it cannot compare, so those figures are absent rather than zero. |
 | `value-samples` | the rows themselves | Answers True here, read from the rows; `--column` names the column. |
 | `join-coverage` | the rows themselves | Answers True here: how much two columns' value domains overlap. `--column`, `--right-table` and `--right-column` are required. |
@@ -64,12 +63,12 @@ with an empty row.
 | A **filter** | `privileges` (`--object`, `--grantee`), `constraints` (`--constraint-type`) |
 | The whole database, and a stray NAME is refused (exit 2) | `unused-indexes`, `table-stats`, `runtime`, `index-stats` |
 | The whole database, and the parser accepts a NAME that the branch does not read | `tables`, `database`, `roles`, `charsets`, `rdb-dependencies`, `view-relations`, `publications` |
-| A **table**, required, though its switch answers False here | `ddl`, `column-profiles`, `value-samples` |
+| A **table**, required | `column-profiles`, `value-samples` |
 | The **left table**, required — the column is `--column` and the right-hand side is `--right-table` / `--right-column` | `join-coverage` |
 
 `collations` takes an optional charset as its `NAME`, and `rdb-dependencies` and
 `view-relations` accept one to narrow the answer; they are not in the refused
-row for that reason. The `NAME` for `ddl` and the two row families is the table,
+row for that reason. The `NAME` for the two row families is the table,
 and the column a question is about is a flag rather than a second positional,
 because `value-samples orders.email` would read as a dotted object name.
 
@@ -78,7 +77,7 @@ only ones whose exit 2 says "this type takes no name". The other whole-database
 types are not gated either way: a NAME supplied there is accepted by argparse
 and ignored by the branch, which is a real difference from a refusal and is why
 the two rows above are kept apart rather than merged. The gate that refuses
-`ddl` and the row families is the capability question, not the `NAME` rule.
+the operational families is the capability question, not the `NAME` rule.
 
 ## Options
 
@@ -124,14 +123,13 @@ the two rows above are kept apart rather than merged. The gate that refuses
     "here is no such question" — while 1 means the request failed while
     running. The gate is fed by `_TYPE_CAPABILITIES`, one switch per family.
 *   **The families beyond the catalogue are offered, and offer is the point.**
-    The four operational families and `ddl` answer `False` on this dialect —
-    Firebird's catalogue describes objects rather than a statistics collector,
-    and it records a source body rather than a rebuildable `CREATE` — so those
-    five are refused with exit 2 rather than answered with an empty row, which
+    The four operational families answer `False` on this dialect — Firebird's
+    catalogue describes objects rather than a statistics collector — so those
+    four are refused with exit 2 rather than answered with an empty row, which
     would read as an answer of zero. The three row families answer True: they
     read the table itself, one aggregate for a profile and one grouped read for
     a value listing, both exact and both paid for in time.
-*   **`get_supported_introspection_scopes()` names eight of the thirty
+*   **`get_supported_introspection_scopes()` names eight of the twenty-nine
     families**, because core's `IntrospectionScope` has no member for domains,
     exceptions, routines, roles, privileges, charsets, collations,
     dependencies, view relations or publications. The list is what core can
@@ -167,5 +165,4 @@ python -m rhosocial.activerecord.backend.impl.firebird introspect join-coverage 
 
 # Questions this dialect declines -- exit 2, "not supported by this server", not an empty list
 python -m rhosocial.activerecord.backend.impl.firebird introspect unused-indexes
-python -m rhosocial.activerecord.backend.impl.firebird introspect ddl orders
 ```
