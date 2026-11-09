@@ -59,7 +59,7 @@ The families beyond core's set are this backend's own: core has no probe for dom
 
 ### Left False by Inheritance
 
-The families core defines but this backend does not answer stay on the base mixin's `False`, and their CLI types are refused at the gate (exit 2) rather than run to an empty listing:
+The families core defines but this backend does not answer stay on the base mixin's `False`. Where the CLI offers the family -- the four operational types -- a run is refused at the gate (exit 2) rather than reaching an empty listing. Where it does not, the absence is deliberate: `ddl` has no CLI type because its capability is permanently `False`, while `object dependencies`, `partitions` and `extensions` have no stable answer to model here.
 
 | Family | Probe | Why |
 |--------|-------|-----|
@@ -254,7 +254,7 @@ Firebird has no statistics collector and no `RDB$` relation standing in for one,
 
 ## DDL Extraction
 
-`ddl` is offered by the CLI and refused at the gate (exit 2). `supports_ddl_extraction()` is `False` because Firebird records a source body, not a rebuildable `CREATE` statement: the text that would recreate a table with its constraints, defaults and computed expressions is not retained anywhere the catalogue exposes, and this backend does not assemble one. An assembled fragment would read as authoritative while being this library's guess, so the type is declined instead.
+DDL extraction is not offered by this backend's CLI. `supports_ddl_extraction()` is `False` because Firebird records a source body, not a rebuildable `CREATE` statement: the text that would recreate a table with its constraints, defaults and computed expressions is not retained anywhere the catalogue exposes, and this backend does not assemble one. An assembled fragment would read as authoritative while being this library's guess, so the type is not advertised. The backend keeps `format_ddl_statement_query_statement` and the `DDLStatement` expression so a future real implementation can reuse them, but the CLI does not offer a type whose capability is permanently `False`.
 
 ## Data Families
 
@@ -366,7 +366,7 @@ A probe answering `False` is "the question cannot be asked here", not "nothing w
 
 ## Command Line Introspection
 
-The backend provides a command-line surface over the same introspector: thirty types -- twenty-two catalogue families, the four operational families it declines, `ddl`, and the three data families.
+The backend provides a command-line surface over the same introspector: twenty-nine types -- twenty-two catalogue families, the four operational families it declines, and the three data families.
 
 ```bash
 python -m rhosocial.activerecord.backend.impl.firebird introspect tables \
@@ -418,7 +418,6 @@ The largest surface of the nine backends, because each `RDB$` relation that answ
 | `table-stats` | Declined: `False` | refused | - |
 | `runtime` | Declined: `False` | refused | - |
 | `index-stats` | Declined: `False` | refused | - |
-| `ddl` | Declined: `False` | required (table) | - |
 | `column-profiles` | What each column of a table holds, `source='aggregate'` | required (table) | - |
 | `value-samples` | Most frequent values of one column | required (table) | `--column` |
 | `join-coverage` | Overlap of two columns' value domains | required (left table) | `--column`, `--right-table`, `--right-column` |
@@ -449,8 +448,6 @@ python -m rhosocial.activerecord.backend.impl.firebird introspect publications \
 ```bash
 # Declined families: exit 2, no query run
 python -m rhosocial.activerecord.backend.impl.firebird introspect unused-indexes \
-  --database /path/to/test_db
-python -m rhosocial.activerecord.backend.impl.firebird introspect ddl ORDERS \
   --database /path/to/test_db
 
 # The data families
@@ -516,4 +513,4 @@ python -m rhosocial.activerecord.backend.impl.firebird introspect tables \
 | `clear_cache()` | Clear all cached answers |
 | `invalidate_cache(scope, ...)` | Invalidate one scope, or one name |
 
-The operational and DDL methods exist on the base introspector and are refused by this dialect's probes; check the probe before calling, and let the `False` be the answer.
+The operational families' methods exist on the base introspector and are refused by this dialect's probes; check the probe before calling, and let the `False` be the answer. `get_ddl_statement()` is likewise on the base introspector and `supports_ddl_extraction()` is `False`, so the CLI does not offer a `ddl` type.
