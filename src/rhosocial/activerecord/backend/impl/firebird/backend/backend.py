@@ -1,13 +1,17 @@
 # src/rhosocial/activerecord/backend/impl/firebird/backend/backend.py
 """Firebird synchronous backend implementation."""
 
+import logging
+import time
 from typing import Any, List, Optional, Tuple
 
 from rhosocial.activerecord.backend.base import StorageBackend
+from rhosocial.activerecord.backend.base.operations import execution_log_context
 from rhosocial.activerecord.backend.introspection.backend_mixin import IntrospectorBackendMixin
 from rhosocial.activerecord.backend.result import QueryResult
 from rhosocial.activerecord.backend.options import (
     ExecutionOptions, InsertOptions, UpdateOptions, DeleteOptions,
+    LogContext, derive_log_context,
 )
 from rhosocial.activerecord.backend.schema import StatementType
 from rhosocial.activerecord.backend import errors as exc
@@ -210,10 +214,21 @@ class FirebirdBackend(
         except Exception:
             pass
 
-    def execute_many(self, sql: str, params_list: List[Tuple]) -> QueryResult:
+    def execute_many(
+        self,
+        sql: str,
+        params_list: List[Tuple],
+        *,
+        options: Optional[ExecutionOptions] = None,
+    ) -> QueryResult:
+        """Execute the same statement once per parameter set.
+
+        The caller's ``options`` - including its log context - is forwarded so
+        the core batch logging stays the single owner of SQL/parameter records.
+        """
         is_dml = sql.strip().upper().startswith(('INSERT', 'UPDATE', 'DELETE', 'MERGE'))
         try:
-            result = super().execute_many(sql, params_list)
+            result = super().execute_many(sql, params_list, options=options)
             if result and result.affected_rows < 0 and len(params_list) > 0:
                 result.affected_rows = len(params_list)
             if is_dml:
@@ -226,16 +241,26 @@ class FirebirdBackend(
             self._handle_error(e)
 
     def executescript(self, sql: str) -> QueryResult:
+        """Execute a multi-statement SQL script.
+
+        Scripts bypass the core ``execute`` pipeline, so the summary is emitted
+        here; it carries no SQL text or parameter values.
+        """
+        start_time = time.perf_counter()
+        self.log(logging.DEBUG, "Executing SQL script.")
         cursor = self._get_cursor()
         try:
             cursor.execute(sql)
             result = QueryResult(affected_rows=cursor.rowcount or 0)
+            duration = time.perf_counter() - start_time
+            self.log(logging.INFO, f"SQL script executed successfully, duration={duration:.3f}s")
             self._handle_auto_commit_if_needed()
             return result
         except Exception as e:
             # Re-raise already-wrapped rhosocial errors unchanged; see execute().
             if isinstance(e, exc.DatabaseError):
                 raise
+            self.log(logging.DEBUG, f"Error executing SQL script, exception will be re-raised: {e}")
             self._handle_error(e)
 
     def get_server_version(self) -> Tuple[int, int, int]:
@@ -310,7 +335,12 @@ class FirebirdBackend(
                 final_results.append(final_row)
             return final_results
         except Exception as e:
-            self.logger.error(f"Error processing result set: {str(e)}", exc_info=True)
+            # The failure is re-raised and logged by the core execute pipeline;
+            # a second ERROR record here would duplicate it.
+            self.log(
+                logging.DEBUG,
+                f"Error processing result set, exception will be re-raised: {e}",
+            )
             raise
 
     @staticmethod
@@ -364,12 +394,18 @@ class FirebirdBackend(
         results = []
         affected = 0
         returning = options.returning_columns or []
+        log_context = execution_log_context(options, "bulk_insert")
         for row in options.rows:
             row_dict = dict(zip(options.columns, row, strict=False)) if options.columns else {}
             if returning:
-                res = self.insert(options.table, values=row_dict, returning_columns=returning)
+                res = self.insert(
+                    options.table,
+                    values=row_dict,
+                    returning_columns=returning,
+                    log_context=log_context,
+                )
             else:
-                res = self.insert(options.table, values=row_dict)
+                res = self.insert(options.table, values=row_dict, log_context=log_context)
             if res and res.data:
                 results.append(res.data[0])
             affected += res.affected_rows if res else 1
@@ -377,18 +413,37 @@ class FirebirdBackend(
             return QueryResult(data=results, affected_rows=affected)
         return QueryResult(data=[], affected_rows=affected)
 
-    def insert(self, table_name, values=None, returning_columns=None):
+    def insert(
+        self,
+        table_name,
+        values=None,
+        returning_columns=None,
+        log_context: Optional[LogContext] = None,
+    ):
         if isinstance(table_name, InsertOptions):
+            if log_context is not None and table_name.log_context is None:
+                table_name.log_context = log_context
             return super().insert(table_name)
         options = InsertOptions(
             table=table_name,
             data=values or {},
             returning_columns=returning_columns,
+            log_context=log_context,
         )
+        options.log_context = execution_log_context(options, "insert")
         return super().insert(options)
 
-    def update(self, table_name, values=None, where_clause=None, returning_columns=None):
+    def update(
+        self,
+        table_name,
+        values=None,
+        where_clause=None,
+        returning_columns=None,
+        log_context: Optional[LogContext] = None,
+    ):
         if isinstance(table_name, UpdateOptions):
+            if log_context is not None and table_name.log_context is None:
+                table_name.log_context = log_context
             return super().update(table_name)
         values = values or {}
         all_params = list(values.values())
@@ -405,15 +460,27 @@ class FirebirdBackend(
         # qualification dropped here.
         target_sql = self.dialect.format_table_reference(table_name)
         sql = f"UPDATE {target_sql} SET {', '.join(set_clauses)} WHERE {where_sql}"
+        # This raw-SQL path has no *Options object, so the log context is built
+        # from the operation's own identity rather than execution_log_context().
+        context = derive_log_context(log_context, operation="update", object_name=table_name)
         if returning_columns:
             ret_str = ', '.join(self.dialect.format_identifier(c) for c in returning_columns)
             sql += f" RETURNING {ret_str}"
             return self.execute(sql, tuple(all_params), options=ExecutionOptions(
-                stmt_type=StatementType.DML, process_result_set=True))
-        return self.execute(sql, tuple(all_params), options=ExecutionOptions(stmt_type=StatementType.DML))
+                stmt_type=StatementType.DML, process_result_set=True, log_context=context))
+        return self.execute(sql, tuple(all_params), options=ExecutionOptions(
+            stmt_type=StatementType.DML, log_context=context))
 
-    def delete(self, table_name, where_clause=None, returning_columns=None):
+    def delete(
+        self,
+        table_name,
+        where_clause=None,
+        returning_columns=None,
+        log_context: Optional[LogContext] = None,
+    ):
         if isinstance(table_name, DeleteOptions):
+            if log_context is not None and table_name.log_context is None:
+                table_name.log_context = log_context
             return super().delete(table_name)
         all_params = []
         target_sql = self.dialect.format_table_reference(table_name)
@@ -422,13 +489,19 @@ class FirebirdBackend(
             where_sql, where_params = where_clause
             sql += f" WHERE {where_sql}"
             all_params.extend(where_params)
+        # Same as update(): this raw-SQL path has no *Options object.
+        context = derive_log_context(log_context, operation="delete", object_name=table_name)
         if returning_columns:
             ret_str = ', '.join(self.dialect.format_identifier(c) for c in returning_columns)
             sql += f" RETURNING {ret_str}"
             return self.execute(sql, tuple(all_params) if all_params else None,
-                                options=ExecutionOptions(stmt_type=StatementType.DML, process_result_set=True))
+                                options=ExecutionOptions(
+                                    stmt_type=StatementType.DML,
+                                    process_result_set=True,
+                                    log_context=context))
         return self.execute(sql, tuple(all_params) if all_params else None,
-                            options=ExecutionOptions(stmt_type=StatementType.DML))
+                            options=ExecutionOptions(
+                                stmt_type=StatementType.DML, log_context=context))
 
     @property
     def transaction_manager(self) -> FirebirdTransactionManager:

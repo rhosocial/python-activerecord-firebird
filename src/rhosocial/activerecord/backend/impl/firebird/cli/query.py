@@ -12,9 +12,12 @@ import sys
 from rhosocial.activerecord.backend.impl.firebird.backend import FirebirdBackend
 from rhosocial.activerecord.backend.impl.firebird.backend.async_backend import AsyncFirebirdBackend
 from rhosocial.activerecord.backend.errors import ConnectionError, QueryError
+from rhosocial.activerecord.logging.defaults import get_logger
 
 from .connection import add_connection_args, resolve_connection_config_from_args, warn_if_async_requested
 from .output import OUTPUT_CHOICES, create_provider
+
+logger = get_logger("rhosocial.activerecord.backend.firebird.cli.query")
 
 
 def create_parser(subparsers):
@@ -118,7 +121,7 @@ def handle(args):
             with open(args.file, "r", encoding="utf-8") as f:
                 sql_source = f.read()
         except FileNotFoundError:
-            logging.error(f"Error: File not found at {args.file}")
+            logger.error(f"Error: File not found at {args.file}")
             sys.exit(1)
     elif not sys.stdin.isatty():
         sql_source = sys.stdin.read()
@@ -130,7 +133,7 @@ def handle(args):
 
     # Ensure only one statement is provided
     if ";" in sql_source.strip().rstrip(";"):
-        logging.error("Error: Multiple SQL statements are not supported.")
+        logger.error("Error: Multiple SQL statements are not supported.")
         sys.exit(1)
 
     config = resolve_connection_config_from_args(args)
