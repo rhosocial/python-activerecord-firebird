@@ -29,7 +29,7 @@ with an empty row.
 | `foreign-keys` | `rdb$ref_constraints`, `rdb$relation_constraints` | One table's constraints and the columns each side names. |
 | `triggers` | `rdb$triggers` | Triggers, optionally narrowed to one table. |
 | `database` | `rdb$database`, `mon$` | Server version and the database's own facts. |
-| `generators` | `rdb$generators` | Firebird's sequences. The value is read with `GEN_ID(<name>, 0)`, which is a read and not an advance. |
+| `generators` | `rdb$generators`, `rdb$relation_fields` | Firebird's sequences. The value is read with `GEN_ID(<name>, 0)`, which is a read and not an advance; a system generator also names the identity column it backs. |
 | `domains` | `rdb$fields` | Domains with base type, length, charset, nullability, `DEFAULT` source and check source. |
 | `exceptions` | `rdb$exceptions` | Exception messages with their number and owner. |
 | `procedures` | `rdb$procedures` | Stored procedures with their source, input/output arity, type and security class. |

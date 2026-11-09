@@ -820,24 +820,61 @@ class FirebirdIntrospectionMixin:
         the value**: the number a generator has reached is engine state, not
         a catalogue column. The value is a separate question per generator
         (:meth:`format_firebird_generator_value_query_statement`).
+
+        From Firebird 3.0 the listing also carries the generator's identity
+        ownership. An identity column's internal generator is named by
+        ``RDB$RELATION_FIELDS.RDB$GENERATOR_NAME``, so a LEFT join from the
+        generator to that relation answers "which column does this generator
+        back" without a second question. The join is **left** because a
+        user-created generator backs no column: an inner join would delete
+        every plain sequence from the answer. The columns are not projected
+        below 3.0, where ``RDB$RELATION_FIELDS`` has no such column and the
+        question would be a ``-206 column unknown``.
         """
         params = expr.get_params()
         conditions = []
         if not params.get("include_system", False):
             conditions.append(
                 compare(
-                    self, "eq", column(self, "RDB$SYSTEM_FLAG"), literal(self, 0, inline=True)
+                    self,
+                    "eq",
+                    column(self, "RDB$SYSTEM_FLAG", "g"),
+                    literal(self, 0, inline=True),
                 )
             )
+
+        projections = [
+            column(self, "RDB$GENERATOR_NAME", "g", alias="GENERATOR_NAME"),
+            column(self, "RDB$SYSTEM_FLAG", "g", alias="SYSTEM_FLAG"),
+        ]
+        source = relation(self, "RDB$GENERATORS", alias="g")
+        if self.version_at_least((3, 0, 0)):
+            source = join(
+                self,
+                relation(self, "RDB$GENERATORS", alias="g"),
+                relation(self, "RDB$RELATION_FIELDS", alias="rf"),
+                condition=compare(
+                    self,
+                    "eq",
+                    column(self, "RDB$GENERATOR_NAME", "rf"),
+                    column(self, "RDB$GENERATOR_NAME", "g"),
+                ),
+                join_type="LEFT JOIN",
+            )
+            projections.extend(
+                [
+                    column(self, "RDB$RELATION_NAME", "rf", alias="OWNER_TABLE"),
+                    column(self, "RDB$FIELD_NAME", "rf", alias="OWNER_COLUMN"),
+                    column(self, "RDB$IDENTITY_TYPE", "rf", alias="IDENTITY_TYPE"),
+                ]
+            )
+
         return select_sql(
             self,
-            [
-                column(self, "RDB$GENERATOR_NAME", alias="GENERATOR_NAME"),
-                column(self, "RDB$SYSTEM_FLAG", alias="SYSTEM_FLAG"),
-            ],
-            from_=relation(self, "RDB$GENERATORS"),
+            projections,
+            from_=source,
             where=conjunction(self, *conditions) if conditions else None,
-            order_by=[column(self, "RDB$GENERATOR_NAME")],
+            order_by=[column(self, "RDB$GENERATOR_NAME", "g")],
         )
 
     def format_firebird_generator_value_query_statement(

@@ -18,10 +18,12 @@ statement: the join belongs to the formatter, not to the caller.
 
 Three families are deliberately absent:
 
-* ``RDB$PACKAGES`` exists and holds rows, but no Firebird release accepts
-  ``CREATE PACKAGE`` (measured on 5.0.4 and on the 6.0.0 server in
-  ``tests/config/firebird_scenarios.yaml``), so there is no user schema object
-  to list. The relation is reserved infrastructure.
+* ``RDB$PACKAGES`` exists and holds rows, but this backend's probe recorded
+  ``CREATE PACKAGE`` refused on 5.0.4 and on the 6.0.0 server in
+  ``tests/config/firebird_scenarios.yaml``, so it treats the relation as
+  reserved infrastructure. Firebird 5's language reference does document
+  ``CREATE PACKAGE``; the contradiction is recorded in
+  ``docs/introspection.md`` for a re-measurement before a family is added.
 * ``MON$`` is runtime state, not schema. It belongs to the ``status``
   introspector, which is a different layer with different questions.
 * ``RDB$PAGES``, ``RDB$FILES``, ``RDB$FORMATS``, ``RDB$TRANSACTIONS``,
