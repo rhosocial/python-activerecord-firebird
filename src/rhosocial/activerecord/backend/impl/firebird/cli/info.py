@@ -8,7 +8,6 @@ falling back to --version flag when no connection is available.
 import argparse
 import inspect
 import json
-import logging
 from typing import Any, Dict, List, Tuple
 
 from rhosocial.activerecord.backend.dialect.protocols import (
@@ -72,10 +71,12 @@ from rhosocial.activerecord.backend.impl.firebird.protocols import (
     FirebirdNamespaceSupport,
 )
 
+from rhosocial.activerecord.logging.defaults import get_logger
+
 from .connection import add_connection_args, add_version_arg, resolve_connection_config_from_args
 from .output import INFO_OUTPUT_CHOICES, create_provider
 
-logger = logging.getLogger(__name__)
+logger = get_logger("rhosocial.activerecord.backend.firebird.cli.info")
 
 # Groups that are specific to Firebird dialect
 DIALECT_SPECIFIC_GROUPS = {"Firebird-specific"}

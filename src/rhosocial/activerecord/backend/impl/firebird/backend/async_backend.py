@@ -1,3 +1,4 @@
+# src/rhosocial/activerecord/backend/impl/firebird/backend/async_backend.py
 """Firebird asynchronous backend implementation.
 
 This module provides the async Firebird backend using a thread pool
@@ -31,10 +32,12 @@ from concurrent.futures import Executor
 from typing import Optional, Tuple
 
 from rhosocial.activerecord.backend.base import AsyncStorageBackend
+from rhosocial.activerecord.backend.base.operations import execution_log_context
 from rhosocial.activerecord.backend import errors as exc
 from rhosocial.activerecord.backend.introspection.backend_mixin import IntrospectorBackendMixin
 from rhosocial.activerecord.backend.options import (
     ExecutionOptions, InsertOptions, UpdateOptions, DeleteOptions,
+    LogContext, derive_log_context,
 )
 from rhosocial.activerecord.backend.result import QueryResult
 from rhosocial.activerecord.backend.schema import StatementType
@@ -365,7 +368,12 @@ class AsyncFirebirdBackend(
                     final_results.append(final_row)
                 return final_results
             except Exception as e:
-                self.logger.error(f"Error processing result set: {str(e)}", exc_info=True)
+                # The failure is re-raised and logged by the core execute pipeline;
+                # a second ERROR record here would duplicate it.
+                self.log(
+                    logging.DEBUG,
+                    f"Error processing result set, exception will be re-raised: {e}",
+                )
                 raise
 
         return await loop.run_in_executor(self._executor, _run)
@@ -394,9 +402,12 @@ class AsyncFirebirdBackend(
 
         Mirrors the synchronous :meth:`FirebirdBackend.executescript` by
         running the underlying firebird-driver cursor in a thread pool so
-        async and sync backends expose the same API surface.
+        sync and async expose the same API surface.  The summary carries
+        no SQL text or parameter values.
         """
         start_time = time.perf_counter()
+        self.log(logging.DEBUG, "Executing SQL script asynchronously.")
+        cursor = None
         try:
             if not self._is_connected or self._connection is None:
                 await self.connect()
@@ -411,11 +422,14 @@ class AsyncFirebirdBackend(
             except Exception:
                 pass
         except Exception as e:
-            try:
-                cursor.close()
-            except Exception:
-                pass
-            self.log(logging.ERROR, f"Error executing async SQL script: {e}")
+            if cursor is not None:
+                try:
+                    cursor.close()
+                except Exception:
+                    pass
+            # The exception is re-raised by _handle_error; a second ERROR
+            # record would duplicate the application's own traceback.
+            self.log(logging.DEBUG, f"Error executing async SQL script, will be re-raised: {e}")
             await self._handle_error(e)
 
     # ------------------------------------------------------------------
@@ -490,12 +504,18 @@ class AsyncFirebirdBackend(
         results = []
         affected = 0
         returning = options.returning_columns or []
+        log_context = execution_log_context(options, "bulk_insert")
         for row in options.rows:
             row_dict = dict(zip(options.columns, row, strict=False)) if options.columns else {}
             if returning:
-                res = await self.insert(options.table, values=row_dict, returning_columns=returning)
+                res = await self.insert(
+                    options.table,
+                    values=row_dict,
+                    returning_columns=returning,
+                    log_context=log_context,
+                )
             else:
-                res = await self.insert(options.table, values=row_dict)
+                res = await self.insert(options.table, values=row_dict, log_context=log_context)
             if res and res.data:
                 results.append(res.data[0])
             affected += res.affected_rows if res else 1
@@ -503,18 +523,37 @@ class AsyncFirebirdBackend(
             return QueryResult(data=results, affected_rows=affected)
         return QueryResult(data=[], affected_rows=affected)
 
-    async def insert(self, table_name, values=None, returning_columns=None):
+    async def insert(
+        self,
+        table_name,
+        values=None,
+        returning_columns=None,
+        log_context: Optional[LogContext] = None,
+    ):
         if isinstance(table_name, InsertOptions):
+            if log_context is not None and table_name.log_context is None:
+                table_name.log_context = log_context
             return await super().insert(table_name)
         options = InsertOptions(
             table=table_name,
             data=values or {},
             returning_columns=returning_columns,
+            log_context=log_context,
         )
+        options.log_context = execution_log_context(options, "insert")
         return await super().insert(options)
 
-    async def update(self, table_name, values=None, where_clause=None, returning_columns=None):
+    async def update(
+        self,
+        table_name,
+        values=None,
+        where_clause=None,
+        returning_columns=None,
+        log_context: Optional[LogContext] = None,
+    ):
         if isinstance(table_name, UpdateOptions):
+            if log_context is not None and table_name.log_context is None:
+                table_name.log_context = log_context
             return await super().update(table_name)
         values = values or {}
         all_params = list(values.values())
@@ -534,20 +573,35 @@ class AsyncFirebirdBackend(
             f"UPDATE {target_sql} "
             f"SET {', '.join(set_clauses)} WHERE {where_sql}"
         )
+        # The raw-SQL path has no *Options object, so the log context is built
+        # from the operation's own identity.
+        context = derive_log_context(log_context, operation="update", object_name=table_name)
         if returning_columns:
             ret_str = ', '.join(self.dialect.format_identifier(c) for c in returning_columns)
             sql += f" RETURNING {ret_str}"
             return await self.execute(
                 sql, tuple(all_params),
-                options=ExecutionOptions(stmt_type=StatementType.DML, process_result_set=True),
+                options=ExecutionOptions(
+                    stmt_type=StatementType.DML,
+                    process_result_set=True,
+                    log_context=context,
+                ),
             )
         return await self.execute(
             sql, tuple(all_params),
-            options=ExecutionOptions(stmt_type=StatementType.DML),
+            options=ExecutionOptions(stmt_type=StatementType.DML, log_context=context),
         )
 
-    async def delete(self, table_name, where_clause=None, returning_columns=None):
+    async def delete(
+        self,
+        table_name,
+        where_clause=None,
+        returning_columns=None,
+        log_context: Optional[LogContext] = None,
+    ):
         if isinstance(table_name, DeleteOptions):
+            if log_context is not None and table_name.log_context is None:
+                table_name.log_context = log_context
             return await super().delete(table_name)
         all_params = []
         target_sql = self.dialect.format_table_reference(table_name)
@@ -556,16 +610,22 @@ class AsyncFirebirdBackend(
             where_sql, where_params = where_clause
             sql += f" WHERE {where_sql}"
             all_params.extend(where_params)
+        # Same as update(): the raw-SQL path has no *Options object.
+        context = derive_log_context(log_context, operation="delete", object_name=table_name)
         if returning_columns:
             ret_str = ', '.join(self.dialect.format_identifier(c) for c in returning_columns)
             sql += f" RETURNING {ret_str}"
             return await self.execute(
                 sql, tuple(all_params) if all_params else None,
-                options=ExecutionOptions(stmt_type=StatementType.DML, process_result_set=True),
+                options=ExecutionOptions(
+                    stmt_type=StatementType.DML,
+                    process_result_set=True,
+                    log_context=context,
+                ),
             )
         return await self.execute(
             sql, tuple(all_params) if all_params else None,
-            options=ExecutionOptions(stmt_type=StatementType.DML),
+            options=ExecutionOptions(stmt_type=StatementType.DML, log_context=context),
         )
 
     # ------------------------------------------------------------------
