@@ -1,4 +1,4 @@
-# .claude/skills/dev-firebird-client-windows/install-firebird-client.ps1
+# .claude/skills/dev-firebird-client/install-firebird-client.ps1
 #
 # Installs the official Firebird Windows x64 client library into this
 # repository's virtual environments, so `import firebird.driver` works on a
@@ -39,12 +39,12 @@
 #
 # Usage
 # -----
-#   pwsh -File .claude/skills/dev-firebird-client-windows/install-firebird-client.ps1
-#   pwsh -File .claude/skills/dev-firebird-client-windows/install-firebird-client.ps1 -Check
-#   pwsh -File .claude/skills/dev-firebird-client-windows/install-firebird-client.ps1 -Force
-#   pwsh -File .claude/skills/dev-firebird-client-windows/install-firebird-client.ps1 -IncludeWorktrees
-#   pwsh -File .claude/skills/dev-firebird-client-windows/install-firebird-client.ps1 -Venv .venv3.15
-#   pwsh -File .claude/skills/dev-firebird-client-windows/install-firebird-client.ps1 `
+#   pwsh -File .claude/skills/dev-firebird-client/install-firebird-client.ps1
+#   pwsh -File .claude/skills/dev-firebird-client/install-firebird-client.ps1 -Check
+#   pwsh -File .claude/skills/dev-firebird-client/install-firebird-client.ps1 -Force
+#   pwsh -File .claude/skills/dev-firebird-client/install-firebird-client.ps1 -IncludeWorktrees
+#   pwsh -File .claude/skills/dev-firebird-client/install-firebird-client.ps1 -Venv .venv3.15
+#   pwsh -File .claude/skills/dev-firebird-client/install-firebird-client.ps1 `
 #       -Package 5.0.4.1812-0 -Sha256 <hash>
 #
 # Parameters
