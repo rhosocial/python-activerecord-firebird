@@ -176,7 +176,9 @@ class AsyncFirebirdBackend(
             self.log(logging.INFO, "Connected to Firebird (async)")
             track_firebird_backend(self)
         except Exception as e:
-            raise exc.ConnectionError(f"Failed to connect to Firebird: {e}") from e
+            if isinstance(e, exc.DatabaseError):
+                raise
+            await self._handle_error(e)
 
     async def disconnect(self) -> None:
         """Close the connection to the Firebird database."""

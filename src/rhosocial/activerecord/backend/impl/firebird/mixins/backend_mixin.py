@@ -57,14 +57,82 @@ def untrack_firebird_backend(backend) -> None:
 
 class FirebirdBackendMixin:
 
+    # firebird-driver 2.x exposes the legacy signed SQLCODE on ``DatabaseError``
+    # (``sqlcode``) plus raw GDS status codes (``gds_codes``). Codes are
+    # compared on ``abs()`` because both signed and unsigned forms occur.
+    INTEGRITY_SQLCODES = frozenset({530, 531, 625, 803, 804, 805})
+    LOCK_SQLCODES = frozenset({901, 902})
+    DEADLOCK_SQLCODES = frozenset({913})
+    QUERY_SQLCODES = frozenset({104, 204, 206, 207})
+
+    # SQLSTATE is checked before driver codes: it is stable across Firebird
+    # versions and driver builds.
+    SQLSTATE_INTEGRITY = ("23000", "23505")
+    SQLSTATE_NOT_NULL = ("22004", "22000")
+    SQLSTATE_DEADLOCK = ("40001",)
+    SQLSTATE_CONNECTION_LOST = ("08006",)
+    SQLSTATE_CONNECTION_FAILED = ("08001",)
+    SQLSTATE_AUTHENTICATION = ("28000",)
+    SQLSTATE_QUERY = ("42000", "42S02", "42S22")
+
     CONNECTION_ERROR_CODES = {
-        -902: "Unable to connect to database",
         -904: "Connection lost",
         -909: "Database shutdown",
         -916: "Database is not started",
         -917: "Database already in use",
         -923: "Connection not established",
     }
+
+    # Message fragments are the last resort, used only when neither SQLSTATE
+    # nor a driver code identifies the failure.
+    AUTHENTICATION_KEYWORDS = (
+        "user name and password are not defined",
+        "login failed",
+        "invalid user name",
+        "invalid username",
+        "authentication failed",
+    )
+    CONNECTION_KEYWORDS = (
+        "unable to connect",
+        "connection lost",
+        "connection not established",
+        "database shutdown",
+        "broken pipe",
+        "connection reset",
+        "network error",
+        "connection refused",
+        "database already in use",
+        "server closed",
+    )
+    DEADLOCK_KEYWORDS = ("deadlock",)
+    LOCK_KEYWORDS = (
+        "lock conflict",
+        "update conflict",
+        "concurrent update",
+        "lock timeout",
+        "lock time-out",
+    )
+    INTEGRITY_KEYWORDS = (
+        "unique key",
+        "duplicate key",
+        "duplicate value",
+        "violation of primary key",
+        "foreign key",
+        "referential integrity",
+        "not null",
+        "null value",
+        "validation error for column",
+    )
+    QUERY_KEYWORDS = (
+        "syntax error",
+        "token unknown",
+        "unknown table",
+        "table unknown",
+        "unknown column",
+        "column unknown",
+        "no such table",
+        "unsuccessful metadata update",
+    )
 
     _dialect = None
     _default_suggestions_cache = None
@@ -100,60 +168,155 @@ class FirebirdBackendMixin:
     def requires_manual_commit(self) -> bool:
         return True
 
-    def _is_connection_error(self, error: Exception) -> bool:
-        error_code = getattr(error, 'sqlcode', None)
-        if error_code is not None and error_code in self.CONNECTION_ERROR_CODES:
-            return True
+    @staticmethod
+    def _error_sqlstate(error: Exception):
+        """Return a normalized SQLSTATE string, or ``None`` when absent."""
+        sqlstate = getattr(error, 'sqlstate', None)
+        if sqlstate is None:
+            return None
+        if isinstance(sqlstate, (list, tuple)):
+            if not sqlstate:
+                return None
+            sqlstate = sqlstate[0]
+        text = str(sqlstate).strip().upper()
+        return text or None
 
-        error_msg = str(error).lower()
-        connection_keywords = [
-            'unable to connect', 'connection lost', 'connection not established',
-            'database shutdown', 'broken pipe', 'connection reset',
-            'network error', 'connection refused', 'database already in use',
-        ]
-        return any(kw in error_msg for kw in connection_keywords)
+    @staticmethod
+    def _raw_driver_codes(error: Exception):
+        """Return the raw Firebird codes carried by a driver error.
+
+        ``firebird-driver`` sets ``sqlcode`` and ``gds_codes``; some driver
+        wrappers and test doubles expose a plain ``code`` instead. Zero is
+        treated as "not reported" by the driver.
+        """
+        values = []
+        for attr in ('sqlcode', 'code'):
+            value = getattr(error, attr, None)
+            if value is not None:
+                values.append(value)
+        gds_codes = getattr(error, 'gds_codes', None)
+        if gds_codes is not None:
+            if isinstance(gds_codes, (list, tuple, set)):
+                values.extend(gds_codes)
+            else:
+                values.append(gds_codes)
+
+        codes = []
+        for value in values:
+            try:
+                code = int(value)
+            except (TypeError, ValueError):
+                continue
+            if code != 0:
+                codes.append(code)
+        return codes
+
+    @classmethod
+    def _driver_error_codes(cls, error: Exception):
+        """Return deduplicated absolute Firebird codes for classification."""
+        codes = []
+        for raw in cls._raw_driver_codes(error):
+            code = abs(raw)
+            if code not in codes:
+                codes.append(code)
+        return codes
+
+    @classmethod
+    def _report_driver_code(cls, error: Exception, matched_code):
+        """Pick the driver code to attach as diagnostics."""
+        raw_codes = cls._raw_driver_codes(error)
+        if matched_code is not None:
+            for raw in raw_codes:
+                if abs(raw) == matched_code:
+                    return raw
+        return raw_codes[0] if raw_codes else None
+
+    def _is_connection_error(self, error: Exception) -> bool:
+        """Return ``True`` when the error describes a connection failure."""
+        sqlstate = self._error_sqlstate(error)
+        if sqlstate and sqlstate.startswith(
+            self.SQLSTATE_CONNECTION_LOST + self.SQLSTATE_CONNECTION_FAILED
+        ):
+            return True
+        connection_codes = {abs(code) for code in self.CONNECTION_ERROR_CODES}
+        if any(code in connection_codes for code in self._driver_error_codes(error)):
+            return True
+        message = str(error).lower()
+        return any(keyword in message for keyword in self.CONNECTION_KEYWORDS)
+
+    def _classify_error(self, error: Exception):
+        """Classify a driver error as ``(error_class, transient, code)``.
+
+        Recognition order follows the backend mapping contract: SQLSTATE
+        first, then the Firebird SQLCODE/GDS code, then message text.
+        """
+        sqlstate = self._error_sqlstate(error)
+        codes = self._driver_error_codes(error)
+        message = str(error).lower()
+
+        if sqlstate:
+            if sqlstate.startswith(self.SQLSTATE_INTEGRITY):
+                # Unique/primary-key violation.
+                return exc.IntegrityError, False, None
+            if sqlstate.startswith(self.SQLSTATE_NOT_NULL):
+                return exc.IntegrityError, False, None
+            if sqlstate.startswith(self.SQLSTATE_DEADLOCK):
+                # Serialization failure or update conflict: another writer won
+                # the race, so a retry after re-reading may succeed.
+                return exc.DeadlockError, True, None
+            if sqlstate.startswith(self.SQLSTATE_CONNECTION_LOST):
+                return exc.OperationalError, True, None
+            if sqlstate.startswith(self.SQLSTATE_CONNECTION_FAILED):
+                return exc.ConnectionError, True, None
+            if sqlstate.startswith(self.SQLSTATE_AUTHENTICATION):
+                # Bad credentials do not improve on retry.
+                return exc.ConnectionError, False, None
+            if sqlstate.startswith(self.SQLSTATE_QUERY):
+                return exc.QueryError, False, None
+
+        connection_codes = {abs(code) for code in self.CONNECTION_ERROR_CODES}
+        for code in codes:
+            if code in self.LOCK_SQLCODES:
+                return exc.LockError, True, code
+            if code in self.DEADLOCK_SQLCODES:
+                return exc.DeadlockError, True, code
+            if code in self.INTEGRITY_SQLCODES:
+                return exc.IntegrityError, False, code
+            if code in connection_codes:
+                return exc.ConnectionError, True, code
+            if code in self.QUERY_SQLCODES:
+                return exc.QueryError, False, code
+
+        if any(keyword in message for keyword in self.AUTHENTICATION_KEYWORDS):
+            return exc.ConnectionError, False, None
+        if any(keyword in message for keyword in self.CONNECTION_KEYWORDS):
+            return exc.ConnectionError, True, None
+        if any(keyword in message for keyword in self.DEADLOCK_KEYWORDS):
+            return exc.DeadlockError, True, None
+        if any(keyword in message for keyword in self.LOCK_KEYWORDS):
+            return exc.LockError, True, None
+        if any(keyword in message for keyword in self.INTEGRITY_KEYWORDS):
+            return exc.IntegrityError, False, None
+        if any(keyword in message for keyword in self.QUERY_KEYWORDS):
+            return exc.QueryError, False, None
+        return exc.DatabaseError, False, None
 
     def _handle_error(self, error: Exception) -> None:
-        error_msg = str(error)
-        error_code = getattr(error, 'sqlcode', None)
-        gds_code = getattr(error, 'gds_codes', None)
-        sqlstate = getattr(error, 'sqlstate', None)
+        """Translate a firebird-driver error into the shared taxonomy."""
+        if isinstance(error, exc.DatabaseError):
+            # Already translated (e.g. the "no database specified" guard in
+            # connect()); keep its type and original cause.
+            raise error
 
-        if self._is_connection_error(error):
-            raise exc.ConnectionError(error_msg) from error
-
-        if sqlstate and sqlstate.startswith('23000'):
-            # Integrity constraint violation (SQLSTATE 23000) covers NOT NULL,
-            # unique and foreign key violations across Firebird versions.
-            raise exc.IntegrityError(error_msg) from error
-
-        if gds_code:
-            for code in gds_code if isinstance(gds_code, (list, tuple)) else [gds_code]:
-                if abs(code) in (803, 804, 805):
-                    raise exc.IntegrityError(error_msg) from error
-                if abs(code) in (901,):
-                    raise exc.LockError(error_msg) from error
-                if abs(code) in (902,):
-                    raise exc.DeadlockError(error_msg) from error
-
-        if error_code:
-            if error_code in (-803, -804, -805):
-                raise exc.IntegrityError(error_msg) from error
-            if error_code == -625:
-                # "validation error for column ..." (NOT NULL violation)
-                raise exc.IntegrityError(error_msg) from error
-            if error_code == -901:
-                raise exc.DeadlockError(error_msg) from error
-            if error_code in (-902, -904, -909, -916, -917, -923):
-                raise exc.ConnectionError(error_msg) from error
-            if error_code in (-530, -531):
-                raise exc.IntegrityError(error_msg) from error
-            if error_code in (-104, -206, -207):
-                raise exc.QueryError(error_msg) from error
-            if error_code in (-204,):
-                raise exc.DatabaseError(error_msg) from error
-
-        raise exc.DatabaseError(error_msg) from error
+        error_class, transient, matched_code = self._classify_error(error)
+        raise exc.attach_diagnostics(
+            error_class(str(error)),
+            operation="execute",
+            sqlstate=self._error_sqlstate(error),
+            driver_code=self._report_driver_code(error, matched_code),
+            backend="firebird",
+            transient=transient,
+        ) from error
 
     def get_default_adapter_suggestions(self) -> Dict[Type, Tuple[SQLTypeAdapter, Type]]:
         if self._default_suggestions_cache is not None:
