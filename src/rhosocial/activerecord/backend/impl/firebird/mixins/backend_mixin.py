@@ -231,19 +231,6 @@ class FirebirdBackendMixin:
                     return raw
         return raw_codes[0] if raw_codes else None
 
-    def _is_connection_error(self, error: Exception) -> bool:
-        """Return ``True`` when the error describes a connection failure."""
-        sqlstate = self._error_sqlstate(error)
-        if sqlstate and sqlstate.startswith(
-            self.SQLSTATE_CONNECTION_LOST + self.SQLSTATE_CONNECTION_FAILED
-        ):
-            return True
-        connection_codes = {abs(code) for code in self.CONNECTION_ERROR_CODES}
-        if any(code in connection_codes for code in self._driver_error_codes(error)):
-            return True
-        message = str(error).lower()
-        return any(keyword in message for keyword in self.CONNECTION_KEYWORDS)
-
     def _classify_error(self, error: Exception):
         """Classify a driver error as ``(error_class, transient, code)``.
 

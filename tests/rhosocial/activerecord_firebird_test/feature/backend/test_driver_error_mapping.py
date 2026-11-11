@@ -256,3 +256,81 @@ def test_unrecognized_error_falls_back_to_database_error(backend):
         (IntegrityError, QueryError, LockError, ConnectionError, OperationalError),
     )
     assert translated.transient is False
+
+
+class FakeDriverError(Exception):
+    """Minimal driver error exposing only the attributes the mapper inspects."""
+
+    def __init__(self, message, *, sqlstate=None, sqlcode=None, code=None, gds_codes=None):
+        super().__init__(message)
+        self.sqlstate = sqlstate
+        if sqlcode is not None:
+            self.sqlcode = sqlcode
+        if code is not None:
+            self.code = code
+        if gds_codes is not None:
+            self.gds_codes = gds_codes
+
+
+def test_empty_sqlstate_list_falls_back_to_code(backend):
+    """An empty SQLSTATE list carries no information; codes still classify."""
+    error = FakeDriverError("unique key violation", sqlstate=[], sqlcode=-803)
+    translated = translate(backend, error)
+    assert isinstance(translated, IntegrityError)
+    assert translated.sqlstate is None
+    assert translated.driver_code == -803
+
+
+def test_sqlstate_list_uses_first_entry(backend):
+    """Legacy driver builds report SQLSTATE as a sequence."""
+    error = FakeDriverError("duplicate key value", sqlstate=["23505"], sqlcode=-803)
+    translated = translate(backend, error)
+    assert isinstance(translated, IntegrityError)
+    assert translated.sqlstate == "23505"
+
+
+def test_scalar_gds_code_is_classified(backend):
+    """A single GDS code is accepted alongside the usual sequence form."""
+    error = FakeDriverError("constraint failure", gds_codes=530)
+    translated = translate(backend, error)
+    assert isinstance(translated, IntegrityError)
+    assert translated.driver_code == 530
+
+
+def test_non_numeric_code_is_ignored(backend):
+    """Codes that are not integers are skipped instead of misfiring."""
+    error = FakeDriverError("foreign key constraint violation", code="not-a-number")
+    translated = translate(backend, error)
+    assert isinstance(translated, IntegrityError)
+    assert translated.driver_code is None
+
+
+def test_connection_message_fallback_is_transient(backend):
+    error = FakeDriverError("network error while talking to the server")
+    translated = translate(backend, error)
+    assert isinstance(translated, ConnectionError)
+    assert translated.transient is True
+    assert translated.retryable is True
+
+
+def test_deadlock_message_fallback_maps_to_deadlock(backend):
+    error = FakeDriverError("deadlock detected, transaction aborted")
+    translated = translate(backend, error)
+    assert isinstance(translated, DeadlockError)
+    assert translated.transient is True
+
+
+def test_integrity_message_fallback_maps_to_integrity(backend):
+    error = FakeDriverError("foreign key constraint violation on insert")
+    translated = translate(backend, error)
+    assert isinstance(translated, IntegrityError)
+    assert translated.transient is False
+
+
+def test_framework_error_is_re_raised_unchanged(backend):
+    """An already translated framework error keeps its type and identity."""
+    error = DatabaseError("already translated")
+    with pytest.raises(DatabaseError) as info:
+        backend._handle_error(error)
+    assert info.value is error
+
