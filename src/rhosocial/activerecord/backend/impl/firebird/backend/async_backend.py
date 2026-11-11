@@ -308,14 +308,27 @@ class AsyncFirebirdBackend(
         # A failed statement leaves the cursor with an attached firebird
         # Statement; closing it here avoids a GC-time abort in a worker thread
         # once the connection is gone (firebird-driver 2.0.x behaviour).
-        try:
-            if self._cursor is not None:
-                loop = asyncio.get_event_loop()
-                await loop.run_in_executor(self._executor, self._cursor.close)
-        except Exception:
-            pass
-        self._cursor = None
+        await self._close_cursor_quietly()
         FirebirdBackendMixin._handle_error(self, error)
+
+    async def _close_cursor_quietly(self) -> None:
+        """Close the shared cursor without letting a close failure mask a cause.
+
+        The original exception is already propagating when this runs, so a
+        close failure is logged and discarded rather than raised.
+        """
+        cursor = self._cursor
+        self._cursor = None
+        if cursor is None:
+            return
+        loop = asyncio.get_event_loop()
+        try:
+            await loop.run_in_executor(self._executor, cursor.close)
+        except Exception as error:
+            self.log(
+                logging.DEBUG,
+                f"Error closing cursor after failed execution, ignored: {error}",
+            )
 
     # ------------------------------------------------------------------
     # Execution hooks — wrap sync fdb operations in run_in_executor
@@ -392,12 +405,25 @@ class AsyncFirebirdBackend(
         return FirebirdBackend._char_columns_from_cursor(cursor)
 
     async def _handle_auto_commit(self) -> None:
-        """Handle auto commit in thread pool."""
+        """Commit the connection's active transaction in the executor.
+
+        Mirrors the synchronous contract: a failed commit raises
+        :class:`TransactionError` from the driver exception, so the caller
+        never receives a result whose data was not committed. A connection
+        without an active transaction has nothing to commit.
+        """
+        connection = self._connection
+        if connection is None:
+            return
+        main_transaction = getattr(connection, "main_transaction", None)
+        is_active = getattr(main_transaction, "is_active", None)
+        if callable(is_active) and not is_active():
+            return
         loop = asyncio.get_event_loop()
         try:
-            await loop.run_in_executor(self._executor, self._connection.commit)
-        except Exception:
-            pass
+            await loop.run_in_executor(self._executor, connection.commit)
+        except Exception as error:
+            raise exc.TransactionError("Auto-commit failed") from error
 
     async def executescript(self, sql_script: str) -> None:
         """Execute a multi-statement SQL script asynchronously.
@@ -420,19 +446,27 @@ class AsyncFirebirdBackend(
             self.log(logging.INFO, f"Async SQL script executed successfully, duration={duration:.3f}s")
             await self._handle_auto_commit_if_needed()
             try:
-                cursor.close()
-            except Exception:
-                pass
+                await loop.run_in_executor(self._executor, cursor.close)
+            except Exception as error:
+                # Closing after a successful script is cleanup: a close failure
+                # must not turn success into an error.
+                self.log(logging.DEBUG, f"Error closing script cursor, ignored: {error}")
         except Exception as e:
             if cursor is not None:
                 try:
-                    cursor.close()
-                except Exception:
-                    pass
+                    await loop.run_in_executor(self._executor, cursor.close)
+                except Exception as error:
+                    # The script failure below is the cause the caller must see.
+                    self.log(logging.DEBUG, f"Error closing failed script cursor, ignored: {error}")
+            if isinstance(e, exc.DatabaseError):
+                raise
             # The exception is re-raised by _handle_error; a second ERROR
             # record would duplicate the application's own traceback.
             self.log(logging.DEBUG, f"Error executing async SQL script, will be re-raised: {e}")
             await self._handle_error(e)
+            # Defensive contract: a handler that returns must not swallow the
+            # script failure.
+            raise exc.DatabaseError(str(e)) from e
 
     # ------------------------------------------------------------------
     # SQL helpers
@@ -493,9 +527,16 @@ class AsyncFirebirdBackend(
         try:
             return await super().execute(sql, params, options=options)
         except Exception as e:
+            # Mirror the synchronous backend: the errored cursor is closed
+            # before the failure propagates, and its close failure must not
+            # replace the original exception.
+            await self._close_cursor_quietly()
             if isinstance(e, exc.DatabaseError):
                 raise
             await self._handle_error(e)
+            # Defensive contract: a handler that returns must not turn a
+            # failed execute into a None result.
+            raise exc.DatabaseError(str(e)) from e
 
     # ------------------------------------------------------------------
     # High-level operations

@@ -207,12 +207,32 @@ class FirebirdBackend(
             if isinstance(e, exc.DatabaseError):
                 raise
             self._handle_error(e)
+            # _handle_error() is required to raise. Keep a defensive fallback so
+            # a handler that returns cannot turn a failed execute into success.
+            raise exc.DatabaseError(str(e)) from e
 
     def _handle_auto_commit(self) -> None:
+        """Commit the connection's active transaction.
+
+        The result is built just before this call, so a failed commit must not
+        leave the caller with a "successful" result: the failure surfaces as
+        :class:`TransactionError` carrying the driver exception.
+
+        ``Connection.commit()`` goes through firebird-driver's main transaction
+        manager, which has nothing to commit before the first statement starts
+        a transaction. That state is not a commit failure, so it is skipped.
+        """
+        connection = self._connection
+        if connection is None:
+            return
+        main_transaction = getattr(connection, "main_transaction", None)
+        is_active = getattr(main_transaction, "is_active", None)
+        if callable(is_active) and not is_active():
+            return
         try:
-            self._connection.commit()
-        except Exception:
-            pass
+            connection.commit()
+        except Exception as error:
+            raise exc.TransactionError("Auto-commit failed") from error
 
     def execute_many(
         self,
@@ -225,20 +245,22 @@ class FirebirdBackend(
 
         The caller's ``options`` - including its log context - is forwarded so
         the core batch logging stays the single owner of SQL/parameter records.
+        The core pipeline owns auto-commit for the batch; committing here again
+        would commit the same transaction twice.
         """
-        is_dml = sql.strip().upper().startswith(('INSERT', 'UPDATE', 'DELETE', 'MERGE'))
         try:
             result = super().execute_many(sql, params_list, options=options)
             if result and result.affected_rows < 0 and len(params_list) > 0:
                 result.affected_rows = len(params_list)
-            if is_dml:
-                self._handle_auto_commit_if_needed()
             return result
         except Exception as e:
             # Re-raise already-wrapped rhosocial errors unchanged; see execute().
             if isinstance(e, exc.DatabaseError):
                 raise
             self._handle_error(e)
+            # Defensive contract: a handler that returns must not swallow the
+            # batch failure.
+            raise exc.DatabaseError(str(e)) from e
 
     def executescript(self, sql: str) -> QueryResult:
         """Execute a multi-statement SQL script.
@@ -262,6 +284,7 @@ class FirebirdBackend(
                 raise
             self.log(logging.DEBUG, f"Error executing SQL script, exception will be re-raised: {e}")
             self._handle_error(e)
+            raise exc.DatabaseError(str(e)) from e
 
     def get_server_version(self) -> Tuple[int, int, int]:
         if not self._is_connected:
