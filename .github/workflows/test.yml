@@ -68,14 +68,14 @@ jobs:
 
       - name: Install activerecord and testsuite
         run: |
-          pip install "rhosocial-activerecord @ git+https://github.com/rhosocial/python-activerecord.git@feature/error-taxonomy"  # NOSONAR
+          pip install "rhosocial-activerecord @ git+https://github.com/rhosocial/python-activerecord.git@feature/declaration-surface"  # NOSONAR
           # NOSONAR(githubactions:S8541, S8544): both sibling projects are installed
           # from a git reference on purpose. The release branches are the contract
           # between these repositories, the test suite is still on a development
           # branch until it merges, and neither repository publishes a lock file to
           # pin against -- a hash-pinned install of a moving branch would be a pin
           # that goes stale on the next commit instead of a safety property.
-          pip install "rhosocial-activerecord-testsuite @ git+https://github.com/rhosocial/python-activerecord-testsuite.git@feature/error-taxonomy"  # NOSONAR
+          pip install "rhosocial-activerecord-testsuite @ git+https://github.com/rhosocial/python-activerecord-testsuite.git@feature/declaration-surface"  # NOSONAR
 
       - name: Install dependencies
         run: |

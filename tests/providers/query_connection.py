@@ -12,14 +12,20 @@ from .scenarios import get_scenario, get_enabled_scenarios
 
 
 class SyncQueryTestUser(ActiveRecord):
-    __table_name__ = "test_users"
+    @classmethod
+    def table_name(cls):
+        return "test_users"
+
     id: Optional[int] = None
     name: str
     email: str
 
 
 class AsyncQueryTestUser(AsyncActiveRecord):
-    __table_name__ = "test_users"
+    @classmethod
+    def table_name(cls):
+        return "test_users"
+
     id: Optional[int] = None
     name: str
     email: str
