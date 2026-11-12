@@ -1,0 +1,279 @@
+{
+  "entries": {
+    "006cf938941e0f38": 1,
+    "0783ceb9d9d7d08a": 2,
+    "158a8e7eb186caa8": 1,
+    "1b39110af8c6ca97": 1,
+    "27a9ada09e4810bb": 1,
+    "346125e0326d312e": 1,
+    "38cc94c45b4c2c3f": 2,
+    "3943ef6206d2884f": 1,
+    "399e795ca27ab2d1": 1,
+    "3eb99b50a2a3d9b2": 1,
+    "3ff673f304a31109": 1,
+    "443ded1ac9a77ed6": 1,
+    "46a6affe2f0f3b22": 1,
+    "4a73735e029b3025": 1,
+    "4b22352574c367e8": 1,
+    "51458e0c4e6ca3b8": 1,
+    "5596bd3a716e8a0f": 1,
+    "5947f1167760513f": 1,
+    "6173fa08bf6afd7a": 1,
+    "6a899df0efd62f3b": 1,
+    "6b3114c2bd725f52": 1,
+    "6b7ec2ae6d677118": 1,
+    "6be45be76e3421e8": 1,
+    "6cd3798cd6614326": 1,
+    "73e43b67c2f31044": 2,
+    "7e6bc8ab0f756377": 1,
+    "84db66013ec4aae6": 1,
+    "8608fd912b2a0f39": 1,
+    "95131e4c04c07965": 1,
+    "967355752cc57859": 1,
+    "a593b7cf3e7bebfa": 1,
+    "abc06dfaaf7f11b0": 1,
+    "ad7cc0879fe84986": 1,
+    "bc4bcf4a7bf452a0": 1,
+    "c1420d89e4ac2b06": 1,
+    "c3e73f0a65f568bf": 1,
+    "ceedbad867205604": 1,
+    "e186add3df80ec8e": 1,
+    "edc30b88a433dd76": 1,
+    "f260cd0e2846a0ea": 1,
+    "f364265d1fde1455": 1,
+    "f554d5e90270365c": 2
+  },
+  "findings": [
+    {
+      "found": "on_commit_delete: Optional[bool]",
+      "path": "src/rhosocial/activerecord/backend/impl/firebird/expression/create_table.py",
+      "rule": "ED-10.2"
+    },
+    {
+      "found": "getattr(expr.object_type, \"value\", expr.object_type)",
+      "path": "src/rhosocial/activerecord/backend/impl/firebird/mixins/comment.py",
+      "rule": "ED-11.2"
+    },
+    {
+      "found": "getattr(expr, \"force_write\", False)",
+      "path": "src/rhosocial/activerecord/backend/impl/firebird/mixins/database.py",
+      "rule": "ED-11.2"
+    },
+    {
+      "found": "getattr(expr.sql_security, \"value\", expr.sql_security)",
+      "path": "src/rhosocial/activerecord/backend/impl/firebird/mixins/database.py",
+      "rule": "ED-11.2"
+    },
+    {
+      "found": "getattr(action, \"if_not_exists\", None)",
+      "path": "src/rhosocial/activerecord/backend/impl/firebird/mixins/ddl_alter_table_modifier.py",
+      "rule": "ED-11.2"
+    },
+    {
+      "found": "getattr(action, \"if_exists\", None)",
+      "path": "src/rhosocial/activerecord/backend/impl/firebird/mixins/ddl_alter_table_modifier.py",
+      "rule": "ED-11.2"
+    },
+    {
+      "found": "getattr(action, \"if_exists\", None)",
+      "path": "src/rhosocial/activerecord/backend/impl/firebird/mixins/ddl_alter_table_modifier.py",
+      "rule": "ED-11.2"
+    },
+    {
+      "found": "getattr(action, \"restart_with\", None)",
+      "path": "src/rhosocial/activerecord/backend/impl/firebird/mixins/ddl_alter_table_modifier.py",
+      "rule": "ED-11.2"
+    },
+    {
+      "found": "getattr(expr, \"tablespace\", None)",
+      "path": "src/rhosocial/activerecord/backend/impl/firebird/mixins/ddl_table.py",
+      "rule": "ED-11.2"
+    },
+    {
+      "found": "getattr(expr, \"inherits\", None)",
+      "path": "src/rhosocial/activerecord/backend/impl/firebird/mixins/ddl_table.py",
+      "rule": "ED-11.2"
+    },
+    {
+      "found": "getattr(expr, 'partition', None)",
+      "path": "src/rhosocial/activerecord/backend/impl/firebird/mixins/ddl_table.py",
+      "rule": "ED-11.2"
+    },
+    {
+      "found": "getattr(getattr(expr, 'table_options', None), 'comment', None)",
+      "path": "src/rhosocial/activerecord/backend/impl/firebird/mixins/ddl_table.py",
+      "rule": "ED-11.2"
+    },
+    {
+      "found": "getattr(expr, 'table_options', None)",
+      "path": "src/rhosocial/activerecord/backend/impl/firebird/mixins/ddl_table.py",
+      "rule": "ED-11.2"
+    },
+    {
+      "found": "getattr(expr, 'temporary', False)",
+      "path": "src/rhosocial/activerecord/backend/impl/firebird/mixins/ddl_table.py",
+      "rule": "ED-11.2"
+    },
+    {
+      "found": "getattr(expr, 'if_not_exists', False)",
+      "path": "src/rhosocial/activerecord/backend/impl/firebird/mixins/ddl_table.py",
+      "rule": "ED-11.2"
+    },
+    {
+      "found": "getattr(expr, 'temporary', False)",
+      "path": "src/rhosocial/activerecord/backend/impl/firebird/mixins/ddl_table.py",
+      "rule": "ED-11.2"
+    },
+    {
+      "found": "getattr(expr, 'on_commit_delete', True)",
+      "path": "src/rhosocial/activerecord/backend/impl/firebird/mixins/ddl_table.py",
+      "rule": "ED-11.2"
+    },
+    {
+      "found": "getattr(expr, 'external_file', None)",
+      "path": "src/rhosocial/activerecord/backend/impl/firebird/mixins/ddl_table.py",
+      "rule": "ED-11.2"
+    },
+    {
+      "found": "getattr(col_def, \"comment\", None)",
+      "path": "src/rhosocial/activerecord/backend/impl/firebird/mixins/ddl_table.py",
+      "rule": "ED-11.2"
+    },
+    {
+      "found": "getattr(constraint, 'is_auto_increment', False)",
+      "path": "src/rhosocial/activerecord/backend/impl/firebird/mixins/ddl_table.py",
+      "rule": "ED-11.2"
+    },
+    {
+      "found": "getattr(col_def, 'computed_by', None)",
+      "path": "src/rhosocial/activerecord/backend/impl/firebird/mixins/ddl_table.py",
+      "rule": "ED-11.2"
+    },
+    {
+      "found": "getattr(col_def, 'generated_expression', None)",
+      "path": "src/rhosocial/activerecord/backend/impl/firebird/mixins/ddl_table.py",
+      "rule": "ED-11.2"
+    },
+    {
+      "found": "getattr(col_def, 'collation', None)",
+      "path": "src/rhosocial/activerecord/backend/impl/firebird/mixins/ddl_table.py",
+      "rule": "ED-11.2"
+    },
+    {
+      "found": "getattr(expr, \"match_type\", None)",
+      "path": "src/rhosocial/activerecord/backend/impl/firebird/mixins/ddl_table.py",
+      "rule": "ED-11.2"
+    },
+    {
+      "found": "getattr(expr, \"_transaction\", None)",
+      "path": "src/rhosocial/activerecord/backend/impl/firebird/mixins/dml.py",
+      "rule": "ED-11.2"
+    },
+    {
+      "found": "getattr(expr, \"_caller_privileges\", False)",
+      "path": "src/rhosocial/activerecord/backend/impl/firebird/mixins/dml.py",
+      "rule": "ED-11.2"
+    },
+    {
+      "found": "getattr(expr, \"_params\", [])",
+      "path": "src/rhosocial/activerecord/backend/impl/firebird/mixins/dml.py",
+      "rule": "ED-11.2"
+    },
+    {
+      "found": "getattr(expr, \"from_\", None)",
+      "path": "src/rhosocial/activerecord/backend/impl/firebird/mixins/dql.py",
+      "rule": "ED-11.2"
+    },
+    {
+      "found": "getattr(clause, \"with_ties\", False)",
+      "path": "src/rhosocial/activerecord/backend/impl/firebird/mixins/dql.py",
+      "rule": "ED-11.2"
+    },
+    {
+      "found": "getattr(expr, \"value\", None)",
+      "path": "src/rhosocial/activerecord/backend/impl/firebird/mixins/expression.py",
+      "rule": "ED-11.2"
+    },
+    {
+      "found": "getattr(expr, \"cases\", [])",
+      "path": "src/rhosocial/activerecord/backend/impl/firebird/mixins/expression.py",
+      "rule": "ED-11.2"
+    },
+    {
+      "found": "getattr(expr, \"else_result\", None)",
+      "path": "src/rhosocial/activerecord/backend/impl/firebird/mixins/expression.py",
+      "rule": "ED-11.2"
+    },
+    {
+      "found": "getattr(expr, \"alias\", None)",
+      "path": "src/rhosocial/activerecord/backend/impl/firebird/mixins/expression.py",
+      "rule": "ED-11.2"
+    },
+    {
+      "found": "getattr(expr, 'alias', None)",
+      "path": "src/rhosocial/activerecord/backend/impl/firebird/mixins/expression.py",
+      "rule": "ED-11.2"
+    },
+    {
+      "found": "getattr(expr, \"func_name\", None)",
+      "path": "src/rhosocial/activerecord/backend/impl/firebird/mixins/expression.py",
+      "rule": "ED-11.2"
+    },
+    {
+      "found": "getattr(expr, \"by_value\", False)",
+      "path": "src/rhosocial/activerecord/backend/impl/firebird/mixins/external_function.py",
+      "rule": "ED-11.2"
+    },
+    {
+      "found": "getattr(expr, \"free_it\", False)",
+      "path": "src/rhosocial/activerecord/backend/impl/firebird/mixins/external_function.py",
+      "rule": "ED-11.2"
+    },
+    {
+      "found": "getattr(expr, \"body\", None)",
+      "path": "src/rhosocial/activerecord/backend/impl/firebird/mixins/package.py",
+      "rule": "ED-11.2"
+    },
+    {
+      "found": "getattr(expr, \"body\", None)",
+      "path": "src/rhosocial/activerecord/backend/impl/firebird/mixins/package.py",
+      "rule": "ED-11.2"
+    },
+    {
+      "found": "getattr(expr, \"body\", False)",
+      "path": "src/rhosocial/activerecord/backend/impl/firebird/mixins/package.py",
+      "rule": "ED-11.2"
+    },
+    {
+      "found": "getattr(expr, \"returns\", None)",
+      "path": "src/rhosocial/activerecord/backend/impl/firebird/mixins/routine.py",
+      "rule": "ED-11.2"
+    },
+    {
+      "found": "getattr(expr, \"returns\", None)",
+      "path": "src/rhosocial/activerecord/backend/impl/firebird/mixins/routine.py",
+      "rule": "ED-11.2"
+    },
+    {
+      "found": "getattr(expr, 'use_generator', False)",
+      "path": "src/rhosocial/activerecord/backend/impl/firebird/mixins/sequence.py",
+      "rule": "ED-11.2"
+    },
+    {
+      "found": "getattr(expr, 'active', True)",
+      "path": "src/rhosocial/activerecord/backend/impl/firebird/mixins/trigger.py",
+      "rule": "ED-11.2"
+    },
+    {
+      "found": "getattr(expr, 'position', 0)",
+      "path": "src/rhosocial/activerecord/backend/impl/firebird/mixins/trigger.py",
+      "rule": "ED-11.2"
+    },
+    {
+      "found": "getattr(expr, 'when_condition', None)",
+      "path": "src/rhosocial/activerecord/backend/impl/firebird/mixins/trigger.py",
+      "rule": "ED-11.2"
+    }
+  ],
+  "format": 1
+}
