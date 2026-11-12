@@ -68,7 +68,7 @@ jobs:
 
       - name: Install activerecord and testsuite
         run: |
-          pip install "rhosocial-activerecord @ git+https://github.com/rhosocial/python-activerecord.git@feature/declaration-surface"  # NOSONAR
+          pip install "rhosocial-activerecord @ git+https://github.com/rhosocial/python-activerecord.git@release/v1.0.0.dev30"  # NOSONAR
           # NOSONAR(githubactions:S8541, S8544): both sibling projects are installed
           # from a git reference on purpose. The release branches are the contract
           # between these repositories, the test suite is still on a development
