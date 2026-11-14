@@ -3,13 +3,13 @@
 Bridges ``user_post_comment_classes`` from the testsuite's relation conftest
 so that benchmarks can reuse the same model definitions and backend setup.
 
+The directory declares the tables those models use, so the testsuite gives it
+one database (`users`, `posts`, `comments`), created or cleared once per
+scenario, prepared before every benchmark function and dropped afterwards.
+
 Redis benchmark support is not introduced in this release.  The related
 source snippets are kept as comments for follow-up external cache design.
 """
-
-from rhosocial.activerecord.testsuite.feature.relation.conftest import (  # noqa: F401
-    user_post_comment_classes,
-)
 
 from dataclasses import dataclass
 from typing import Any
@@ -19,8 +19,33 @@ import pytest
 from rhosocial.activerecord.relation.cache import CacheConfig, InstanceCache
 from rhosocial.activerecord.relation.cache_backends import InMemoryCache
 
+from rhosocial.activerecord.testsuite.feature.relation.conftest import (  # noqa: F401
+    user_post_comment_classes,
+)
+from rhosocial.activerecord.testsuite.feature.relation.fixtures import tables
+
 # Not introduced in this release; keep snippets for follow-up external cache design.
 # from rhosocial.activerecord.relation.cache_backends import CacheSerializer, RedisCache
+
+GROUP_TABLES = ("users", "posts", "comments")
+
+
+def ensure_database(environment):
+    """Create this directory's database, or clear it when it exists."""
+    environment.reset_database()
+
+
+def prepare(environment):
+    """Create the tables the benchmarks in this directory share."""
+    for name in GROUP_TABLES:
+        environment.execute(tables.RELATION_TABLES[name](environment.dialect))
+
+
+def teardown(environment):
+    """Drop the tables the benchmarks in this directory share."""
+    for name in reversed(GROUP_TABLES):
+        environment.execute(tables.drop_table(environment.dialect, name))
+
 
 pytestmark = [
     pytest.mark.benchmark,

@@ -48,6 +48,7 @@ from rhosocial.activerecord.backend.dialect.protocols import (
     ConstraintSupport,
     IntrospectionSupport,
     TransactionControlSupport,
+    TransactionalDDLSupport,
     GeneratedColumnSupport,
     IdentityColumnSupport,
     AutoIncrementColumnSupport,
@@ -422,6 +423,7 @@ class FirebirdDialect(
     ConstraintSupport,
     IntrospectionSupport,
     TransactionControlSupport,
+    TransactionalDDLSupport,
     GeneratedColumnSupport,
     # IdentityColumnSupport is satisfied by the core IdentityColumnMixin with
     # Firebird's measured probes; AutoIncrementColumnSupport by the core
@@ -551,6 +553,10 @@ class FirebirdDialect(
         """
         version = _norm_version(self.version_or_none)
         return version is not None and version >= _norm_version(floor)
+
+    def supports_transactional_ddl(self) -> bool:
+        """Firebird DDL participates in transactions."""
+        return True
 
     def supports_window_functions(self) -> bool:
         return self.version_at_least((3, 0, 0))
@@ -783,7 +789,15 @@ class FirebirdDialect(
 
 
     def supports_rename_table(self) -> bool:
-        return True
+        """Firebird 5 has no table-rename clause.
+
+        The ``ALTER TABLE`` syntax in the Firebird 5.0 Language Reference
+        lists ADD / DROP / ALTER COLUMN / constraints / SQL SECURITY /
+        publication only; the ``TO newname`` form renames a *column*, not a
+        table.  ``RECREATE TABLE`` is the closest primitive, and it drops the
+        old table, so a swap needs an explicit copy step.
+        """
+        return False
 
     def supports_rename_column(self) -> bool:
         return True

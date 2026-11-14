@@ -1,0 +1,2445 @@
+# tests/rhosocial/activerecord_firebird_test/feature/backend/construct/expression/test_expression_roundtrip_all.py
+"""
+Functional serialization coverage for every expression class the Firebird dialect
+has to render: the core expression package *and* this backend's own.
+
+Both packages are collected. The other five backends' matrices cover only their
+own package, which is how ``postgres``' ``comment.py`` reading a field core had
+removed months earlier stayed green -- the class lived in core, so no backend
+matrix ever rendered it. Firebird has no matrix at all, so both gaps apply.
+
+Why ``to_sql()`` is classified rather than caught
+==================================================
+
+The testsuite helper ``sql_consistent`` wraps the first render in
+``try/except Exception: return``. That makes every render failure a green tick:
+the round-trip comparison never runs, so a formatter reading a field that no
+longer exists is indistinguishable from a formatter for a feature Firebird does
+not support. Each outcome here is named and asserted instead:
+
+* **renders** -- all three encodings must restore byte-identical SQL *and*
+  byte-identical bind parameters.
+* a member of :data:`LEGITIMATE_NON_RENDERS` -- cannot render for a reason
+  belonging to its own tree. Each entry pins the exception type *and* a message
+  fragment, so a class that starts failing for a different reason fails here
+  rather than staying quietly green.
+* ``UnsupportedFeatureError`` from a probe inside a formatter, for a class
+  *not* named in the dict -- Firebird does not model the feature. Asserted as
+  exactly that type, so nothing else can hide behind it.
+* ``UnsupportedFeatureError`` from the dispatch, for a class not named in the
+  dict -- the dialect declares no ``format_*`` method for it at all, which is
+  a wiring fact about this backend rather than a capability answer. The
+  method the dispatch names must be a row in :data:`UNMODELLED_FORMATTERS`,
+  so the gap is a decision with a reason rather than an omission; see
+  :func:`_dispatched_formatter`.
+* **anything else** -- a failure naming the class and the exception.
+
+The dict is read before the ``UnsupportedFeatureError`` branch, because core now
+reports a *missing formatter* through that same type; see
+:func:`assert_sql_roundtrip_classified`.
+
+Why the dispatch's refusal is no longer allowed on its type alone
+=================================================================
+
+The two ``UnsupportedFeatureError`` outcomes above were one branch until core
+turned ``trim``/``lpad``/``rpad``/``repeat`` into dedicated nodes. Firebird
+spells ``lpad``/``rpad``/``trim`` natively and has no ``REPEAT`` function, so
+``RepeatFunction`` reaches a dispatch that finds no
+``format_repeat_expression`` -- and before this split, that refusal read as
+"Firebird lacks the feature" and passed, indistinguishable from a probe
+declining something Firebird genuinely declines. The exception itself records
+who is refusing: a probe names the feature, while the dispatch frames the
+formatting method it could not find as ``the '<method>' statement`` -- see
+:func:`_dispatched_formatter`. Only the dispatch's refusal is a wiring fact
+about this backend, so only it must be accounted for:
+:meth:`TestMatrixIntegrity.test_unmodelled_formatter_list_is_exact` pins
+:data:`UNMODELLED_FORMATTERS` in both directions, and a method nobody listed
+fails the run.
+
+And when a class cannot be constructed
+======================================
+
+``make_instance(...) is None`` becomes a skip, but only for a class named in
+:data:`UNCONSTRUCTIBLE`, and ``test_unconstructible_list_is_exact`` pins that
+tuple in both directions. A class that gains a constructor fails CI until the
+entry is removed; a class that starts failing to build fails CI too. There is no
+"at most N" ceiling anywhere in this file -- a ceiling absorbs new gaps, which is
+the failure mode this matrix exists to prevent.
+"""
+
+import datetime
+import decimal
+import inspect
+import math
+import uuid
+from typing import Dict
+
+import pytest
+
+from rhosocial.activerecord.backend.dialect.exceptions import (ProtocolNotImplementedError, UnsupportedFeatureError)
+from rhosocial.activerecord.backend.expression import graph as graph_mod
+from rhosocial.activerecord.backend.expression.advanced_functions import (
+    CaseExpression,
+    ExistsPredicate,
+    WindowClause,
+    WindowDefinition,
+    WindowSpecification,
+)
+from rhosocial.activerecord.backend.expression.collation import CollateFunction
+from rhosocial.activerecord.backend.expression.core import Column, Literal, Subquery
+from rhosocial.activerecord.backend.expression.operators import ArithmeticOperation
+from rhosocial.activerecord.backend.expression.query_sources import SetOperation
+from rhosocial.activerecord.backend.expression.datetime import (
+    _ExtractBase,
+    ExtractFieldExpression,
+    TemporalOptionsExpression,
+)
+from rhosocial.activerecord.backend.expression.declared import (
+    _Annotation,
+    ArrayAnnotation,
+    BinaryAnnotation,
+    BooleanAnnotation,
+    IntegerAnnotation,
+    JSONAnnotation,
+    NumberAnnotation,
+    TemporalAnnotation,
+    TextAnnotation,
+    UUIDAnnotation,
+    XMLAnnotation,
+)
+from rhosocial.activerecord.backend.expression.functions.string import (
+    LeftFunction,
+    RightFunction,
+    SubstringExpression,
+)
+from rhosocial.activerecord.backend.expression.objects import (
+    Database,
+    Domain,
+    EdgeTable as EdgeTableObject,
+    Function,
+    Index,
+    MaterializedView,
+    NodeTable,
+    PropertyGraph,
+    Sequence,
+    Schema,
+    Table,
+    Trigger,
+    View,
+)
+from rhosocial.activerecord.backend.expression.predicates import (
+    LikeOperator,
+    ComparisonPredicate,
+    ILikePredicate,
+    LikePredicate,
+)
+from rhosocial.activerecord.backend.expression.query_parts import JoinClause
+from rhosocial.activerecord.backend.expression.serialization import (
+    deserialize,
+    deserialize_json,
+    deserialize_xml,
+    serialize,
+    serialize_json,
+    serialize_xml,
+)
+from rhosocial.activerecord.backend.expression.sources import NamedRelationRef
+from rhosocial.activerecord.backend.impl.firebird.expression.blob import (
+    BlobLiteralExpression,
+)
+from rhosocial.activerecord.backend.impl.firebird.expression.comment import (
+    FirebirdCommentOnStatement,
+    FirebirdCommentObjectType,
+)
+from rhosocial.activerecord.backend.impl.firebird.expression.column import (
+    FirebirdColumnDefinition,
+)
+from rhosocial.activerecord.backend.impl.firebird.expression.ddl.domain import (
+    FirebirdAlterDomainExpression,
+    FirebirdSetDomainDataTypeAction,
+)
+from rhosocial.activerecord.backend.impl.firebird.expression.ddl.routine import (
+    FirebirdCreateFunctionStatement,
+    FirebirdCreateProcedureStatement,
+)
+from rhosocial.activerecord.backend.impl.firebird.expression.ddl.sequence import (
+    FirebirdCreateSequenceStatement,
+)
+from rhosocial.activerecord.backend.expression.statements import (
+    ddl_alter,
+    ddl_comment,
+    ddl_database,
+    ddl_domain,
+    ddl_function,
+    ddl_index,
+    ddl_schema,
+    ddl_sequence,
+    ddl_table,
+    ddl_trigger,
+    ddl_truncate,
+    ddl_view,
+    dml,
+)
+from rhosocial.activerecord.backend.expression.statements.ddl_domain import (
+    DomainCheckConstraint,
+    RenameDomainAction,
+)
+from rhosocial.activerecord.backend.expression.statements.ddl_table import (
+    ColumnConstraint,
+    ColumnNotNullConstraint,
+    ForeignKeyConstraint,
+    TableCheckConstraint,
+    TableConstraint,
+    TablePrimaryKeyConstraint,
+    IndexDefinition,
+    ReferencesClause,
+)
+from rhosocial.activerecord.backend.expression.statements.ddl_trigger import (
+    TriggerEvent,
+    TriggerTiming,
+)
+from rhosocial.activerecord.backend.expression.statements.dql import (
+    QueryStatement,
+    SetOperationStatement,
+)
+from rhosocial.activerecord.backend.expression.transaction import (
+    BeginTransactionStatement,
+    SetTransactionStatement,
+)
+from rhosocial.activerecord.backend.expression.statements.dml import (
+    MergeAction,
+    MergeActionType,
+)
+from rhosocial.activerecord.backend.expression.types import IntegerType
+from rhosocial.activerecord.backend.expression.types.custom import CustomType
+from rhosocial.activerecord.backend.expression.values import LiteralKind
+from expression_roundtrip_harness import (
+    assert_params_equal,
+    assert_render_survives,
+    collect_expression_classes,
+    make_instance,
+    register_all,
+    register_special_constructor,
+    roundtrip_expression,
+)
+
+CORE_EXPR_PKG = "rhosocial.activerecord.backend.expression"
+FIREBIRD_EXPR_PKG = "rhosocial.activerecord.backend.impl.firebird.expression"
+
+#: Both packages, in the order the report lists them. The core package comes
+#: first because most of the interesting classes live there.
+MATRIX_PACKAGES = (CORE_EXPR_PKG, FIREBIRD_EXPR_PKG)
+
+
+def _collect_matrix_classes():
+    """Every concrete expression class the two packages define.
+
+    Collected by walking each package, not by reading ``ExpressionRegistry``:
+    the registry is process-global and *grows* as sibling test modules import
+    their own backends, so reading it makes this matrix's contents depend on
+    which files pytest happened to import first. Reading it once in this
+    process, once for this purpose, gave three different numbers across three
+    sessions; a package walk is deterministic.
+
+    ``ddl_alter`` exports aliases (four spellings of two classes), and several
+    modules re-export under a second name. They are the same objects, so the
+    first name wins and the matrix does not test one class several times.
+    """
+    collected: Dict[str, type] = {}
+    for package in MATRIX_PACKAGES:
+        for fqn, cls in sorted(collect_expression_classes(package).items()):
+            collected.setdefault(fqn, cls)
+    register_all(collected)
+
+    by_identity: Dict[int, str] = {}
+    for fqn, cls in sorted(collected.items()):
+        by_identity.setdefault(id(cls), fqn)
+    return {
+        fqn: cls
+        for cls in collected.values()
+        if not inspect.isabstract(cls)
+        for fqn in [by_identity[id(cls)]]
+    }
+
+
+REGISTERED = _collect_matrix_classes()
+
+
+# ---------------------------------------------------------------------------
+# Special constructors: a real value where the introspective guess is a lie
+# ---------------------------------------------------------------------------
+#
+# ``make_instance`` reads each required parameter's annotation and guesses:
+# ``"x"`` for a string, ``[]`` for a list, ``IntegerType()`` for a type. That is
+# right for a name and wrong for every parameter that wants a catalogue object --
+# a Table, an Index, a PropertyGraph -- because a bare ``"x"`` is not one. It is
+# also wrong for the containers that require at least one member (CASE, WINDOW,
+# JOIN, temporal options) and for the statements that must render without bind
+# parameters (DOMAIN CHECK).
+#
+# Every registration below replaces a guess that would otherwise have produced an
+# instance the dialect cannot render. Suffixes are spelled relative to the
+# expression package because ``make_instance`` matches with ``str.endswith`` and
+# several modules export identically named classes.
+
+
+def _table_obj(dialect, name="t"):
+    """A table with a bare name and no namespace."""
+    return Table(dialect, name)
+
+
+def _column_predicate(dialect):
+    """A predicate comparing two columns, so it renders with no bind parameters."""
+    return ComparisonPredicate(dialect, "=", Column(dialect, "a"), Column(dialect, "b"))
+
+
+def _one_column_query(dialect):
+    """A single-column ``SELECT`` over a table."""
+    return QueryStatement(
+        dialect, select=[Column(dialect, "id")], from_=_table_obj(dialect)
+    )
+
+
+def _compound_arms(dialect):
+    """Two single-column SELECTs over two tables, no bind parameters."""
+    return [
+        QueryStatement(
+            dialect, select=[Column(dialect, "id")], from_=_table_obj(dialect)
+        ),
+        QueryStatement(
+            dialect,
+            select=[Column(dialect, "id")],
+            from_=_table_obj(dialect, "other"),
+        ),
+    ]
+
+
+def _integer_column(dialect, name="col"):
+    """A column definition carrying a *dialect-bound* type.
+
+    The binding is load-bearing, not cosmetic: ``to_sql()`` dispatches on the
+    type through its own dialect, so an unbound ``IntegerType()`` raises
+    ``ValueError: ... has no dialect bound`` the moment anything renders it.
+    """
+    return ddl_table.ColumnDefinition(dialect, name, IntegerType(dialect))
+
+
+def register_specials():
+    """Replace every introspective guess that would cost a real assertion."""
+    # -- nodes whose ``op`` is a closed word set, not a free string ----------
+    # Both refuse an ``op`` outside their set at construction, so the
+    # introspective guess (which supplies a placeholder string) cannot build
+    # them at all. Naming one real word is what lets the matrix exercise them.
+    register_special_constructor(
+        "operators.ArithmeticOperation",
+        lambda d: ArithmeticOperation(d, "add", Column(d, "a"), Literal(d, 1)),
+    )
+    register_special_constructor(
+        "query_sources.SetOperation",
+        lambda d: SetOperation(
+            d,
+            op="union",
+            left=_one_column_query(d),
+            right=_one_column_query(d),
+        ),
+    )
+    # The statement half of the same pair: the word-form enum refuses the
+    # guess's bare string at construction, and Firebird spells a compound
+    # SELECT, so a factory turns it into an instance the matrix can assert.
+    register_special_constructor(
+        "statements.dql.SetOperationStatement",
+        lambda d: SetOperationStatement(
+            d, op="union_all", parts=_compound_arms(d)
+        ),
+    )
+
+    # -- the FROM side ------------------------------------------------------
+    register_special_constructor(
+        "sources.relation.NamedRelationRef",
+        lambda d: NamedRelationRef(d, _table_obj(d)),
+    )
+    register_special_constructor(
+        "query_parts.JoinClause",
+        lambda d: JoinClause(
+            d,
+            left_table=NamedRelationRef(d, _table_obj(d)),
+            right_table=NamedRelationRef(d, Table(d, "other")),
+            condition=_column_predicate(d),
+        ),
+    )
+
+    # -- tables -------------------------------------------------------------
+    register_special_constructor(
+        "statements.ddl_table.CreateTableStatement",
+        lambda d: ddl_table.CreateTableStatement(d, _table_obj(d), [_integer_column(d)]),
+    )
+    register_special_constructor(
+        "statements.ddl_table.DropTableStatement",
+        lambda d: ddl_table.DropTableStatement(d, _table_obj(d)),
+    )
+    register_special_constructor(
+        "statements.ddl_table.CreateTableLikeStatement",
+        lambda d: ddl_table.CreateTableLikeStatement(
+            d, _table_obj(d), Table(d, "other")
+        ),
+    )
+    register_special_constructor(
+        "statements.ddl_table.CreateTableCloneStatement",
+        lambda d: ddl_table.CreateTableCloneStatement(
+            d, _table_obj(d), Table(d, "other")
+        ),
+    )
+    register_special_constructor(
+        "statements.ddl_table.CreateTableAsStatement",
+        lambda d: ddl_table.CreateTableAsStatement(d, _table_obj(d), _one_column_query(d)),
+    )
+    register_special_constructor(
+        "statements.ddl_table.CreateTableFromTemplateStatement",
+        lambda d: ddl_table.CreateTableFromTemplateStatement(
+            d, _table_obj(d), _one_column_query(d)
+        ),
+    )
+    register_special_constructor(
+        "statements.ddl_truncate.TruncateStatement",
+        lambda d: ddl_truncate.TruncateStatement(d, _table_obj(d)),
+    )
+    # Overrides the shared testsuite factory, which binds no dialect to its type.
+    register_special_constructor(
+        "statements.ddl_table.ColumnDefinition", _integer_column
+    )
+
+    # -- indexes ------------------------------------------------------------
+    register_special_constructor(
+        "statements.ddl_index.CreateIndexStatement",
+        lambda d: ddl_index.CreateIndexStatement(
+            d, index=Index(d, "i"), table=_table_obj(d), columns=["a"]
+        ),
+    )
+    register_special_constructor(
+        "statements.ddl_index.DropIndexStatement",
+        lambda d: ddl_index.DropIndexStatement(d, index=Index(d, "i")),
+    )
+    register_special_constructor(
+        "statements.ddl_index.CreateFulltextIndexStatement",
+        lambda d: ddl_index.CreateFulltextIndexStatement(
+            d, index=Index(d, "i"), table=_table_obj(d), columns=["a"]
+        ),
+    )
+    register_special_constructor(
+        "statements.ddl_index.DropFulltextIndexStatement",
+        lambda d: ddl_index.DropFulltextIndexStatement(
+            d, index=Index(d, "i"), table=_table_obj(d)
+        ),
+    )
+    # The ALTER index actions carry the *Action suffix now (core settled the
+    # renames); the old ``AddIndex`` / ``DropIndex`` keys matched nothing at
+    # all -- a renamed key is a factory that silently stopped firing.
+    register_special_constructor(
+        "statements.ddl_alter.DropIndexAction",
+        lambda d: ddl_alter.DropIndexAction(d, Index(d, "i")),
+    )
+
+    # -- schemas, sequences, databases, domains, types ---------------------
+    register_special_constructor(
+        "statements.ddl_schema.CreateSchemaStatement",
+        lambda d: ddl_schema.CreateSchemaStatement(d, Schema(d, "s")),
+    )
+    register_special_constructor(
+        "statements.ddl_schema.DropSchemaStatement",
+        lambda d: ddl_schema.DropSchemaStatement(d, Schema(d, "s")),
+    )
+    register_special_constructor(
+        "statements.ddl_sequence.CreateSequenceStatement",
+        lambda d: ddl_sequence.CreateSequenceStatement(d, Sequence(d, "s")),
+    )
+    register_special_constructor(
+        "statements.ddl_sequence.AlterSequenceStatement",
+        lambda d: ddl_sequence.AlterSequenceStatement(d, Sequence(d, "s"), restart=1),
+    )
+    register_special_constructor(
+        "statements.ddl_sequence.DropSequenceStatement",
+        lambda d: ddl_sequence.DropSequenceStatement(d, Sequence(d, "s")),
+    )
+    register_special_constructor(
+        "statements.ddl_database.DropDatabaseStatement",
+        lambda d: ddl_database.DropDatabaseStatement(d, Database(d, "db")),
+    )
+    register_special_constructor(
+        "statements.ddl_domain.CreateDomainStatement",
+        lambda d: ddl_domain.CreateDomainStatement(d, Domain(d, "dom"), IntegerType(d)),
+    )
+    register_special_constructor(
+        "statements.ddl_domain.DropDomainStatement",
+        lambda d: ddl_domain.DropDomainStatement(d, Domain(d, "dom")),
+    )
+    register_special_constructor(
+        "statements.ddl_domain.AlterDomainStatement",
+        lambda d: ddl_domain.AlterDomainStatement(
+            d, Domain(d, "dom"), [RenameDomainAction(d, "other")]
+        ),
+    )
+    # A DOMAIN CHECK is DDL: it must render without bind parameters, so its
+    # condition compares two columns rather than a column and a literal.
+    register_special_constructor(
+        "statements.ddl_domain.DomainCheckConstraint",
+        lambda d: DomainCheckConstraint(d, _column_predicate(d), name="chk"),
+    )
+    # Firebird has no user-defined types -- a DOMAIN is its nearest equivalent --
+    # so there is no TypeDefinition to register. CREATE TYPE / ALTER TYPE reach
+    # the dialect's own capability gate and report UnsupportedFeatureError, which
+    # the classifier accepts for any class; no pin is needed.
+
+    # -- routines, triggers, comments --------------------------------------
+    register_special_constructor(
+        "statements.ddl_function.DropFunctionStatement",
+        lambda d: ddl_function.DropFunctionStatement(d, Function(d, "fn")),
+    )
+    register_special_constructor(
+        "statements.ddl_trigger.CreateTriggerStatement",
+        lambda d: ddl_trigger.CreateTriggerStatement(
+            d,
+            trigger=Trigger(d, "trg"),
+            table=_table_obj(d),
+            timing=TriggerTiming.BEFORE,
+            events=[TriggerEvent.INSERT],
+            function=Function(d, "fn"),
+        ),
+    )
+    register_special_constructor(
+        "statements.ddl_trigger.DropTriggerStatement",
+        lambda d: ddl_trigger.DropTriggerStatement(d, trigger=Trigger(d, "trg")),
+    )
+    register_special_constructor(
+        "statements.ddl_comment.CommentOnStatement",
+        lambda d: ddl_comment.CommentOnStatement(d, "table", _table_obj(d), comment="c"),
+    )
+
+    # -- views --------------------------------------------------------------
+    register_special_constructor(
+        "statements.ddl_view.DropViewStatement",
+        lambda d: ddl_view.DropViewStatement(d, View(d, "v")),
+    )
+    register_special_constructor(
+        "statements.ddl_view.CreateMaterializedViewStatement",
+        lambda d: ddl_view.CreateMaterializedViewStatement(
+            d, MaterializedView(d, "mv"), _one_column_query(d)
+        ),
+    )
+    register_special_constructor(
+        "statements.ddl_view.DropMaterializedViewStatement",
+        lambda d: ddl_view.DropMaterializedViewStatement(d, MaterializedView(d, "mv")),
+    )
+    register_special_constructor(
+        "statements.ddl_view.RefreshMaterializedViewStatement",
+        lambda d: ddl_view.RefreshMaterializedViewStatement(
+            d, MaterializedView(d, "mv")
+        ),
+    )
+
+    # -- DML ----------------------------------------------------------------
+    register_special_constructor(
+        "statements.dml.InsertStatement",
+        lambda d: dml.InsertStatement(
+            d, into=_table_obj(d), source=dml.ValuesSource(d, [[Literal(d, 1)]])
+        ),
+    )
+    register_special_constructor(
+        "statements.dml.DeleteStatement",
+        lambda d: dml.DeleteStatement(d, _table_obj(d)),
+    )
+    register_special_constructor(
+        "statements.dml.MergeStatement",
+        lambda d: dml.MergeStatement(
+            d,
+            target_table=_table_obj(d),
+            source=NamedRelationRef(d, Table(d, "src")),
+            on_condition=_column_predicate(d),
+            when_matched=[
+                MergeAction(
+                    d,
+                    MergeActionType.UPDATE,
+                    {"a": Literal(d, 1)},
+                    _column_predicate(d),
+                    "matched",
+                )
+            ],
+        ),
+    )
+    register_special_constructor(
+        "statements.dml.MergeAction",
+        lambda d: MergeAction(
+            d,
+            MergeActionType.UPDATE,
+            {"a": Literal(d, 1)},
+            _column_predicate(d),
+            "matched",
+        ),
+    )
+
+    # -- constraints and column pieces --------------------------------------
+    register_special_constructor(
+        "statements.ddl_table.ColumnConstraint",
+        lambda d: ColumnConstraint(d, branch=ColumnNotNullConstraint(d), name="c"),
+    )
+    register_special_constructor(
+        "statements.ddl_table.TableConstraint",
+        lambda d: TableConstraint(
+            d, branch=TablePrimaryKeyConstraint(d, ["a"]), name="c"
+        ),
+    )
+    register_special_constructor(
+        "statements.ddl_table.ForeignKeyConstraint",
+        lambda d: ForeignKeyConstraint(
+            d,
+            columns=["a"],
+            foreign_key_table=Table(d, "other"),
+            foreign_key_columns=["b"],
+            name="fk",
+        ),
+    )
+    register_special_constructor(
+        "statements.ddl_table.ReferencesClause",
+        lambda d: ReferencesClause(d, Table(d, "other"), ["b"]),
+    )
+    # The ALTER action renames (core settled them in the plain-JSON rewrite):
+    # ``AddColumn`` / ``AddIndex`` / ``AddTableConstraint`` became
+    # ``AddColumnAction`` / ``AddIndexAction`` / ``AddTableConstraintAction``,
+    # and a factory keyed by the old name is dead code that still reads as if
+    # it covered the class.
+    register_special_constructor(
+        "statements.ddl_alter.AddColumnAction",
+        lambda d: ddl_alter.AddColumnAction(d, column=_integer_column(d)),
+    )
+    register_special_constructor(
+        "statements.ddl_alter.AddIndexAction",
+        lambda d: ddl_alter.AddIndexAction(d, IndexDefinition(d, "i", ["a"])),
+    )
+    register_special_constructor(
+        "statements.ddl_alter.AddTableConstraintAction",
+        lambda d: ddl_alter.AddTableConstraintAction(
+            d,
+            TableConstraint(
+                d, branch=TablePrimaryKeyConstraint(d, ["a"]), name="c"
+            ),
+        ),
+    )
+
+    # -- CHECK branches: the condition is DDL, so it binds nothing ----------
+    # The introspective guess builds the condition from a literal, and the
+    # formatter refuses any bind parameter in a DDL position.  A
+    # column-to-column comparison is the condition a CHECK actually has.
+    register_special_constructor(
+        "statements.ddl_table.ColumnCheckConstraint",
+        lambda d: ddl_table.ColumnCheckConstraint(d, _column_predicate(d)),
+    )
+    register_special_constructor(
+        "statements.ddl_table.TableCheckConstraint",
+        lambda d: ddl_table.TableCheckConstraint(d, _column_predicate(d)),
+    )
+    # The generated column carries a GeneratedColumnType member in its
+    # params whatever the expression does -- the refusal for that is pinned
+    # in ARTIFACT_REFUSALS below; the expression here is what lets the
+    # render half of the row be exercised at all.
+    register_special_constructor(
+        "statements.ddl_table.ColumnGeneratedConstraint",
+        lambda d: ddl_table.ColumnGeneratedConstraint(d, _column_predicate(d)),
+    )
+
+    # -- string functions: the numeric slot is a literal number -------------
+    # The guess supplies a word for the count/position slot; the constructor
+    # checks the value only when it is a literal, and a word returned by the
+    # artifact arrives as a literal whose value is not comparable.  A number
+    # is what the position means.
+    register_special_constructor(
+        "functions.string.LeftFunction",
+        lambda d: LeftFunction(d, Column(d, "a"), Literal(d, 1)),
+    )
+    register_special_constructor(
+        "functions.string.RightFunction",
+        lambda d: RightFunction(d, Column(d, "a"), Literal(d, 1)),
+    )
+    register_special_constructor(
+        "functions.string.SubstringExpression",
+        lambda d: SubstringExpression(d, Column(d, "a"), Literal(d, 1), Literal(d, 2)),
+    )
+
+    # -- the extract family: field and source are both declared -------------
+    # ``_ExtractBase`` and the field-named spelling are new nodes; the guess
+    # supplies a word the field validation refuses.  ``YEAR`` names a real
+    # field, and the field-named spelling must agree with it.
+    register_special_constructor(
+        "datetime._ExtractBase",
+        lambda d: _ExtractBase(d, "YEAR", Column(d, "created_at")),
+    )
+    register_special_constructor(
+        "datetime.ExtractFieldExpression",
+        lambda d: ExtractFieldExpression(
+            d, "YEAR", Column(d, "created_at"), spelling="YEAR"
+        ),
+    )
+
+    # -- declared result annotations: the annotated node is a column --------
+    # The formatter delegates to the annotated node and reads its ``alias``;
+    # the guess supplies a Literal, which declares none.  A Column is the
+    # node these annotate.
+    for _declared_cls in (
+        _Annotation,
+        ArrayAnnotation,
+        BinaryAnnotation,
+        BooleanAnnotation,
+        IntegerAnnotation,
+        JSONAnnotation,
+        NumberAnnotation,
+        TemporalAnnotation,
+        TextAnnotation,
+        UUIDAnnotation,
+        XMLAnnotation,
+    ):
+        register_special_constructor(
+            f"declared.{_declared_cls.__name__}",
+            lambda d, _cls=_declared_cls: _cls(d, Column(d, "a")),
+        )
+
+    # -- expressions that need at least one member --------------------------
+    # -- predicates whose column slot is an expression ----------------------
+    # ``column`` is annotated ``Any`` -- it is genuinely either a column or a
+    # computed value -- so the generic guess supplies a bare string and the
+    # formatter calls ``.to_sql()`` on it. Both LIKE and ILIKE need the operand
+    # spelled as a node, and LIKE additionally carries its operator as a
+    # parameter, which the guess would fill with the operand.
+    register_special_constructor(
+        "predicates.ILikePredicate",
+        lambda d: ILikePredicate(d, Column(d, "a"), "%x%"),
+    )
+    # Firebird has no ILIKE (``-104 Token unknown - ILIKE``); the factory is
+    # still what builds the node, so the constructor table has to cover it and
+    # the round trip then classifies it as Firebird's own UnsupportedFeatureError.
+    register_special_constructor(
+        "predicates.LikePredicate",
+        lambda d: LikePredicate(d, LikeOperator.LIKE, Column(d, "a"), Literal(d, "%x%")),
+    )
+    # -- EXISTS: the subquery is a one-row SELECT, not a wrapped literal -----
+    # The guess wraps a Literal, and the subquery node renders its payload at
+    # construction time, storing the SQL and the bind tuple -- which the
+    # artifact reads back as an array, changing the rendered bind parameters.
+    # A one-row SELECT over the catalogue table every Firebird database has is
+    # the shape EXISTS actually takes, and it binds nothing.
+    register_special_constructor(
+        "advanced_functions.ExistsPredicate",
+        lambda d: ExistsPredicate(d, Subquery(d, "SELECT 1 FROM RDB$DATABASE")),
+    )
+
+    register_special_constructor(
+        "advanced_functions.CaseExpression",
+        lambda d: CaseExpression(
+            d,
+            cases=[(_column_predicate(d), Literal(d, 1))],
+            else_result=Literal(d, 0),
+        ),
+    )
+    register_special_constructor(
+        "advanced_functions.WindowSpecification",
+        lambda d: WindowSpecification(d, partition_by=["a"]),
+    )
+    register_special_constructor(
+        "advanced_functions.WindowDefinition",
+        lambda d: WindowDefinition(d, "w", WindowSpecification(d, partition_by=["a"])),
+    )
+    register_special_constructor(
+        "advanced_functions.WindowClause",
+        lambda d: WindowClause(
+            d, [WindowDefinition(d, "w", WindowSpecification(d, partition_by=["a"]))]
+        ),
+    )
+    # An empty options dict is refused by the formatter, so a time-travel clause
+    # needs an actual option.
+    register_special_constructor(
+        "datetime.TemporalOptionsExpression",
+        lambda d: TemporalOptionsExpression(d, {"as_of": "2020-01-01"}),
+    )
+
+    # -- property graphs ----------------------------------------------------
+    def node_table(d):
+        return NodeTable(d, "people")
+
+    def edge_table(d):
+        return EdgeTableObject(d, "knows")
+
+    def path_pattern(d):
+        return graph_mod.PathPattern(
+            d, graph_mod.GraphVertex(d, "n", node_table(d))
+        )
+
+    register_special_constructor(
+        "graph.GraphVertex", lambda d: graph_mod.GraphVertex(d, "n", node_table(d))
+    )
+    register_special_constructor(
+        "graph.GraphEdge", lambda d: graph_mod.GraphEdge(d, "e", edge_table(d))
+    )
+    register_special_constructor(
+        "graph.VertexTable",
+        lambda d: graph_mod.VertexTable(d, node_table(d), key_columns=["id"]),
+    )
+    register_special_constructor(
+        "graph.EdgeTable",
+        lambda d: graph_mod.EdgeTable(d, edge_table(d), ["src"], ["dst"]),
+    )
+    register_special_constructor(
+        "graph.QuantifiedPath",
+        lambda d: graph_mod.QuantifiedPath(
+            d, graph_mod.GraphEdge(d, "e", edge_table(d)), min_repeats=1, max_repeats=3
+        ),
+    )
+    register_special_constructor("graph.PathPattern", path_pattern)
+    register_special_constructor(
+        "graph.MatchClause", lambda d: graph_mod.MatchClause(d, path_pattern(d))
+    )
+    register_special_constructor(
+        "graph.CreatePropertyGraphStatement",
+        lambda d: graph_mod.CreatePropertyGraphStatement(
+            d, graph=PropertyGraph(d, "g"),
+            vertex_tables=[graph_mod.VertexTable(d, node_table(d))],
+        ),
+    )
+    # The formatter accepts "add"/"drop" against "vertex tables"/"edge tables"/
+    # "tables"; anything else is refused.
+    register_special_constructor(
+        "graph.AlterPropertyGraphStatement",
+        lambda d: graph_mod.AlterPropertyGraphStatement(
+            d,
+            graph=PropertyGraph(d, "g"),
+            action="add",
+            target="vertex tables",
+            vertex_tables=[graph_mod.VertexTable(d, node_table(d))],
+        ),
+    )
+    register_special_constructor(
+        "graph.DropPropertyGraphStatement",
+        lambda d: graph_mod.DropPropertyGraphStatement(d, graph=PropertyGraph(d, "g")),
+    )
+
+    # The three XML classes are deliberately NOT registered. Firebird declares no
+    # `format_xml*` method, so a registration would buy no render assertion
+    # here, and the generic guess now builds each of them from an empty item
+    # list, which is the same thing a registration would have to invent. They are
+    # pinned in LEGITIMATE_NON_RENDERS instead, which says why they cannot
+    # render.
+
+    # -- Firebird's own ------------------------------------------------------
+    # ``data_type`` carries no annotation, so the guess supplies nothing bound
+    # and the column cannot render a type. Firebird columns are its own class
+    # rather than the core ColumnDefinition, and its ``computed_by`` /
+    # ``character_set`` / ``collation`` keyword-only slots are Firebird-only.
+    register_special_constructor(
+        "impl.firebird.expression.column.FirebirdColumnDefinition",
+        lambda d: FirebirdColumnDefinition(d, "col", IntegerType(d)),
+    )
+    # ALTER DOMAIN needs the actions list; the guess supplies nothing, and the
+    # class refuses an action-less ALTER.
+    register_special_constructor(
+        "impl.firebird.expression.ddl.domain.FirebirdAlterDomainExpression",
+        lambda d: FirebirdAlterDomainExpression(
+            d, Domain(d, "dom"), actions=[RenameDomainAction(d, "other")]
+        ),
+    )
+    # A SET DOMAIN TYPE action with no data type has nothing to render.
+    register_special_constructor(
+        "impl.firebird.expression.ddl.domain.FirebirdSetDomainDataTypeAction",
+        lambda d: FirebirdSetDomainDataTypeAction(d, IntegerType(d)),
+    )
+    # The blob literal holds raw bytes and renders them as a hex literal; the
+    # guess supplies an int.
+    register_special_constructor(
+        "impl.firebird.expression.blob.BlobLiteralExpression",
+        lambda d: BlobLiteralExpression(d, b"\x01\x02"),
+    )
+    # COLLATE names a collation Firebird actually declares; the guess's "x" is
+    # not one and is refused by name. Firebird's whitelist is UNICODE /
+    # UNICODE_CI / UNICODE_CI_AI.
+    register_special_constructor(
+        "collation.CollateFunction",
+        lambda d: CollateFunction(d, Column(d, "a"), "UNICODE_CI"),
+    )
+    # ``ComparisonPredicate.op`` is typed ``Any`` and normalised in the
+    # constructor (core 9659c483): a member, a wire word or a SQL character all
+    # resolve, and anything else raises rather than passing through. The
+    # heuristic's "x" is none of those, so the guess no longer builds this
+    # node. Naming a real operation is the fix rather than a pin -- the class
+    # is constructible and renders, so it belongs in the matrix, not in
+    # UNCONSTRUCTIBLE.
+    register_special_constructor(
+        "predicates.ComparisonPredicate",
+        lambda d: ComparisonPredicate(d, "gte", Column(d, "a"), Literal(d, 1)),
+    )
+    # This backend's own CREATE PROCEDURE / CREATE FUNCTION carry a PSQL ``mode``
+    # and render through the same formatter names as the core statements.
+    register_special_constructor(
+        "impl.firebird.expression.ddl.routine.FirebirdCreateProcedureStatement",
+        lambda d: FirebirdCreateProcedureStatement(
+            d, "proc", params=[("a", "INTEGER")], body="SELECT 1"
+        ),
+    )
+    register_special_constructor(
+        "impl.firebird.expression.ddl.routine.FirebirdCreateFunctionStatement",
+        lambda d: FirebirdCreateFunctionStatement(
+            d, "fn", params=[("a", "INTEGER")], returns="INTEGER", body="SELECT 1"
+        ),
+    )
+    # This backend's own CREATE SEQUENCE carries the legacy GENERATOR spelling
+    # as a declared field; the standard spelling renders, and the legacy one
+    # is exercised in the dialect-branch tests with a live field read.
+    register_special_constructor(
+        "impl.firebird.expression.ddl.sequence.FirebirdCreateSequenceStatement",
+        lambda d: FirebirdCreateSequenceStatement(d, Sequence(d, "s")),
+    )
+    # COMMENT ON names one of the object kinds this backend declares; the
+    # guess's word for ``object_type`` is refused by the normalization the
+    # artifact round-trip needs, so the factory names a real kind.
+    register_special_constructor(
+        "impl.firebird.expression.comment.FirebirdCommentOnStatement",
+        lambda d: FirebirdCommentOnStatement(
+            d, FirebirdCommentObjectType.TABLE, "t", comment="c"
+        ),
+    )
+
+    # -- core CUSTOM needs the type name its ``raw`` slot exists to carry -----
+    # ``raw`` defaults to the empty string, the filler skips it, and the class
+    # refuses that empty name while constructing -- so it builds fine once it
+    # is handed a real one, and there is nothing to skip.  The slot is
+    # keyword-only now, so the name arrives by keyword.
+    register_special_constructor(
+        "types.custom.CustomType", lambda d: CustomType(d, raw="VARCHAR(10)")
+    )
+
+
+register_specials()
+
+
+# ---------------------------------------------------------------------------
+# Lists that cannot grow or shrink silently
+# ---------------------------------------------------------------------------
+
+#: Classes the generic introspective constructor cannot build, each with the
+#: reason it cannot be built.
+#:
+#: ``test_unconstructible_list_is_exact`` pins this mapping in both directions, so
+#: a class that gains a constructor fails CI until its entry is removed, and a
+#: class that starts failing to build fails CI too. Nothing here is a ceiling:
+#: every entry is a named class with a named reason, and there is no test that
+#: passes when the list is *at most* some number.
+UNCONSTRUCTIBLE = {
+    # -- core: keyword-only parameters the introspective constructor skips ----
+    # `name` and `constraint_type` sit behind defaulted positionals and are
+    # keyword-only, so the constructor skips them and the class refuses an
+    # incomplete action.  (Same shape the classes had before the plain-JSON
+    # rewrite settled the ``*Action`` suffix on their names.)
+    "rhosocial.activerecord.backend.expression.statements.ddl_alter.AlterConstraintAction":
+        "`name` and `constraint_type` are keyword-only behind defaulted positionals.",
+    # Widens a SQLPredicate into a DomainCheckConstraint and needs one; the guess
+    # supplies a bare comparison whose literal would have to render as a bind
+    # parameter, which DDL cannot carry.
+    "rhosocial.activerecord.backend.expression.statements.ddl_domain.AddDomainCheckAction":
+        "needs a SQLPredicate that renders without bind parameters.",
+    # XMLTABLE and the three XML constructors below used to be pinned here. None
+    # of the four had a construction gap: each takes its item list as
+    # `Sequence[...]`, and the introspective guess read the annotation's own
+    # __name__ -- "Sequence" -- matched that against the Table/View/Sequence
+    # relation pattern, and handed the parameter a catalogue Sequence object
+    # instead of a list. The guess now decides a parameterised alias before
+    # testing for a relation name, so all four build and move to
+    # LEGITIMATE_NON_RENDERS -- against the `format_xml*` methods Firebird
+    # declares no name for, which was the second half of each old reason and is
+    # still the reason none of them can render.
+
+    # UUIDCastFunction refuses in __init__, not in to_sql(). Firebird has no
+    # cast from text to a UUID, so the refusal is the same whatever the
+    # argument, and no registered constructor can hand it something that
+    # changes the answer.
+    "rhosocial.activerecord.backend.expression.uuid.UUIDCastFunction":
+        "refuses in __init__ -- Firebird has no cast from text to a UUID.",
+    # The nil/max constant and the generation node refuse the same way, and for
+    # the same reason: Firebird spells no UUID SQL, so each says so from
+    # __init__ whatever it is handed. Measured with valid arguments -- an
+    # invalid ``which`` raises ValueError first and would have hidden this.
+    "rhosocial.activerecord.backend.expression.uuid.UUIDConstantExpression":
+        "refuses in __init__ -- Firebird spells no UUID constants.",
+    "rhosocial.activerecord.backend.expression.uuid.UUIDGenerationExpression":
+        "refuses in __init__ -- Firebird has no server-side UUID generator.",
+}
+
+
+#: Classes that construct but cannot render, for a reason belonging to their own
+#: tree rather than to a defect. Each entry pins the exception type and a message
+#: fragment, so a class that starts failing for a *different* reason fails here.
+_NO_FORMATTER = "does not declare its dialect formatting method name"
+#: The *dispatch* failure -- ``format_method`` named a method the dialect does not
+#: define, so ``to_sql()`` never called anything. Core reported that as
+#: ``AttributeError`` and now reports it as ``UnsupportedFeatureError``, which is
+#: the type a dialect uses when it *knows* a statement and refuses it. The two are
+#: the same type now, so the fragment is what separates them: this is the one
+#: phrase only the dispatch's suggestion contains, offering to mix in a mixin.
+#: A class that stopped being a dispatch failure and became a genuine refusal
+#: would raise the same type and fail on the fragment instead.
+_NO_DIALECT_METHOD = "mix in the mixin that provides it"
+
+#: Firebird's COMMENT ON targets a set of things the framework's catalogue has no
+#: kind for, so they remain plain strings and there is no object to build. Listed
+#: in the test that asserts the dispatch table, not here, because these classes
+#: are constructible -- it is their *target* that is a string.
+LEGITIMATE_NON_RENDERS = {
+    # ---- core operational families this dialect does not answer ----
+    #  Firebird keeps no per-index use counter, no dependency catalogue and no
+#  per-object DDL retrieval; its statistics are size-oriented. The probes answer
+#  False.
+    "rhosocial.activerecord.backend.expression.introspection.RuntimeMetricsQueryStatement": (
+        ProtocolNotImplementedError, 'does not implement ',
+    ),
+    "rhosocial.activerecord.backend.expression.introspection.IndexUsageStatsQueryStatement": (
+        ProtocolNotImplementedError, 'does not implement ',
+    ),
+    "rhosocial.activerecord.backend.expression.introspection.ObjectDependencyQueryStatement": (
+        ProtocolNotImplementedError, 'does not implement ',
+    ),
+    "rhosocial.activerecord.backend.expression.introspection.DDLStatementQueryStatement": (
+        ProtocolNotImplementedError, 'does not implement ',
+    ),
+        # ---- core introspection families this dialect does not answer ----
+    #  Firebird keeps no per-index use counter and no per-table access summary; its statistics are size-oriented. The
+    # probes answer False, and these classes stay a declared gap until the engine gains such a counter.
+    "rhosocial.activerecord.backend.expression.introspection.UnusedIndexesQueryStatement": (
+        ProtocolNotImplementedError, 'does not implement ',
+    ),
+    "rhosocial.activerecord.backend.expression.introspection.TableUsageStatsQueryStatement": (
+        ProtocolNotImplementedError, 'does not implement ',
+    ),
+
+# ---- bases that name an expression category, not a renderable thing ----
+    # Each deliberately declares no `format_method`, so `to_sql()` reports there
+    # is nothing to dispatch. They are not `inspect.isabstract` -- they are
+    # concrete enough to construct -- so the collector keeps them.
+    "rhosocial.activerecord.backend.expression.bases.SQLPredicate": (
+        NotImplementedError, _NO_FORMATTER,
+    ),
+    "rhosocial.activerecord.backend.expression.bases.SQLValue": (
+        NotImplementedError, _NO_FORMATTER,
+    ),
+    "rhosocial.activerecord.backend.expression.datetime._TemporalValue": (
+        NotImplementedError, _NO_FORMATTER,
+    ),
+    "rhosocial.activerecord.backend.expression.introspection.IntrospectionExpression": (
+        NotImplementedError, _NO_FORMATTER,
+    ),
+    "rhosocial.activerecord.backend.expression.statements.ddl_alter.AlterTableAction": (
+        NotImplementedError, _NO_FORMATTER,
+    ),
+    # The two constraint-branch roots (S3). Each alternative overrides
+    # ``format_method``; the roots name only what every branch shares, so there
+    # is nothing to dispatch.
+    "rhosocial.activerecord.backend.expression.statements.ddl_table.ColumnClause": (
+        NotImplementedError, _NO_FORMATTER,
+    ),
+    "rhosocial.activerecord.backend.expression.statements.ddl_table."
+    "ColumnConstraintBranch": (
+        NotImplementedError, _NO_FORMATTER,
+    ),
+    "rhosocial.activerecord.backend.expression.statements.ddl_table."
+    "TableConstraintBranch": (
+        NotImplementedError, _NO_FORMATTER,
+    ),
+    "rhosocial.activerecord.backend.expression.statements.dml.InsertDataSource": (
+        NotImplementedError, _NO_FORMATTER,
+    ),
+    "rhosocial.activerecord.backend.expression.transaction.TransactionStatement": (
+        NotImplementedError, _NO_FORMATTER,
+    ),
+    # The roots of the object tree. Each concrete object overrides `format_method`
+    # with its own `format_*_object`; the base names only what every catalogue
+    # object has in common.
+    "rhosocial.activerecord.backend.expression.objects.base.SchemaObject": (
+        NotImplementedError, _NO_FORMATTER,
+    ),
+    "rhosocial.activerecord.backend.expression.objects.relation.RelationObject": (
+        NotImplementedError, _NO_FORMATTER,
+    ),
+    "rhosocial.activerecord.backend.expression.objects.routine.RoutineObject": (
+        NotImplementedError, _NO_FORMATTER,
+    ),
+    "rhosocial.activerecord.backend.expression.objects.type_.TypeObject": (
+        NotImplementedError, _NO_FORMATTER,
+    ),
+
+    # ---- roots whose incompleteness is structural -------------------------
+    # The root of the row-source tree. No concrete source renders through
+    # `format_table_source`; each overrides `format_method`. The dispatch fails
+    # before any formatter runs, so UnsupportedFeatureError, not AttributeError.
+    "rhosocial.activerecord.backend.expression.sources.base.TableSource": (
+        UnsupportedFeatureError, _NO_DIALECT_METHOD,
+    ),
+    # The root of the type tree. Every concrete type declares its own generic
+    # `name`, which is what `format_data_type` dispatches on; the root declares
+    # none. TypeError, not UnsupportedFeatureError, because the class is
+    # incomplete rather than the dialect being unable. The message now names
+    # the name it dispatched on and the formatter it looked for: core moved a
+    # concrete type's name validation to class-definition time
+    # (``DataType.__init_subclass__``), so the root's own ``None`` reaches the
+    # dispatch and is reported as the unspelled generic type it is.
+    "rhosocial.activerecord.backend.expression.types._base.DataType": (
+        TypeError, "does not support the generic type",
+    ),
+
+    # ---- object kinds Firebird does not have ------------------------------
+    # Firebird declares no materialized view, foreign table, synonym or property
+    # graph, and `format_alter_database_statement` is not among its formatters,
+    # so a statement holding one is refused at dispatch rather than silently
+    # rendered. The dialect's own comment on the class bases says exactly this.
+    # The two type roots that keep an AttributeError further down are the
+    # formatter-name *collisions*, which is a different thing: there the dispatch
+    # finds a formatter and the formatter trips over a field the core class does
+    # not carry.
+    "rhosocial.activerecord.backend.expression.objects.graph.PropertyGraph": (
+        UnsupportedFeatureError, _NO_DIALECT_METHOD,
+    ),
+    "rhosocial.activerecord.backend.expression.objects.relation.ForeignTable": (
+        UnsupportedFeatureError, _NO_DIALECT_METHOD,
+    ),
+    "rhosocial.activerecord.backend.expression.objects.relation.MaterializedView": (
+        UnsupportedFeatureError, _NO_DIALECT_METHOD,
+    ),
+    "rhosocial.activerecord.backend.expression.objects.synonym.Synonym": (
+        UnsupportedFeatureError, _NO_DIALECT_METHOD,
+    ),
+    "rhosocial.activerecord.backend.expression.graph.AlterPropertyGraphStatement": (
+        UnsupportedFeatureError, _NO_DIALECT_METHOD,
+    ),
+    "rhosocial.activerecord.backend.expression.graph.CreatePropertyGraphStatement": (
+        UnsupportedFeatureError, _NO_DIALECT_METHOD,
+    ),
+    "rhosocial.activerecord.backend.expression.graph.DropPropertyGraphStatement": (
+        UnsupportedFeatureError, _NO_DIALECT_METHOD,
+    ),
+    "rhosocial.activerecord.backend.expression.graph.ColumnsClause": (
+        UnsupportedFeatureError, _NO_DIALECT_METHOD,
+    ),
+    "rhosocial.activerecord.backend.expression.graph.TablePropertiesClause": (
+        UnsupportedFeatureError, _NO_DIALECT_METHOD,
+    ),
+    # The definition node the graph module owns is EdgeTableDefinition now
+    # (one name, two contracts, split in the every-node-its-own-class wave):
+    # the object that remains called EdgeTable lives in objects.relation and
+    # renders through the Table formatter, so it is not pinned here.
+    "rhosocial.activerecord.backend.expression.graph.VertexTable": (
+        UnsupportedFeatureError, _NO_DIALECT_METHOD,
+    ),
+    "rhosocial.activerecord.backend.expression.graph.GraphTableExpression": (
+        UnsupportedFeatureError, _NO_DIALECT_METHOD,
+    ),
+    "rhosocial.activerecord.backend.expression.pivot.Pivot": (
+        UnsupportedFeatureError, _NO_DIALECT_METHOD,
+    ),
+    "rhosocial.activerecord.backend.expression.pivot.Unpivot": (
+        UnsupportedFeatureError, _NO_DIALECT_METHOD,
+    ),
+    # Firebird has no ALTER DATABASE: the two database statements it declares are
+    # CREATE and DROP, which this backend overrides with its own operational
+    # option set.
+    "rhosocial.activerecord.backend.expression.statements.ddl_database."
+    "AlterDatabaseStatement": (
+        UnsupportedFeatureError, _NO_DIALECT_METHOD,
+    ),
+
+    # ---- a generic type the Firebird type layer does not spell ------------
+    # `FirebirdTypeSupportMixin` declares no formatter for these eight generic
+    # names. An unsupported *type* is a dialect gap and is reported as one, which
+    # is why these are TypeError and not UnsupportedFeatureError.
+    "rhosocial.activerecord.backend.expression.types.array.ArrayType": (
+        TypeError, "does not support the generic type 'array'",
+    ),
+    "rhosocial.activerecord.backend.expression.types.datetime_.IntervalType": (
+        TypeError, "does not support the generic type 'interval'",
+    ),
+    # ENUM is MySQL/MariaDB native; Firebird's nearest form is a CHECK over a
+    # text column, so the generic name dispatches to nothing and the refusal
+    # says what the backend would use instead.
+    "rhosocial.activerecord.backend.expression.types.enum_.EnumType": (
+        TypeError, "does not support the generic type 'enum'",
+    ),
+    # TIME WITH TIME ZONE and TIMESTAMP WITH TIME ZONE exist in Firebird, but
+    # only under their own classes; the generic names dispatch to nothing.
+    "rhosocial.activerecord.backend.expression.types.datetime_.TimeTzType": (
+        TypeError, "does not support the generic type 'timetz'",
+    ),
+    "rhosocial.activerecord.backend.expression.types.datetime_.TimestampTzType": (
+        TypeError, "does not support the generic type 'timestamptz'",
+    ),
+    "rhosocial.activerecord.backend.expression.types.json_.JsonType": (
+        TypeError, "does not support the generic type 'json'",
+    ),
+    "rhosocial.activerecord.backend.expression.types.json_.JsonBType": (
+        TypeError, "does not support the generic type 'jsonb'",
+    ),
+    "rhosocial.activerecord.backend.expression.types.xml_.XmlType": (
+        TypeError, "does not support the generic type 'xml'",
+    ),
+
+    # ---- type DDL: Firebird has no user-defined types ---------------------
+    # Firebird's nearest equivalent is a DOMAIN, so `supports_create_type()` is
+    # False and every CREATE TYPE / ALTER TYPE / DROP TYPE reports
+    # UnsupportedFeatureError. That is the ordinary "this dialect lacks the
+    # feature" branch, which needs no pin: the classifier accepts
+    # UnsupportedFeatureError for any class it does not name.
+    #
+    # Note that this branch and a missing formatter now raise the *same* type,
+    # which is why the entries above carry a fragment. They are distinguished by
+    # message, not by class.
+
+    # ---- a formatter name shared by two expression shapes ----------------
+    #
+    # Three pairs, each one formatter name reached by two incompatible classes.
+    # This backend declares its own CREATE DATABASE / CREATE FUNCTION /
+    # COMMENT ON expression classes because Firebird's operational DDL has
+    # options the core statements do not carry (PAGE_SIZE, SQL SECURITY, PSQL
+    # ``mode``, and a comment target that is still a string). Their
+    # ``format_method`` values are the same strings the core statements use, so
+    # ``to_sql()`` dispatches a core statement to a formatter written for the
+    # Firebird subclass and the subclass's fields are absent from the base.
+    #
+    # The reads on the Firebird side are each self-consistent --
+    # ``FirebirdCreateDatabaseStatement`` declares ``file_path``,
+    # ``FirebirdCreateFunctionStatement`` declares ``mode``, and
+    # ``FirebirdCommentOnStatement`` declares ``object_name`` -- so this is a
+    # collision, not a mis-read. It predates this matrix. Each entry pins the
+    # exact missing attribute, so it stops matching the moment either shape
+    # changes and whoever fixes the collision finds the pin failing.
+    #
+    # These three keep ``AttributeError``, and they are why the pins in this file
+    # cannot be re-typed in bulk. Core's dispatch now inspects what a formatter
+    # *returns*, and that inspection sits after the call. Each colliding read is
+    # inside the formatter body -- ``format_create_database_statement`` reading
+    # ``expr.file_path``, ``format_create_function_statement`` reading
+    # ``expr.mode``, ``format_comment_on_statement`` reading ``expr.object_name``
+    # -- so the formatter never returns and the shape check is never reached.
+    # The symptom is unmoved, which is what says the cause is still the collision
+    # and not something new; had it become a ``TypeError`` from the shape check,
+    # the diagnosis would have had to be rewritten.
+    "rhosocial.activerecord.backend.expression.statements.ddl_database."
+    "CreateDatabaseStatement": (
+        AttributeError, "has no attribute 'file_path'",
+    ),
+    "rhosocial.activerecord.backend.expression.statements.ddl_function."
+    "CreateFunctionStatement": (
+        AttributeError, "has no attribute 'mode'",
+    ),
+    "rhosocial.activerecord.backend.expression.statements.ddl_comment."
+    "CommentOnStatement": (
+        AttributeError, "has no attribute 'object_name'",
+    ),
+    # The declared-result base.  It names ``format_declared_result`` like its
+    # ten concrete subclasses, but the ``alias`` that formatter reads rides on
+    # the value-type mixins the concrete classes mix in -- not on this base --
+    # so the base alone, which is concrete enough to construct, trips on the
+    # read.  The concrete annotations render and are not pinned.
+    "rhosocial.activerecord.backend.expression.declared._Annotation": (
+        AttributeError, "has no attribute 'alias'",
+    ),
+
+    # ---- SQL/XML: Firebird 4 has no XML query functions -------------------
+    # The dialect declares no `format_xml*_expression`, so each of these reports
+    # a missing formatter rather than emitting SQL the parser would reject.
+    #
+    # The four that take an item list are pinned here rather than registered
+    # above. They used to sit in UNCONSTRUCTIBLE instead, and that was a misread
+    # annotation rather than a gap in any of them: `columns`, `attributes` and
+    # `items` are annotated `Sequence[...]`, and the guess read the annotation's
+    # own `__name__` -- "Sequence" -- as a request for a catalogue `Sequence`.
+    # It now decides a parameterised alias first, so each builds, and the only
+    # thing left to say about it is the formatter Firebird does not have.
+    "rhosocial.activerecord.backend.expression.xml.XMLAggExpression": (
+        UnsupportedFeatureError, _NO_DIALECT_METHOD,
+    ),
+    "rhosocial.activerecord.backend.expression.xml.XMLAttributesExpression": (
+        UnsupportedFeatureError, _NO_DIALECT_METHOD,
+    ),
+    "rhosocial.activerecord.backend.expression.xml.XMLCommentExpression": (
+        UnsupportedFeatureError, _NO_DIALECT_METHOD,
+    ),
+    "rhosocial.activerecord.backend.expression.xml.XMLConcatExpression": (
+        UnsupportedFeatureError, _NO_DIALECT_METHOD,
+    ),
+    "rhosocial.activerecord.backend.expression.xml.XMLElementExpression": (
+        UnsupportedFeatureError, _NO_DIALECT_METHOD,
+    ),
+    "rhosocial.activerecord.backend.expression.xml.XMLExistsPredicate": (
+        UnsupportedFeatureError, _NO_DIALECT_METHOD,
+    ),
+    "rhosocial.activerecord.backend.expression.xml.XMLForestExpression": (
+        UnsupportedFeatureError, _NO_DIALECT_METHOD,
+    ),
+    "rhosocial.activerecord.backend.expression.xml.XMLPIExpression": (
+        UnsupportedFeatureError, _NO_DIALECT_METHOD,
+    ),
+    "rhosocial.activerecord.backend.expression.xml.XMLParseExpression": (
+        UnsupportedFeatureError, _NO_DIALECT_METHOD,
+    ),
+    # S1-c's ``PassingClause`` renders through the public
+    # ``format_passing_clause``, which this dialect does not declare -- same
+    # reason as the ``format_xml*`` family above, and the same SQL/XML absence.
+    "rhosocial.activerecord.backend.expression.xml.PassingClause": (
+        UnsupportedFeatureError, _NO_DIALECT_METHOD,
+    ),
+    "rhosocial.activerecord.backend.expression.xml.XMLQueryExpression": (
+        UnsupportedFeatureError, _NO_DIALECT_METHOD,
+    ),
+    "rhosocial.activerecord.backend.expression.xml.XMLRootExpression": (
+        UnsupportedFeatureError, _NO_DIALECT_METHOD,
+    ),
+    "rhosocial.activerecord.backend.expression.xml.XMLSerializeExpression": (
+        UnsupportedFeatureError, _NO_DIALECT_METHOD,
+    ),
+    "rhosocial.activerecord.backend.expression.xml.XMLTableExpression": (
+        UnsupportedFeatureError, _NO_DIALECT_METHOD,
+    ),
+}
+
+
+# ---------------------------------------------------------------------------
+# The dispatch gap: a missing formatter is a decision, not an omission
+# ---------------------------------------------------------------------------
+#
+# ``to_sql()`` reports a dialect that names no formatter for a class through
+# the same ``UnsupportedFeatureError`` a capability probe uses, so the type
+# alone cannot say "this backend never wired the feature in". The frame the
+# dispatch puts around the method name can, and it is the only place in the
+# tree that opens it -- see :func:`_dispatched_formatter`.
+
+#: The two ends of the frame ``to_sql()`` puts around a formatting method name
+#: in the ``feature_name`` of the ``UnsupportedFeatureError`` it raises for a
+#: dialect that has no such formatter.
+_DISPATCH_FEATURE_PREFIX = "the '"
+_DISPATCH_FEATURE_SUFFIX = "' statement"
+
+
+def _dispatched_formatter(exc):
+    """The formatting method *exc* says the dialect does not have, or ``None``.
+
+    ``None`` means *exc* is not the dispatch reporting a missing formatter --
+    it is a probe inside a formatter that refused a feature, which is the
+    ``"unsupported"`` branch and needs no row anywhere.
+
+    Args:
+        exc: An :class:`UnsupportedFeatureError` raised out of ``to_sql()``.
+
+    Returns:
+        The method name out of the ``feature_name`` frame, or ``None`` when
+        *exc* came from a probe rather than from the dispatch.
+    """
+    feature = exc.feature_name
+    if not feature.startswith(_DISPATCH_FEATURE_PREFIX):
+        return None
+    if not feature.endswith(_DISPATCH_FEATURE_SUFFIX):
+        return None
+    method = feature[len(_DISPATCH_FEATURE_PREFIX) : len(feature) - len(_DISPATCH_FEATURE_SUFFIX)]
+    return method if method else None
+
+
+#: Formatters Firebird declares no implementation of, grouped by the feature
+#: that is absent, each group naming every method the matrix's classes need.
+#:
+#: A class needing one of these fails with ``UnsupportedFeatureError`` naming
+#: the method it wanted, and :func:`assert_sql_roundtrip_classified` asserts
+#: that method is a row here. :meth:`TestMatrixIntegrity.\
+#: test_unmodelled_formatter_list_is_exact` pins the table in both directions:
+#: a formatter that starts existing moves its classes out of the table and the
+#: pin fails until the entry goes, and a class that starts needing a method
+#: outside the table fails outright instead of passing as "unsupported".
+#:
+#: These are not defects: they are features Firebird does not have, which the
+#: shared renderer reports by naming the method it could not find.
+#: ``RepeatFunction`` is the one that made the accounting necessary:
+#: Firebird has no ``REPEAT`` function, the node dispatches to a formatter no
+#: base in this dialect provides, and before the table existed that refusal
+#: was allowed on its type alone.
+UNMODELLED_FORMATTERS = {
+    "SQL/PGQ property graphs (Firebird declares no property graph, so neither "
+    "the DDL nor the row source nor the graph object renders)": (
+        "format_alter_property_graph_statement",
+        "format_create_property_graph_statement",
+        "format_drop_property_graph_statement",
+        "format_graph_table_expression",
+        "format_graph_columns_clause",
+        "format_table_properties_clause",
+        "format_vertex_table",
+        # ``format_edge_table`` is gone from the table: the node that needed it
+        # was the graph-module half of the old EdgeTable name, now spelled
+        # EdgeTableDefinition -- and the object half renders as a Table.  What
+        # remains is the definition spelling, which a dialect without property
+        # graphs has no name for.
+        "format_edge_table_definition",
+        "format_property_graph_object",
+    ),
+    "the object kinds Firebird does not have (no materialized view, no "
+    "foreign table, no synonym)": (
+        "format_materialized_view_object",
+        "format_foreign_table_object",
+        "format_synonym_object",
+    ),
+    "ALTER DATABASE (the two database statements Firebird declares are CREATE "
+    "and DROP, which this backend overrides with its own operational option "
+    "set)": ("format_alter_database_statement",),
+    "PIVOT / UNPIVOT (Firebird has no PIVOT keyword, and no formatter for "
+    "either)": (
+        "format_pivot",
+        "format_unpivot",
+    ),
+    "REPEAT (Firebird has no REPEAT function; the node exists for the "
+    "backends that spell it natively, and this dialect declares no formatter "
+    "to emulate it)": ("format_repeat_expression",),
+    "the TableSource root (every concrete row source overrides its formatter; "
+    "the root carries nothing but an alias and is never rendered)": ("format_table_source",),
+    "SQL/XML (Firebird 4 has no XML query functions, so the dialect declares "
+    "no ``format_xml*`` method at all; the S1-c ``PassingClause`` rides the "
+    "same absence through its own ``format_passing_clause``)": (
+        "format_xml_agg_expression",
+        "format_xml_attributes_expression",
+        "format_xml_comment_expression",
+        "format_xml_concat_expression",
+        "format_xml_element_expression",
+        "format_xmlexists_predicate",
+        "format_xml_forest_expression",
+        "format_xmlpi_expression",
+        "format_xml_parse_expression",
+        "format_xml_query_expression",
+        "format_xml_root_expression",
+        "format_xml_serialize_expression",
+        "format_xml_table_expression",
+        "format_passing_clause",
+    ),
+}
+
+
+def _unmodelled_methods():
+    """The flat set of formatter names in :data:`UNMODELLED_FORMATTERS`."""
+    return {method for methods in UNMODELLED_FORMATTERS.values() for method in methods}
+
+
+# ---------------------------------------------------------------------------
+# Channels an artifact of one class cannot survive, pinned per channel
+# ---------------------------------------------------------------------------
+#
+# The plain-JSON rewrite (core 679d9817) removed every marker a value could
+# hide behind, and two kinds of parameter stopped travelling with it:
+#
+# * a dataclass (or dataclass-like options object) has no place in an artifact
+#   at all -- *encoding* refuses by name, ``TypeError`` naming the type.
+# * an enum parameter the writer can carry but the node cannot read back:
+#   either the constructor refuses the word its own enum writes
+#   (``TypeError``), or it stores the word, the parameters still compare clean
+#   because Firebird's comparison reads a member and its word as equal, and the
+#   restored node then cannot render (``AttributeError``).
+#
+# A third shape used to be recorded here and is gone: a ``(str, Enum)`` whose
+# ``__str__`` was still ``Enum.__str__`` spelled ``ClassName.MEMBER`` into the
+# XML channel, which a validating constructor refused (``ValueError``) or a
+# permissive one stored (``AssertionError`` in the comparison).  Core gave those
+# nine families ``__str__ = str.__str__`` as the org's spelling rule already
+# asked, so the XML channel writes the word and every one of those classes
+# round-trips.  The rows were deleted rather than narrowed.
+#
+# A plain ``Enum`` member was the other shape: it is a host object with no wire
+# form, so the value vocabulary refused it by name.  Core made the twelve
+# SQL-word enums str subclasses, so they travel as their words; the three
+# classes that carried one (``ColumnGeneratedConstraint``,
+# ``ForeignKeyConstraint``, ``CreateTriggerStatement``) lost their
+# all-channel rows.
+#
+# Each entry names the class, the channels that refuse, the exact exception
+# type and a message fragment, and the reason.  A channel the mapping does not
+# name must round-trip clean -- which here means the parameters compare equal
+# *and* the restored node renders what the original rendered, because a channel
+# that loses the type and still passes the comparison can still lose the
+# render.  ``test_unreadable_set_is_exact`` pins the table in both directions,
+# so a core fix that lets a class travel again fails here until the row goes,
+# and a class that starts refusing without a row fails too.
+
+
+def _every_channel(pair):
+    """``(type, fragment)`` as the pin for all three channels."""
+    return {"dict": pair, "json": pair, "xml": pair}
+
+
+#: The fragment the encode layer raises for a parameter the value vocabulary
+#: cannot write.  Each pin below prepends the type it names.
+_UNWRITABLE_VALUE = "is not one of the value kinds"
+
+ARTIFACT_REFUSALS = {
+    # -- a plain-Enum param the value vocabulary cannot write ---------------
+    # (This block used to hold ``ReferentialAction`` / ``GeneratedColumnType``
+    # rows too. Core made those enums str subclasses, so the writer carries
+    # them and the classes round-trip; the rows are gone.)
+    "rhosocial.activerecord.backend.expression.statements.ddl_view."
+    "CreateViewStatement": (
+        _every_channel((TypeError, "ViewOptions " + _UNWRITABLE_VALUE)),
+        "``options or ViewOptions()`` means every instance carries an options "
+        "object, and a dataclass has no place in an artifact at all.",
+    ),
+    "rhosocial.activerecord.backend.expression.graph.GraphTableExpression": (
+        _every_channel((TypeError, "GraphColumn " + _UNWRITABLE_VALUE)),
+        "its COLUMNS clause is built from GraphColumn value objects, which are "
+        "neither expressions nor value kinds.",
+    ),
+    # -- a constructor that refuses the word its own enum writes -----------
+    "rhosocial.activerecord.backend.expression.statements.ddl_table."
+    "CreateTableCloneStatement": (
+        {"json": (TypeError, "mode must be a CreateTableCloneMode, got str"),
+         "xml": (TypeError, "mode must be a CreateTableCloneMode, got str")},
+        "the mode travels as its word (the enum is a string enum with the "
+        "plain ``__str__``), and the constructor refuses the word instead of "
+        "reading the member back: the write and the read disagree about what "
+        "the enum's own spelling is.  The dict channel hands the member "
+        "through untouched, so only the two text channels refuse.",
+    ),
+    # -- a constructor that stores the word its own enum writes -------------
+    # ``CreateTriggerStatement`` keeps ``timing`` as the plain word, so the
+    # parameters compare clean (Firebird's harness reads a str enum member and
+    # the word it carries as equal) and the loss shows one layer later:
+    # ``format_create_trigger_statement`` reads ``.value`` off a str.  The
+    # dict channel passes the member through, which is why only the two text
+    # channels are pinned.
+    #
+    # The whole ``(str, Enum)``-without-``__str__`` block that used to sit here
+    # -- the nine datetime/interval classes and the two SQL/XML ones -- is gone:
+    # core gave those families ``__str__ = str.__str__``, so the XML channel
+    # spells "year" / "DOCUMENT" and both the normaliser and the parameter
+    # comparison accept it.
+    "rhosocial.activerecord.backend.expression.statements.ddl_trigger."
+    "CreateTriggerStatement": (
+        {"json": (AttributeError, "'str' object has no attribute 'value'"),
+         "xml": (AttributeError, "'str' object has no attribute 'value'")},
+        "``timing`` is a TriggerTiming member; the JSON and XML channels write "
+        "the word and the constructor stores it, so the rebuilt node's "
+        "formatter reads ``.value`` off a str.",
+    ),
+}
+
+
+def _refusal_channels(fqn):
+    """The channel pins for *fqn*, or ``{}`` when its artifact travels clean."""
+    pinned = ARTIFACT_REFUSALS.get(fqn)
+    return pinned[0] if pinned else {}
+
+
+# ---------------------------------------------------------------------------
+# The local SQL assertion: classify the outcome instead of swallowing it
+# ---------------------------------------------------------------------------
+
+
+#: One render-and-compare channel: ``(label, (encode, decode))``.
+_CHANNELS = (
+    ("dict", (serialize, deserialize)),
+    ("json", (serialize_json, deserialize_json)),
+    ("xml", (serialize_xml, deserialize_xml)),
+)
+
+
+def assert_sql_roundtrip_classified(fqn, instance, dialect):
+    """Assert an expression's SQL survives the round-trip, or say precisely why not.
+
+    Four outcomes, each asserted:
+
+    * **renders** -- all three encodings must restore byte-identical SQL *and*
+      byte-identical bind parameters.
+    * a member of :data:`LEGITIMATE_NON_RENDERS` -- unrenderable by design,
+      asserted as its exact type *and* message fragment.
+    * ``UnsupportedFeatureError`` from a class *not* named in the dict -- Firebird
+      does not model the feature. Asserted as exactly that type, so a subclass
+      raised for an unrelated reason is still visible rather than passing.
+    * ``UnsupportedFeatureError`` naming a formatting method, for a class not
+      named in the dict -- the dispatch found nothing, which is a wiring fact
+      about this backend rather than a capability answer. The method must be
+      in :data:`UNMODELLED_FORMATTERS`; the table entry is the reason.
+    * **anything else** -- a failure naming the class and the exception.
+
+    The dict is consulted before the ``UnsupportedFeatureError`` branch, not
+    after. Core reports a missing formatter as ``UnsupportedFeatureError`` too, so
+    with the ``except`` clause in front a pinned dispatch-failure entry would
+    never be looked up: its type and message would go unasserted on this path and
+    the table would have stopped saying which of the two causes each class has.
+    Checking the pin first keeps both halves of it load-bearing.
+
+    Returns the branch taken, so a caller can report the classification
+    distribution.
+
+    Raises:
+        AssertionError: On a round-trip mismatch, on an unexpected exception
+            type, or when a class's rendering outcome changed.
+    """
+    try:
+        expected_sql, expected_params = instance.to_sql()
+    except Exception as exc:
+        if fqn in LEGITIMATE_NON_RENDERS:
+            expected_type, fragment = LEGITIMATE_NON_RENDERS[fqn]
+            assert type(exc) is expected_type, (
+                f"{fqn}: LEGITIMATE_NON_RENDERS pins this class as a legitimate "
+                f"non-render raising {expected_type.__name__}, but it raised "
+                f"{type(exc).__name__}: {exc}"
+            )
+            assert fragment in str(exc), (
+                f"{fqn}: expected {expected_type.__name__} and was expected to say "
+                f"{fragment!r}, but it said: {exc}"
+            )
+            return "non-render"
+        if type(exc) is UnsupportedFeatureError:
+            method = _dispatched_formatter(exc)
+            if method is not None:
+                assert method in _unmodelled_methods(), (
+                    f"{fqn}: to_sql() reported that {exc.dialect_name} declares no "
+                    f"{method!r}, which is not in UNMODELLED_FORMATTERS.\n"
+                    f"  Either Firebird now needs that formatter -- in which case "
+                    f"the class should render and this entry should go -- or the "
+                    f"feature is absent and the method belongs in that table with "
+                    f"its reason."
+                )
+                return "unmodelled"
+            return "unsupported"
+        raise AssertionError(
+            f"{fqn}: to_sql() raised {type(exc).__name__}, which is neither a "
+            f"render nor a classified non-render, and this is a defect.\n"
+            f"  UnsupportedFeatureError means Firebird lacks the feature and "
+            f"is always allowed.\n"
+            f"  A class that cannot render for a reason belonging to its own "
+            f"tree belongs in LEGITIMATE_NON_RENDERS.\n"
+            f"  A class whose *constructor* guess is wrong belongs in "
+            f"register_specials() instead.\n"
+            f"  Exception: {exc}"
+        ) from exc
+
+    refusals = _refusal_channels(fqn)
+    for channel, (encode, decode) in _CHANNELS:
+        pin = refusals.get(channel)
+        if pin is not None:
+            expected_type, fragment = pin
+            try:
+                decoded = decode(encode(instance), dialect)
+                decoded_sql, decoded_params = decoded.to_sql()
+                same_sql = decoded_sql == expected_sql
+                same_params = decoded_params == expected_params
+                assert same_sql and same_params, (
+                    f"{fqn}: {channel} round-trip changed the SQL or the bind "
+                    f"parameters.\n"
+                    f"  original: {expected_sql!r} / {expected_params!r}\n"
+                    f"  {channel}: {decoded_sql!r} / {decoded_params!r}"
+                )
+            except expected_type as exc:
+                assert fragment in str(exc), (
+                    f"{fqn}: pinned as refusing on the {channel} channel with "
+                    f"{expected_type.__name__} saying {fragment!r}, but it "
+                    f"said: {exc}"
+                )
+            else:
+                raise AssertionError(
+                    f"{fqn}: pinned as refusing on the {channel} channel "
+                    f"({expected_type.__name__}, {fragment!r}) but the artifact "
+                    f"came back -- the pin is stale and must go"
+                )
+            continue
+        decoded = decode(encode(instance), dialect)
+        decoded_sql, decoded_params = decoded.to_sql()
+        assert decoded_sql == expected_sql, (
+            f"{fqn}: {channel} round-trip changed the SQL.\n"
+            f"  original: {expected_sql!r}\n"
+            f"  {channel}: {decoded_sql!r}"
+        )
+        assert decoded_params == expected_params, (
+            f"{fqn}: {channel} round-trip changed the bind parameters.\n"
+            f"  original: {expected_params!r}\n"
+            f"  {channel}: {decoded_params!r}"
+        )
+    return "rendered"
+
+
+@pytest.fixture(params=[fqn for fqn in sorted(REGISTERED)], ids=sorted(REGISTERED))
+def expr_case(request, fb4_dialect):
+    fqn = request.param
+    cls = REGISTERED[fqn]
+    instance, source = make_instance(cls, fb4_dialect)
+    if instance is None:
+        assert fqn in UNCONSTRUCTIBLE, (
+            f"{fqn} cannot be built by the generic constructor ({source}) and is "
+            f"not in UNCONSTRUCTIBLE. Either register a special constructor for "
+            f"it or add it with a reason -- do not let it disappear into a skip."
+        )
+        pytest.skip(f"{fqn}: pinned in UNCONSTRUCTIBLE, cannot be constructed ({source})")
+    return fqn, instance
+
+
+class TestExpressionRoundtripAll:
+    """All constructible expression classes round-trip through all encodings."""
+
+    def test_get_params_roundtrip_across_encodings(self, expr_case, fb4_dialect):
+        fqn, instance = expr_case
+        roundtrip_expression(fqn, instance, fb4_dialect, _refusal_channels(fqn))
+
+    def test_to_sql_roundtrip_classified(self, expr_case, fb4_dialect):
+        """A render must survive the round-trip; a non-render must be classified."""
+        fqn, instance = expr_case
+        assert_sql_roundtrip_classified(fqn, instance, fb4_dialect)
+
+
+class TestMatrixIntegrity:
+    """Guards on the matrix and its lists, so neither can quietly change."""
+
+    def test_unconstructible_list_is_exact(self, fb4_dialect):
+        """Pin the unconstructible mapping against what the constructor skips.
+
+        Both directions are checked. A class named here that now builds has gained
+        a constructor and the entry is stale; a class that fails to build without
+        being named would become a silent skip. Both fail here.
+        """
+        actual = {
+            fqn
+            for fqn in REGISTERED
+            if make_instance(REGISTERED[fqn], fb4_dialect)[0] is None
+        }
+        assert actual == set(UNCONSTRUCTIBLE), (
+            "the set of expression classes the generic constructor cannot build "
+            "changed.\n"
+            f"  now skipped but not named: {sorted(actual - set(UNCONSTRUCTIBLE))}\n"
+            f"  named but now built: {sorted(set(UNCONSTRUCTIBLE) - actual)}\n"
+            "Each new entry needs a reason in the comment above UNCONSTRUCTIBLE."
+        )
+
+    def test_unconstructible_entries_all_have_a_reason(self):
+        """No entry is a bare name.
+
+        A name with no reason is indistinguishable from a lazy skip, and an empty
+        string would pass a truthiness check on the tuple while saying nothing.
+        """
+        missing = sorted(
+            fqn for fqn, reason in UNCONSTRUCTIBLE.items() if not reason.strip()
+        )
+        assert not missing, f"UNCONSTRUCTIBLE entries without a reason: {missing}"
+
+    def test_unconstructible_entries_are_real_classes(self):
+        """Every entry names a class that was actually collected."""
+        unknown = set(UNCONSTRUCTIBLE) - set(REGISTERED)
+        assert not unknown, (
+            f"UNCONSTRUCTIBLE names classes that were not registered: {sorted(unknown)}"
+        )
+
+    def test_legitimate_non_renders_are_real_classes(self):
+        """Every pinned non-render names a class that was actually collected."""
+        unknown = set(LEGITIMATE_NON_RENDERS) - set(REGISTERED)
+        assert not unknown, (
+            f"LEGITIMATE_NON_RENDERS names classes that were not registered: "
+            f"{sorted(unknown)}"
+        )
+
+    def test_pinned_non_render_really_does_not_render(self, fb4_dialect):
+        """Each pinned entry still raises what it claims, for the stated reason.
+
+        Without this, an entry could sit in the mapping for a class that renders
+        perfectly well, and the matrix would assert nothing about it.
+        """
+        for fqn, (expected_type, fragment) in LEGITIMATE_NON_RENDERS.items():
+            instance, source = make_instance(REGISTERED[fqn], fb4_dialect)
+            assert instance is not None, (
+                f"{fqn} is pinned as a non-render but could not be constructed "
+                f"({source})"
+            )
+            with pytest.raises(expected_type) as exc_info:
+                instance.to_sql()
+            assert fragment in str(exc_info.value), (
+                f"{fqn}: expected the message to mention {fragment!r}, got: "
+                f"{exc_info.value}"
+            )
+
+    def test_unmodelled_formatter_list_is_exact(self, fb4_dialect):
+        """Pin the unmodelled-formatter table against what the dialect lacks.
+
+        Observed rather than assumed: for each class the matrix covers, either
+        it renders or it fails, and every dispatch refusal is attributed to the
+        method it named -- including the classes pinned in
+        :data:`LEGITIMATE_NON_RENDERS`, whose dispatch failures those pins
+        record class by class. Then the table is compared with the set
+        observed, in both directions, so:
+
+        * a method in the table that Firebird now implements fails here,
+          because its classes render and are no longer attributed to it --
+          which is the moment to delete the entry rather than leave a lie in
+          the table;
+        * a class that starts needing a method outside the table fails the
+          per-class assertion in :func:`assert_sql_roundtrip_classified`
+          instead of being absorbed into "unsupported".
+
+        This is the regression test for the pad/trim incident. Core turned
+        ``trim``/``lpad``/``rpad``/``repeat`` into dedicated nodes; Firebird
+        spells three of them natively and has no ``REPEAT`` function, so
+        ``RepeatFunction`` is exactly the shape this test exists for: a
+        class whose formatter no base in this dialect provides, which before
+        the split was allowed through as "Firebird lacks the feature" without
+        anything asking whether the feature was even claimed.
+        """
+        observed = set()
+        for fqn in sorted(REGISTERED):
+            instance, source = make_instance(REGISTERED[fqn], fb4_dialect)
+            if instance is None:
+                continue
+            try:
+                instance.to_sql()
+            except UnsupportedFeatureError as exc:
+                method = _dispatched_formatter(exc)
+                if method is not None:
+                    observed.add(method)
+                continue
+            except Exception:
+                continue
+
+        declared = _unmodelled_methods()
+        assert not (observed - declared), (
+            "classes need formatters that are not in UNMODELLED_FORMATTERS: "
+            f"{sorted(observed - declared)}. Add each with the feature that is "
+            f"absent and why -- or mix the formatter in, in which case the "
+            f"classes render and the entry is not needed."
+        )
+        assert not (declared - observed), (
+            "UNMODELLED_FORMATTERS names formatters no class actually needs: "
+            f"{sorted(declared - observed)}. Firebird may have gained one of "
+            f"these, in which case the classes needing it now render and the "
+            f"entry should go."
+        )
+
+    def test_unreadable_pins_name_collected_classes(self):
+        """Every refusal pin names a class the matrix actually collected."""
+        unknown = set(ARTIFACT_REFUSALS) - set(REGISTERED)
+        assert not unknown, (
+            f"ARTIFACT_REFUSALS names classes that were not registered: "
+            f"{sorted(unknown)}"
+        )
+        unnamed = sorted(
+            fqn
+            for fqn, (_, reason) in ARTIFACT_REFUSALS.items()
+            if not reason.strip()
+        )
+        assert not unnamed, f"ARTIFACT_REFUSALS entries without a reason: {unnamed}"
+
+    def test_unreadable_pins_still_refuse(self, fb4_dialect):
+        """Each pin still refuses on its channels, and travels clean on the rest.
+
+        Without the second half, a pin could sit on a class whose other
+        channels also refuse -- the rows would understate the gap and the
+        exactness test below would catch it only on the next edit.
+        """
+        for fqn, (channels, _) in sorted(ARTIFACT_REFUSALS.items()):
+            instance, source = make_instance(REGISTERED[fqn], fb4_dialect)
+            assert instance is not None, (
+                f"{fqn} is pinned as unreadable but cannot be constructed "
+                f"({source})"
+            )
+            for channel, (encode, decode) in _CHANNELS:
+                pin = channels.get(channel)
+                if pin is None:
+                    restored = decode(encode(instance), fb4_dialect)
+                    assert_params_equal(
+                        restored.get_params(), instance.get_params(), f"{fqn}/{channel}"
+                    )
+                    continue
+                expected_type, fragment = pin
+                try:
+                    restored = decode(encode(instance), fb4_dialect)
+                    assert_params_equal(
+                        restored.get_params(), instance.get_params(), f"{fqn}/{channel}"
+                    )
+                    assert_render_survives(instance, restored, fqn, channel)
+                except expected_type as exc:
+                    assert fragment in str(exc), (
+                        f"{fqn}/{channel}: pinned as refusing with "
+                        f"{expected_type.__name__} saying {fragment!r}, but it "
+                        f"said: {exc}"
+                    )
+                else:
+                    raise AssertionError(
+                        f"{fqn}/{channel}: pinned as refusing "
+                        f"({expected_type.__name__}, {fragment!r}) but the "
+                        f"artifact came back -- the pin is stale and must go"
+                    )
+
+    def test_unreadable_set_is_exact(self, fb4_dialect):
+        """Pin the refusal table against what the channels actually refuse.
+
+        Both directions.  For every constructible class in the matrix, each
+        channel either lets the artifact come back and compare clean or it
+        does not; the observed per-channel failures must equal the pinned rows
+        exactly, so a class that starts refusing without a row fails here, and
+        a row whose class now travels fails until it goes.
+        """
+        observed = {}
+        for fqn, cls in sorted(REGISTERED.items()):
+            instance, _ = make_instance(cls, fb4_dialect)
+            if instance is None:
+                continue
+            failing = set()
+            for channel, (encode, decode) in _CHANNELS:
+                try:
+                    restored = decode(encode(instance), fb4_dialect)
+                    assert_params_equal(
+                        restored.get_params(), instance.get_params(), f"{fqn}/{channel}"
+                    )
+                    assert_render_survives(instance, restored, fqn, channel)
+                except Exception:
+                    failing.add(channel)
+            if failing:
+                observed[fqn] = failing
+        pinned = {
+            fqn: set(channels) for fqn, (channels, _) in ARTIFACT_REFUSALS.items()
+        }
+        new_refusals = {f: sorted(c) for f, c in observed.items() if f not in pinned}
+        stale_pins = {f: sorted(c) for f, c in pinned.items() if f not in observed}
+        drifted = {
+            f: (sorted(pinned[f]), sorted(observed.get(f, set())))
+            for f in set(pinned) & set(observed)
+            if pinned[f] != observed[f]
+        }
+        assert observed == pinned, (
+            "the set of expression classes an artifact channel refuses "
+            "changed.\n"
+            f"  now refused but not pinned: {new_refusals}\n"
+            f"  pinned but now travelling: {stale_pins}\n"
+            f"  channel sets that drifted (pinned, observed): {drifted}\n"
+            "A new refusal needs a row with the type, the fragment and the "
+            "reason; a core fix means the row goes."
+        )
+
+    def test_matrix_covers_both_packages(self):
+        """The matrix covers every concrete class both packages define.
+
+        Re-walked here rather than trusting the module-level collection, so a
+        class that appeared after import is caught. The package walk is used
+        rather than the registry because the registry also holds whatever
+        backends other test modules happened to import.
+        """
+        expected = set(_collect_matrix_classes())
+        stray = [
+            fqn
+            for fqn in REGISTERED
+            if not any(fqn.startswith(f"{pkg}.") for pkg in MATRIX_PACKAGES)
+        ]
+        assert not stray, f"classes outside both packages are in the matrix: {stray}"
+        assert expected == set(REGISTERED), (
+            "the set of classes the two packages define changed after "
+            f"collection.\n  now defined but not covered: "
+            f"{sorted(expected - set(REGISTERED))}\n"
+            f"  covered but no longer defined: {sorted(set(REGISTERED) - expected)}"
+        )
+
+    def test_every_package_contributes(self, fb4_dialect):
+        """Neither package is collected empty.
+
+        The core package going missing is the exact failure that let a backend
+        formatter read a removed field and stay green; the backend package going
+        missing would leave this backend's own DDL uncovered. A bare length
+        threshold would absorb that silently, so each side is named and counted.
+        """
+        core = [f for f in REGISTERED if f.startswith(f"{CORE_EXPR_PKG}.")]
+        firebird = [f for f in REGISTERED if f.startswith(f"{FIREBIRD_EXPR_PKG}.")]
+        assert core, "no core expression class was collected"
+        assert firebird, "no Firebird expression class was collected"
+        print(
+            f"\nexpression matrix: {len(core)} core classes, "
+            f"{len(firebird)} Firebird classes, {len(REGISTERED)} total"
+        )
+
+    def test_every_covered_class_is_registered_for_deserialization(self):
+        """A class in the matrix can be found again when deserializing.
+
+        Deserialization resolves a kind to its class through the framework's
+        default registry (the kind whitelist), so a class the matrix renders
+        but the registry cannot resolve would round-trip into nothing at all.
+
+        This is the one place the registry is read, and it is a resolution
+        check over an already-collected set -- never a source of tests.
+        Discovery is the package walk in :func:`_collect_matrix_classes`,
+        precisely because the registry is process-global and grows as
+        sibling modules import their own backends. Core and built-in
+        classes resolve because the registry populates them at first use;
+        this backend's resolve because ``register_all`` handed the
+        collected set to the same registry.
+        """
+        from rhosocial.activerecord.backend.expression.serialization import (
+            default_registry,
+        )
+
+        registry = default_registry()
+        unresolved = sorted(
+            fqn
+            for fqn, cls in REGISTERED.items()
+            if registry.resolve_node(cls.kind()) is not cls
+        )
+        assert not unresolved, (
+            f"the matrix covers classes the registry cannot resolve: {unresolved}"
+        )
+
+    def test_coverage_report(self, fb4_dialect):
+        """Surface the classification, so coverage stays transparent.
+
+        Counts each branch the matrix actually took, in this process, with this
+        dialect -- not a number carried over from another run.
+        """
+        census: Dict[str, int] = {}
+        for fqn, cls in sorted(REGISTERED.items()):
+            instance, _ = make_instance(cls, fb4_dialect)
+            if instance is None:
+                branch = "pinned-unconstructible"
+            else:
+                branch = assert_sql_roundtrip_classified(fqn, instance, fb4_dialect)
+            census[branch] = census.get(branch, 0) + 1
+        assert sum(census.values()) == len(REGISTERED)
+        print(
+            "\nexpression matrix: "
+            + ", ".join(f"{count} {name}" for name, count in sorted(census.items()))
+            + f" (of {len(REGISTERED)} collected)"
+        )
+        for feature, methods in sorted(UNMODELLED_FORMATTERS.items()):
+            print(f"  not modelled: {feature} ({len(methods)} formatters)")
+
+
+# ---------------------------------------------------------------------------
+# The clause-pair parameters round-trip
+# ---------------------------------------------------------------------------
+#
+# The sweep above builds every class once with introspective defaults, which
+# leaves every two-spelling pair unset. The fields the round split would
+# therefore not be exercised by it. Each pair is instantiated here with one
+# spelling set and round-tripped through all three encodings; ``get_params``
+# reads the constructor signature, so a pair field the serializer dropped or
+# normalized would surface as a parameter mismatch. Both spellings are built
+# and their parameter maps compared, so a serializer that conflated them is
+# caught even though the pair may be inexpressible on Firebird's server.
+
+PAIR_BEARING_CASES = (
+    (
+        "CreateSequenceStatement.cycle",
+        lambda d: ddl_sequence.CreateSequenceStatement(d, Sequence(d, "s"), cycle=True),
+        lambda d: ddl_sequence.CreateSequenceStatement(d, Sequence(d, "s"), no_cycle=True),
+        "cycle",
+        "no_cycle",
+        True,
+        True,
+    ),
+    (
+        "CreateSequenceStatement.cache",
+        lambda d: ddl_sequence.CreateSequenceStatement(d, Sequence(d, "s"), cache=10),
+        lambda d: ddl_sequence.CreateSequenceStatement(d, Sequence(d, "s"), no_cache=True),
+        "cache",
+        "no_cache",
+        10,
+        True,
+    ),
+    (
+        "CreateSequenceStatement.order",
+        lambda d: ddl_sequence.CreateSequenceStatement(d, Sequence(d, "s"), order=True),
+        lambda d: ddl_sequence.CreateSequenceStatement(d, Sequence(d, "s"), no_order=True),
+        "order",
+        "no_order",
+        True,
+        True,
+    ),
+    (
+        "AlterSequenceStatement.cycle",
+        lambda d: ddl_sequence.AlterSequenceStatement(d, Sequence(d, "s"), cycle=True),
+        lambda d: ddl_sequence.AlterSequenceStatement(d, Sequence(d, "s"), no_cycle=True),
+        "cycle",
+        "no_cycle",
+        True,
+        True,
+    ),
+    (
+        "AlterSequenceStatement.cache",
+        lambda d: ddl_sequence.AlterSequenceStatement(d, Sequence(d, "s"), cache=10),
+        lambda d: ddl_sequence.AlterSequenceStatement(d, Sequence(d, "s"), no_cache=True),
+        "cache",
+        "no_cache",
+        10,
+        True,
+    ),
+    (
+        "AlterSequenceStatement.order",
+        lambda d: ddl_sequence.AlterSequenceStatement(d, Sequence(d, "s"), order=True),
+        lambda d: ddl_sequence.AlterSequenceStatement(d, Sequence(d, "s"), no_order=True),
+        "order",
+        "no_order",
+        True,
+        True,
+    ),
+    (
+        "IdentityClause.cycle",
+        lambda d: ddl_table.IdentityClause(d, cycle=True),
+        lambda d: ddl_table.IdentityClause(d, no_cycle=True),
+        "cycle",
+        "no_cycle",
+        True,
+        True,
+    ),
+    (
+        "IdentityClause.cache",
+        lambda d: ddl_table.IdentityClause(d, cache=10),
+        lambda d: ddl_table.IdentityClause(d, no_cache=True),
+        "cache",
+        "no_cache",
+        10,
+        True,
+    ),
+    (
+        "IdentityClause.order",
+        lambda d: ddl_table.IdentityClause(d, order=True),
+        lambda d: ddl_table.IdentityClause(d, no_order=True),
+        "order",
+        "no_order",
+        True,
+        True,
+    ),
+    (
+        "ForeignKeyConstraint.deferrable",
+        lambda d: ddl_table.ForeignKeyConstraint(
+            d, columns=["a"], foreign_key_table=Table(d, "t2"),
+            foreign_key_columns=["b"], deferrable=True,
+        ),
+        lambda d: ddl_table.ForeignKeyConstraint(
+            d, columns=["a"], foreign_key_table=Table(d, "t2"),
+            foreign_key_columns=["b"], not_deferrable=True,
+        ),
+        "deferrable",
+        "not_deferrable",
+        True,
+        True,
+    ),
+    (
+        "ForeignKeyConstraint.initially",
+        lambda d: ddl_table.ForeignKeyConstraint(
+            d, columns=["a"], foreign_key_table=Table(d, "t2"),
+            foreign_key_columns=["b"], initially_deferred=True,
+        ),
+        lambda d: ddl_table.ForeignKeyConstraint(
+            d, columns=["a"], foreign_key_table=Table(d, "t2"),
+            foreign_key_columns=["b"], initially_immediate=True,
+        ),
+        "initially_deferred",
+        "initially_immediate",
+        True,
+        True,
+    ),
+    (
+        "TableConstraint.enforced",
+        lambda d: ddl_table.TableConstraint(
+            d, branch=TableCheckConstraint(
+                d, ComparisonPredicate(d, ">", Column(d, "a"), Column(d, "b"))),
+            enforced=True,
+        ),
+        lambda d: ddl_table.TableConstraint(
+            d, branch=TableCheckConstraint(
+                d, ComparisonPredicate(d, ">", Column(d, "a"), Column(d, "b"))),
+            not_enforced=True,
+        ),
+        "enforced",
+        "not_enforced",
+        True,
+        True,
+    ),
+    (
+        "BeginTransactionStatement.deferrable",
+        lambda d: BeginTransactionStatement(d, deferrable=True),
+        lambda d: BeginTransactionStatement(d, not_deferrable=True),
+        "deferrable",
+        "not_deferrable",
+        True,
+        True,
+    ),
+    (
+        "SetTransactionStatement.deferrable",
+        lambda d: SetTransactionStatement(d, deferrable=True),
+        lambda d: SetTransactionStatement(d, not_deferrable=True),
+        "deferrable",
+        "not_deferrable",
+        True,
+        True,
+    ),
+    (
+        "DropTableStatement.cascade",
+        lambda d: ddl_table.DropTableStatement(d, Table(d, "t"), cascade=True),
+        lambda d: ddl_table.DropTableStatement(d, Table(d, "t"), restrict=True),
+        "cascade",
+        "restrict",
+        True,
+        True,
+    ),
+    (
+        "DropViewStatement.cascade",
+        lambda d: ddl_view.DropViewStatement(d, View(d, "v"), cascade=True),
+        lambda d: ddl_view.DropViewStatement(d, View(d, "v"), restrict=True),
+        "cascade",
+        "restrict",
+        True,
+        True,
+    ),
+    (
+        "DropFunctionStatement.cascade",
+        lambda d: ddl_function.DropFunctionStatement(d, Function(d, "f"), cascade=True),
+        lambda d: ddl_function.DropFunctionStatement(d, Function(d, "f"), restrict=True),
+        "cascade",
+        "restrict",
+        True,
+        True,
+    ),
+)
+
+PAIR_BEARING_IDS = [case[0] for case in PAIR_BEARING_CASES]
+
+
+def _pair_refusals(case_id):
+    """The channel pins for the class a pair case exercises, if it has any.
+
+    The case ids are prefixed with the bare class name; the matrix keys are
+    fully qualified.  One class per name across both packages, so the first
+    suffix match is the class.
+    """
+    class_name = case_id.split(".")[0]
+    for fqn in sorted(REGISTERED):
+        if fqn.rsplit(".", 1)[-1] == class_name:
+            return _refusal_channels(fqn)
+    return {}
+
+
+class TestClausePairFieldsRoundTrip:
+    """The round's new pair fields survive dict / JSON / XML serialization."""
+
+    @pytest.mark.parametrize(
+        "case_id,a_builder,b_builder,a,b,a_value,b_value",
+        PAIR_BEARING_CASES,
+        ids=PAIR_BEARING_IDS,
+    )
+    def test_a_spelling_round_trips(
+        self, fb4_dialect, case_id, a_builder, b_builder, a, b, a_value, b_value
+    ):
+        instance = a_builder(fb4_dialect)
+        params = instance.get_params()
+        assert params[a] == a_value, f"{case_id}: {a} was not stored"
+        assert not params[b], f"{case_id}: {b} must stay unset"
+        roundtrip_expression(
+            f"{case_id}.{a}", instance, fb4_dialect, _pair_refusals(case_id)
+        )
+
+    @pytest.mark.parametrize(
+        "case_id,a_builder,b_builder,a,b,a_value,b_value",
+        PAIR_BEARING_CASES,
+        ids=PAIR_BEARING_IDS,
+    )
+    def test_b_spelling_round_trips(
+        self, fb4_dialect, case_id, a_builder, b_builder, a, b, a_value, b_value
+    ):
+        instance = b_builder(fb4_dialect)
+        params = instance.get_params()
+        assert params[b] == b_value, f"{case_id}: {b} was not stored"
+        assert not params[a], f"{case_id}: {a} must stay unset"
+        roundtrip_expression(
+            f"{case_id}.{b}", instance, fb4_dialect, _pair_refusals(case_id)
+        )
+
+    def test_the_two_spellings_do_not_share_a_parameter(self, fb4_dialect):
+        """A serializer that conflated the pair would pass the tests above."""
+        for case_id, a_builder, b_builder, a, b, a_value, b_value in PAIR_BEARING_CASES:
+            params_a = a_builder(fb4_dialect).get_params()
+            params_b = b_builder(fb4_dialect).get_params()
+            assert params_a != params_b, case_id
+            assert params_a[a] == a_value and params_b[b] == b_value, case_id
+            assert params_a[b] != b_value and params_b[a] != a_value, case_id
+
+
+# ---------------------------------------------------------------------------
+# The fourteen value kinds, spelled on the wire
+# ---------------------------------------------------------------------------
+#
+# One class -- ``Literal`` -- carries every value, and the artifact names the
+# value's kind, not the class.  Each kind's spelling is part of the wire
+# contract (§10): the artifact carries the plain scalar the kind's codec
+# writes -- no wrapper, no marker, no base64 envelope -- and the rebuilt
+# literal holds the host value again.  The scalars are written out by hand,
+# because each one is a statement about the wire form; computing them from the
+# codec would test the codec against itself.
+
+#: ``(wire kind, host value, the exact scalar the artifact carries)``.
+VALUE_KIND_SPELLINGS = (
+    ("null_value", None, None),
+    ("boolean_value", True, True),
+    ("integer_value", 7, 7),
+    ("float_value", 1.5, 1.5),
+    # The two members of the float type JSON's number grammar leaves out
+    # (RFC 8259), carried as text under kinds of their own so the payload is
+    # never a number the kind does not promise. ``nan_value`` spells the value
+    # without a sign -- there is no other NaN -- and ``infinity_value`` spells
+    # which way it points, because ``+inf`` is no more a JSON number than
+    # ``-inf`` is.
+    ("nan_value", float("nan"), "nan"),
+    ("infinity_value", float("inf"), "+inf"),
+    ("decimal_value", decimal.Decimal("1.25"), "1.25"),
+    ("string_value", "hi", "hi"),
+    ("binary_value", b"\x01\x02", "AQI="),
+    ("timestamp_value", datetime.datetime(2020, 1, 2, 3, 4, 5), "2020-01-02 03:04:05"),
+    ("date_value", datetime.date(2020, 1, 2), "2020-01-02"),
+    ("time_value", datetime.time(3, 4, 5), "03:04:05"),
+    ("interval_value", datetime.timedelta(days=1, hours=2), "P1DT2H"),
+    ("list_value", [1, "a"], [1, "a"]),
+    ("tuple_value", (1, "a"), [1, "a"]),
+    ("uuid_value", uuid.UUID(int=7), "00000000-0000-0000-0000-000000000007"),
+)
+
+
+def _same_value(left, right):
+    """``==`` that knows NaN is the value it says it is.
+
+    ``float("nan") == float("nan")`` is False, which is right for IEEE 754 and
+    wrong for asking "did this come back as what I put in". Everything else is
+    ordinary equality.
+    """
+    if isinstance(left, float) and isinstance(right, float):
+        if math.isnan(left) and math.isnan(right):
+            return True
+    return left == right
+
+
+class TestValueKindSpellings:
+    """The plain-JSON artifact spells each value kind as one bare scalar."""
+
+    @pytest.mark.parametrize(
+        ("wire", "host", "scalar"),
+        VALUE_KIND_SPELLINGS,
+        ids=[case[0] for case in VALUE_KIND_SPELLINGS],
+    )
+    def test_the_artifact_carries_the_plain_scalar(self, fb4_dialect, wire, host, scalar):
+        artifact = serialize(Literal(fb4_dialect, host))
+        assert artifact == {"kind": wire, "params": {"value": scalar, "inline": False}}, (
+            f"{wire}: the artifact must carry the bare scalar the kind names"
+        )
+
+    @pytest.mark.parametrize(
+        ("wire", "host", "scalar"),
+        VALUE_KIND_SPELLINGS,
+        ids=[case[0] for case in VALUE_KIND_SPELLINGS],
+    )
+    def test_every_kind_comes_back_as_its_host_value(self, fb4_dialect, wire, host, scalar):
+        restored = deserialize_json(serialize_json(Literal(fb4_dialect, host)), fb4_dialect)
+        assert type(restored.value) is type(host), (
+            f"{wire}: rebuilt as {type(restored.value).__name__}"
+        )
+        assert _same_value(restored.value, host), wire
+        params = restored.get_params()
+        assert _same_value(params["value"], host), wire
+        assert params["inline"] is False, wire
+
+    def test_a_negative_infinity_spells_its_own_sign(self, fb4_dialect):
+        """``infinity_value`` carries which way it points, not just that it is one."""
+        artifact = serialize(Literal(fb4_dialect, float("-inf")))
+        assert artifact == {"kind": "infinity_value", "params": {"value": "-inf", "inline": False}}
+        restored = deserialize_json(serialize_json(Literal(fb4_dialect, float("-inf"))), fb4_dialect)
+        assert restored.value == float("-inf")
+
+    def test_the_inline_switch_rides_in_the_artifact(self, fb4_dialect):
+        """``inline`` is a constructor parameter like any other (§4.1)."""
+        artifact = serialize(Literal(fb4_dialect, 1, inline=True))
+        assert artifact == {"kind": "integer_value", "params": {"value": 1, "inline": True}}
+        restored = deserialize(artifact, fb4_dialect)
+        assert restored.inline is True
+
+    def test_the_value_kind_set_is_exactly_these_sixteen(self):
+        """The vocabulary is closed; the spellings above cover all of it."""
+        assert {member.wire for member in LiteralKind} == {
+            case[0] for case in VALUE_KIND_SPELLINGS
+        }
+
+
+# ---------------------------------------------------------------------------
+# The set-operation statement, rendered
+# ---------------------------------------------------------------------------
+#
+# The matrix says ``SetOperationStatement`` renders, which is a verdict about
+# the dialect rather than a claim about the bytes, so the bytes are pinned here.
+# Firebird is the only backend in this set whose set-operation probes refuse
+# two of the four words: ``INTERSECT`` and ``EXCEPT`` are not Firebird
+# operators, so the mixin's probe answers False and the formatter refuses
+# before any SQL is built. ``UNION`` and ``UNION ALL`` render, and the second
+# one is the word the tests below pin because it is the one that keeps every
+# row rather than de-duplicating -- which is what a data profile wants.
+
+
+def test_set_operation_statement_renders_the_pinned_sql(fb4_dialect):
+    """``UNION ALL`` over two arms, with Firebird's upper-cased quoted names."""
+    node = SetOperationStatement(
+        fb4_dialect, op="union_all", parts=_compound_arms(fb4_dialect)
+    )
+
+    rendered, params = node.to_sql()
+
+    assert rendered == 'SELECT "ID" FROM "T" UNION ALL SELECT "ID" FROM "OTHER"'
+    assert params == ()
+
+
+def test_set_operation_statement_spells_the_bare_union(fb4_dialect):
+    """The word form alone decides the keyword, so ``union`` differs."""
+    node = SetOperationStatement(
+        fb4_dialect, op="union", parts=_compound_arms(fb4_dialect)
+    )
+
+    rendered, params = node.to_sql()
+
+    assert rendered == 'SELECT "ID" FROM "T" UNION SELECT "ID" FROM "OTHER"'
+    assert params == ()
+
+
+def test_set_operation_statement_parameters_concatenate_in_part_order(
+    fb4_dialect,
+):
+    """Each arm's parameters arrive in the order the operator joins them."""
+    dialect = fb4_dialect
+    parts = [
+        QueryStatement(
+            dialect,
+            select=[Column(dialect, "id"), Literal(dialect, 1)],
+            from_=_table_obj(dialect),
+            where=ComparisonPredicate(
+                dialect, "=", Column(dialect, "id"), Literal(dialect, 5)
+            ),
+        ),
+        QueryStatement(
+            dialect,
+            select=[Column(dialect, "id"), Literal(dialect, 2)],
+            from_=_table_obj(dialect, "u"),
+        ),
+    ]
+    node = SetOperationStatement(dialect, op="union_all", parts=parts)
+
+    rendered, params = node.to_sql()
+
+    assert rendered == (
+        'SELECT "ID", ? FROM "T" WHERE "ID" = ? '
+        "UNION ALL "
+        'SELECT "ID", ? FROM "U"'
+    )
+    assert params == (1, 5, 2)
+
+
+@pytest.mark.parametrize("op", ["intersect", "except"])
+def test_set_operation_statement_refuses_what_firebird_has_no_operator_for(
+    fb4_dialect, op
+):
+    """The probe refuses before any SQL is built.
+
+    Firebird has neither INTERSECT nor EXCEPT, so the mixin's per-operation
+    probe answers False and the formatter raises rather than rendering text
+    the engine will not parse. The reason the dialect gives is the one the
+    probe owns, and it names the operation.
+    """
+    node = SetOperationStatement(
+        fb4_dialect, op=op, parts=_compound_arms(fb4_dialect)
+    )
+
+    with pytest.raises(UnsupportedFeatureError) as excinfo:
+        node.to_sql()
+
+    assert op.upper() in str(excinfo.value)
+    assert "does not support" in str(excinfo.value)

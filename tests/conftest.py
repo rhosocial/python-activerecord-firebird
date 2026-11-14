@@ -1,44 +1,25 @@
 # tests/conftest.py
-"""Pytest configuration for Firebird backend tests."""
+"""Root configuration for the Firebird backend's test tree.
 
-import os
-import sys
-from dataclasses import replace
+The backend knows its own classes and how a scenario maps to a connection, so
+no declaration table is needed here: the scenario is exposed as a parameterized
+pytest fixture that the testsuite environment consumes.
+
+Firebird connects to a database file, so the scenario carries the server and
+the base file path; the logical database name is derived by the testsuite from
+the test directory and injected by ``make_config(database)``.
+"""
+
+from pathlib import Path
 
 import pytest
-
-# Early-parse --scenarios from sys.argv and set FIREBIRD_ACTIVE_SCENARIOS env var.
-# This must happen before providers.scenarios is imported (it filters its
-# SCENARIO_MAP at import time).
-_argv_scenarios = None
-for _i, _arg in enumerate(sys.argv):
-    if _arg.startswith("--scenarios="):
-        _argv_scenarios = _arg.split("=", 1)[1]
-    elif _arg == "--scenarios" and _i + 1 < len(sys.argv):
-        _argv_scenarios = sys.argv[_i + 1]
-
-if _argv_scenarios:
-    os.environ["FIREBIRD_ACTIVE_SCENARIOS"] = _argv_scenarios
+import support.firebird
+from rhosocial.activerecord.testsuite.core.declarations import database_name
 
 from rhosocial.activerecord.backend.impl.firebird.backend import FirebirdBackend
-from rhosocial.activerecord.backend.impl.firebird.config import FirebirdConnectionConfig
 from rhosocial.activerecord.backend.impl.firebird.dialect import FirebirdDialect
 
-os.environ.setdefault(
-    "TESTSUITE_PROVIDER_REGISTRY",
-    "providers.registry:provider_registry"
-)
-
-
-@pytest.hookimpl(trylast=True)
-def pytest_addoption(parser):
-    """Register the --scenarios option for selecting which scenarios to run.
-
-    NOTE: --scenarios is now registered by the testsuite conftest
-    (rhosocial.activerecord.testsuite.conftest, loaded via pyproject addopts
-    -p). Registering it again here raises "option names {'--scenarios'}
-    already added", so it must NOT be declared locally.
-    """
+_SCENARIOS = [support.firebird.scenario(name) for name in support.firebird.SCENARIOS]
 
 
 @pytest.hookimpl(trylast=True)
@@ -51,10 +32,6 @@ def pytest_configure(config):
     under full-suite load it runs in a worker thread. Wrap the destructor so
     a failure to close during GC is swallowed instead of terminating pytest.
     """
-    scenarios_opt = config.getoption("--scenarios", default=None)
-    if scenarios_opt:
-        os.environ["FIREBIRD_ACTIVE_SCENARIOS"] = scenarios_opt
-
     try:
         from firebird.driver.core import Cursor
 
@@ -79,7 +56,8 @@ def pytest_configure(config):
         pass
 
 
-def pytest_collection_modifyitems(items):
+@pytest.hookimpl(tryfirst=True)
+def pytest_collection_modifyitems(config, items):
     """Mark known Firebird-incompatible tests as xfail.
 
     Only genuine, still-unresolved incompatibilities are marked here. Tests
@@ -89,42 +67,29 @@ def pytest_collection_modifyitems(items):
     spurious XPASS entries.
     """
     for item in items:
-        func_name = getattr(getattr(item, 'function', None), '__name__', '')
         node_path = str(item.nodeid)
         # Recursive queries
         if "recursive_query" in node_path.lower():
-            item.add_marker(pytest.mark.xfail(
-                reason="Firebird recursive CTE support needs dialect configuration",
-                strict=False,
-            ))
+            item.add_marker(
+                pytest.mark.xfail(
+                    reason="Firebird recursive CTE support needs dialect configuration",
+                    strict=False,
+                )
+            )
 
 
-def _load_backend_config() -> FirebirdConnectionConfig:
-    """Load backend config from scenario YAML, env vars, or fallback defaults."""
-    config_path = os.getenv("FIREBIRD_SCENARIOS_CONFIG_PATH")
-    if config_path and os.path.exists(config_path):
-        try:
-            import yaml
-            with open(config_path, 'r', encoding='utf-8') as f:
-                data = yaml.safe_load(f)
-            scenarios = (data or {}).get("scenarios") or {}
-            if scenarios:
-                first = next(iter(scenarios.values()))
-                return FirebirdConnectionConfig(**first)
-        except Exception:
-            pass
-    try:
-        return FirebirdConnectionConfig.from_env()
-    except Exception:
-        pass
-    return FirebirdConnectionConfig(
-        host="127.0.0.1",
-        port=3050,
-        database="/var/lib/firebird/data/test_db",
-        username="root",
-        password="password",
-        charset="UTF8",
-    )
+@pytest.fixture(scope="session", params=_SCENARIOS, ids=lambda scenario: scenario.name)
+def backend_scenario(request):
+    """Return the scenario the tests run against; its id is the scenario name."""
+    return request.param
+
+
+def _first_scenario():
+    """Return the first configured scenario (legacy fixtures need one)."""
+    name = next(iter(support.firebird.SCENARIO_MAP), None)
+    if name is None:
+        raise RuntimeError("No Firebird scenario configured")
+    return support.firebird.scenario(name)
 
 
 @pytest.fixture
@@ -152,89 +117,36 @@ def fb4_dialect():
 
 
 @pytest.fixture
-def backend_config():
+def fb_config(request):
+    """Return a connection configuration for the *directory's* database.
+
+    Firebird scenarios carry no database name: the logical name comes from the
+    test directory, so sibling directories never share one file.  A missing
+    file is created when the server is reachable; this fixture does not clear
+    the database (only a directory contract's ``ensure_database`` does).
+    """
+    scenario = _first_scenario()
+    database = database_name(Path(str(request.node.path)).parent)
+    try:
+        scenario.ensure_database(database)
+    except Exception:
+        # Keep the config shape even when the server is unreachable; the
+        # backend's connect() reports the real failure to the test, and
+        # live-server fixtures turn it into a skip.
+        pass
+    return scenario.make_config(database)
+
+
+@pytest.fixture
+def backend_config(fb_config):
     """Create a minimal backend configuration for testing."""
-    return _load_backend_config()
+    return fb_config
 
 
 @pytest.fixture
 def backend(backend_config):
     """Create a FirebirdBackend instance (no connection)."""
     return FirebirdBackend(connection_config=backend_config)
-
-
-# -- the live-connection fixtures -----------------------------------------
-#
-# These used to live in feature/backend/conftest.py, where only the modules
-# under that one directory could see them. expression-dialect 12 puts a
-# connected check in the integration area rather than beside the expression
-# tests that pin the rendering, so the fixtures have to be reachable from both
-# and the tests root is the only place that serves both.
-
-
-def _apply_pooled_database(config: FirebirdConnectionConfig) -> FirebirdConnectionConfig:
-    """Apply the pooled database path when the testsuite pool is active."""
-    from providers.pooling import resolve_database_name
-    from providers.scenarios import SCENARIO_MAP
-
-    if not SCENARIO_MAP:
-        return config
-    scenario_name = next(iter(SCENARIO_MAP))
-    pooled_db = resolve_database_name(scenario_name)
-    if pooled_db:
-        config = replace(config, database=pooled_db)
-    return config
-
-
-def _load_fb_config() -> FirebirdConnectionConfig:
-    """Load config from scenario YAML, env vars, or fallback defaults."""
-    config = None
-    config_path = os.getenv("FIREBIRD_SCENARIOS_CONFIG_PATH")
-    if config_path and os.path.exists(config_path):
-        try:
-            import yaml
-            with open(config_path, 'r', encoding='utf-8') as f:
-                data = yaml.safe_load(f)
-            scenarios = (data or {}).get("scenarios") or {}
-            if scenarios:
-                config = FirebirdConnectionConfig(**next(iter(scenarios.values())))
-        except Exception:
-            config = None
-    if config is None:
-        default_path = os.path.join(
-            os.path.dirname(__file__), "config", "firebird_scenarios.yaml"
-        )
-        default_path = os.path.normpath(default_path)
-        if os.path.exists(default_path):
-            try:
-                import yaml
-                with open(default_path, 'r', encoding='utf-8') as f:
-                    data = yaml.safe_load(f)
-                scenarios = (data or {}).get("scenarios") or {}
-                if scenarios:
-                    config = FirebirdConnectionConfig(**next(iter(scenarios.values())))
-            except Exception:
-                config = None
-    if config is None:
-        try:
-            config = FirebirdConnectionConfig.from_env()
-        except Exception:
-            config = None
-    if config is None:
-        config = FirebirdConnectionConfig(
-            host="127.0.0.1",
-            port=3050,
-            database="/var/lib/firebird/data/test_db",
-            username="SYSDBA",
-            password="password",
-            charset="UTF8",
-        )
-    return _apply_pooled_database(config)
-
-
-@pytest.fixture
-def fb_config():
-    return _load_fb_config()
 
 
 @pytest.fixture
@@ -252,7 +164,7 @@ def fb_backend(fb_config):
 def setup_test_table(fb_backend):
     table = "TEST_CRUD"
     try:
-        fb_backend.execute(f'DROP TABLE {table}', fetch=False)
+        fb_backend.execute(f"DROP TABLE {table}", fetch=False)
     except Exception:
         pass
     fb_backend.execute(f"""
@@ -266,6 +178,6 @@ def setup_test_table(fb_backend):
     """)
     yield table
     try:
-        fb_backend.execute(f'DROP TABLE {table}', fetch=False)
+        fb_backend.execute(f"DROP TABLE {table}", fetch=False)
     except Exception:
         pass

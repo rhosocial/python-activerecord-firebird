@@ -1,0 +1,36 @@
+# tests/rhosocial/activerecord_firebird_test/feature/backend/construct/dialect/test_dql_capabilities.py
+"""Firebird DQL capability tests: NULLS ordering and WITH TIES fail-fast."""
+
+import pytest
+
+from rhosocial.activerecord.backend.dialect.exceptions import UnsupportedFeatureError
+from rhosocial.activerecord.backend.expression import (
+    Column,
+    LimitOffsetClause,
+    OrderByClause,
+    OrderByItem,
+)
+from rhosocial.activerecord.backend.impl.firebird.dialect import FirebirdDialect
+
+
+@pytest.fixture
+def dialect():
+    return FirebirdDialect(version=(5, 0, 0))
+
+
+def test_supports_nulls_first_last_true(dialect):
+    assert dialect.supports_nulls_first_last() is True
+    # One enum-style ``nulls`` slot, not the former nulls_first / nulls_last
+    # boolean pair: the pair said the same thing twice, and the wire had to
+    # guess which half the caller meant.
+    sql, _ = OrderByClause(
+        dialect,
+        expressions=[OrderByItem(dialect, Column(dialect, "name"), nulls="first")],
+    ).to_sql()
+    assert "NULLS FIRST" in sql
+
+
+def test_supports_fetch_with_ties_false(dialect):
+    assert dialect.supports_fetch_with_ties() is False
+    with pytest.raises(UnsupportedFeatureError, match="WITH TIES"):
+        dialect.format_limit_offset_clause(LimitOffsetClause(dialect, limit=5, with_ties=True))

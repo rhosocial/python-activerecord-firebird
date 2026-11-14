@@ -1,8 +1,4 @@
 # tests/rhosocial/activerecord_firebird_test/feature/query/worker/conftest.py
-"""
-Pytest configuration for query worker tests.
+"""Use the shared ``query/worker`` minimal test set."""
 
-This file imports fixtures from the corresponding testsuite, making them
-available to the tests in this directory.
-"""
-from rhosocial.activerecord.testsuite.feature.query.worker.conftest import *  # noqa: F403
+from rhosocial.activerecord.testsuite.feature.query.worker.conftest import *  # noqa: F401,F403
