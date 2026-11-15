@@ -2,7 +2,7 @@
 """Firebird shared non-I/O backend mixin."""
 
 import threading
-from typing import Dict, Tuple, Type
+from typing import Dict, List, Tuple, Type
 
 from rhosocial.activerecord.backend import errors as exc
 
@@ -158,11 +158,11 @@ class FirebirdBackendMixin:
         registry = self.adapter_registry
         for adapter_class, py_type, db_type in firebird_adapters:
             adapter = adapter_class()
-            if isinstance(py_type, tuple):
-                for pt in py_type:
-                    registry.register(adapter, pt, db_type, allow_override=True)
-            else:
-                registry.register(adapter, py_type, db_type, allow_override=True)
+            py_types = py_type if isinstance(py_type, tuple) else (py_type,)
+            db_types = db_type if isinstance(db_type, tuple) else (db_type,)
+            for pt in py_types:
+                for dt in db_types:
+                    registry.register(adapter, pt, dt, allow_override=True)
 
     @property
     def requires_manual_commit(self) -> bool:
@@ -306,26 +306,62 @@ class FirebirdBackendMixin:
         ) from error
 
     def get_default_adapter_suggestions(self) -> Dict[Type, Tuple[SQLTypeAdapter, Type]]:
+        """Provide default type adapter suggestions for Firebird.
+
+        The framework defaults
+        (:meth:`TypeAdaptionMixin.get_default_adapter_suggestions`) are the
+        base; Firebird merges its own pairs on top (its driver accepts the
+        temporal and decimal values natively, so those targets stay
+        identity-shaped), including the neutral families it carries as
+        VARCHAR / BLOB text.
+        """
         if self._default_suggestions_cache is not None:
             return self._default_suggestions_cache
 
         import datetime as dt
         from decimal import Decimal
 
-        suggestions: Dict[Type, Tuple[SQLTypeAdapter, Type]] = {}
+        from rhosocial.activerecord.backend.adapters import (
+            BitString,
+            Geometry,
+            MacAddress,
+            Multirange,
+            Range,
+            Vector,
+        )
+        from rhosocial.activerecord.backend.base.type_adaption import (
+            merge_adapter_suggestions,
+        )
+
+        base = super().get_default_adapter_suggestions()
+
         type_mappings = [
             (int, int), (float, float), (str, str), (bytes, bytes),
             (bool, bool), (dt.datetime, dt.datetime), (dt.date, dt.date),
             (dt.time, dt.time), (Decimal, Decimal), (dict, str), (list, str),
+            # Neutral families: Firebird carries them as VARCHAR / BLOB text.
+            (Geometry, str), (Vector, str), (BitString, str),
+            (Range, str), (Multirange, str), (MacAddress, str),
         ]
 
-        for py_type, db_type in type_mappings:
-            adapter = self.adapter_registry.get_adapter(py_type, db_type)
-            if adapter:
-                suggestions[py_type] = (adapter, db_type)
+        suggestions = merge_adapter_suggestions(base, type_mappings, self.adapter_registry)
 
         self._default_suggestions_cache = suggestions
         return suggestions
+
+    def get_type_adapters(self) -> List["SQLTypeAdapter"]:
+        """Return the adapter instances this backend provides.
+
+        This is a plain inventory: it says which adapters exist for this backend.
+        It carries no suggestion/default/priority semantics; the caller decides.
+        """
+        registered = self.adapter_registry.get_all_adapters().values()
+        unique: Dict[Tuple[str, str], "SQLTypeAdapter"] = {}
+        for adapter in registered:
+            adapter_class = type(adapter)
+            key = (adapter_class.__module__, adapter_class.__qualname__)
+            unique.setdefault(key, adapter)
+        return [unique[key] for key in sorted(unique)]
 
     def _check_returning_compatibility(self, returning_columns):
         version = getattr(self.dialect, 'version', None)

@@ -12,15 +12,20 @@ from uuid import UUID
 import pytest
 
 from rhosocial.activerecord.backend.impl.firebird.adapters import (
+    FirebirdBitStringAdapter,
     FirebirdBlobAdapter,
     FirebirdBooleanAdapter,
     FirebirdDateAdapter,
     FirebirdDatetimeAdapter,
     FirebirdDecimalAdapter,
+    FirebirdGeometryAdapter,
     FirebirdJsonAdapter,
+    FirebirdMacAddressAdapter,
+    FirebirdRangeAdapter,
     FirebirdTextBlobAdapter,
     FirebirdTimeAdapter,
     FirebirdUUIDAdapter,
+    FirebirdVectorAdapter,
     firebird_adapters,
 )
 
@@ -303,4 +308,9 @@ class TestAdapterRegistry:
             FirebirdDecimalAdapter,
             FirebirdUUIDAdapter,
             FirebirdJsonAdapter,
+            FirebirdGeometryAdapter,
+            FirebirdVectorAdapter,
+            FirebirdBitStringAdapter,
+            FirebirdRangeAdapter,
+            FirebirdMacAddressAdapter,
         }

@@ -1,22 +1,60 @@
 # tests/rhosocial/activerecord_firebird_test/feature/query/core/conftest.py
-"""The Firebird-only expression test set.
+"""L2 backend fixtures for the Firebird-only query "core" tests.
 
-These tests are backend-specific, so the fixture group lives here rather than
-in the shared suite.  The collation test creates and drops the table it uses
-itself, so the directory-level contract only creates or clears the database.
+- ``database``: one database per directory (session scope, emptied at start);
+- ``schema``: the tables this directory's files use, dropped and recreated
+  for every test (function scope).
+
+The files here assert on expression SQL (COLLATE construction) and own their
+throwaway raw tables inside the test module, so no topic definition is
+prepared; the database still exists because it is the directory's identity.
 """
 
+from pathlib import Path
+
+import pytest
+
+from rhosocial.activerecord.backend.options import ExecutionOptions
+from rhosocial.activerecord.backend.schema import StatementType
 from rhosocial.activerecord.testsuite.feature.query.conftest import *  # noqa: F401,F403
 
+DDL = ExecutionOptions(stmt_type=StatementType.DDL)
 
-def ensure_database(environment):
-    """Create the directory's database, or clear it when it already exists."""
-    environment.reset_database()
-
-
-def prepare(environment):
-    """Nothing to prepare: the test owns the table it creates."""
+DEFINITIONS = ()
 
 
-def teardown(environment):
-    """Nothing to tear down: the test drops the table it created."""
+def _database_name() -> str:
+    """Database name from this directory's namespace (below ``feature``)."""
+    parts = Path(__file__).parent.parts
+    start = parts.index("feature") + 1
+    return "test_" + "_".join(parts[start:])
+
+
+@pytest.fixture(scope="session")
+def database_config(backend_scenario):
+    """The scenario, its connection configuration, and the database name."""
+    name = _database_name()
+    return backend_scenario, backend_scenario.make_config(name), name
+
+
+@pytest.fixture(scope="session")
+def database(database_config):
+    """The directory's database, prepared once and left for later files."""
+    scenario, config, name = database_config
+    scenario.reset_database(name)
+    backend = scenario.backend_class(connection_config=config)
+    backend.connect()
+    backend.introspect_and_adapt()
+    yield backend
+    backend.disconnect()
+
+
+@pytest.fixture(scope="function", autouse=True)
+def schema(database):
+    """Drop and recreate the tables this directory uses, before every test."""
+    fixtures = [definition(database.dialect) for definition in DEFINITIONS]
+    for fixture in fixtures:
+        database.execute(*fixture.create_table.to_sql(), options=DDL)
+    yield
+    for fixture in reversed(fixtures):
+        database.execute(*fixture.drop_table.to_sql(), options=DDL)

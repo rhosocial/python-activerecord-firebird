@@ -1,22 +1,11 @@
 # tests/rhosocial/activerecord_firebird_test/feature/interface/conftest.py
-"""The ``interface`` directory's minimal test set.
+"""
+Pytest configuration for interface tests.
 
-The shared interface group defines no fixtures; these tests are database-free
-and only exercise the thread-safe mapping.  The empty contract keeps the
-directory a first-class leaf of the suite without opening a database.
+This file imports fixtures from the corresponding testsuite, making them
+available to the tests in this directory.  The shared interface group defines
+no fixtures: these tests are database-free and only exercise in-process data
+structures, so the directory opens no database and declares no fixture group.
 """
 
-from rhosocial.activerecord.testsuite.feature.interface.conftest import *  # noqa: F401,F403
-
-
-def ensure_database(environment):
-    """Create the directory's database, or clear it when it already exists."""
-    environment.reset_database()
-
-
-def prepare(environment):
-    """Create the group's tables before every test (none here)."""
-
-
-def teardown(environment):
-    """Drop the group's tables after every test (none here)."""
+from rhosocial.activerecord.testsuite.feature.interface.conftest import *  # noqa: F403
