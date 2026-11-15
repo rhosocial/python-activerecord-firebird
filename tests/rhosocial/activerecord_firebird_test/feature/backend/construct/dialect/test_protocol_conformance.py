@@ -83,6 +83,7 @@ FIREBIRD_PROTOCOLS = [
     dialect_protocols.AlterTypeSupport,
     dialect_protocols.ArraySupport,
     dialect_protocols.AutoIncrementColumnSupport,
+    dialect_protocols.DatabaseAssignedColumnSupport,
     dialect_protocols.CTESupport,
     dialect_protocols.CollationSupport,
     dialect_protocols.ColumnAttributeSupport,

@@ -923,3 +923,12 @@ class FirebirdDialect(
     # moved core default from silently becoming Firebird's contract.
     #
     # endregion
+
+    def supports_database_assigned_integer_column(self) -> bool:
+        """Firebird assigns the value through its identity column.
+
+        Delegates to :meth:`supports_identity_column`: the standard
+        ``GENERATED ... AS IDENTITY`` clause exists from Firebird 3.0, while
+        older versions have ``GEN_ID`` but not the clause this dialect renders.
+        """
+        return self.supports_identity_column()
