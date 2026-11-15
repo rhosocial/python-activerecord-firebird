@@ -32,7 +32,7 @@ class FirebirdBlobAdapter(SQLTypeAdapter):
             return bytes(value)
         raise ValueError(f"Cannot convert {type(value).__name__} to BLOB")
 
-    def from_database(self, value: Any, target_type: Type, options: Optional[Dict] = None) -> Optional[bytes]:
+    def from_database(self, value: Any, target_type: Type, options: Optional[Dict] = None, **kwargs) -> Optional[bytes]:
         if value is None:
             return None
         if isinstance(value, bytes):
@@ -54,7 +54,7 @@ class FirebirdTextBlobAdapter(SQLTypeAdapter):
             return None
         return str(value)
 
-    def from_database(self, value: Any, target_type: Type, options: Optional[Dict] = None) -> Optional[str]:
+    def from_database(self, value: Any, target_type: Type, options: Optional[Dict] = None, **kwargs) -> Optional[str]:
         if value is None:
             return None
         if isinstance(value, bytes):
@@ -87,7 +87,7 @@ class FirebirdBooleanAdapter(SQLTypeAdapter):
         # adapters that target str (e.g. YesOrNo adapters storing 'yes'/'no').
         return 1 if value else 0
 
-    def from_database(self, value: Any, target_type: Type, options: Optional[Dict] = None) -> Optional[bool]:
+    def from_database(self, value: Any, target_type: Type, options: Optional[Dict] = None, **kwargs) -> Optional[bool]:
         if value is None:
             return None
         if isinstance(value, bool):
@@ -117,7 +117,7 @@ class FirebirdDecimalAdapter(SQLTypeAdapter):
             return Decimal(value)
         raise ValueError(f"Cannot convert {type(value).__name__} to DECIMAL")
 
-    def from_database(self, value: Any, target_type: Type, options: Optional[Dict] = None) -> Optional[Decimal]:
+    def from_database(self, value: Any, target_type: Type, options: Optional[Dict] = None, **kwargs) -> Optional[Decimal]:
         if value is None:
             return None
         if isinstance(value, Decimal):
@@ -149,7 +149,7 @@ class FirebirdDateAdapter(SQLTypeAdapter):
             return datetime.strptime(value, '%Y-%m-%d').date()
         raise ValueError(f"Cannot convert {type(value).__name__} to DATE")
 
-    def from_database(self, value: Any, target_type: Type, options: Optional[Dict] = None) -> Optional[date]:
+    def from_database(self, value: Any, target_type: Type, options: Optional[Dict] = None, **kwargs) -> Optional[date]:
         if value is None:
             return None
         if isinstance(value, date) and not isinstance(value, datetime):
@@ -184,7 +184,7 @@ class FirebirdTimeAdapter(SQLTypeAdapter):
             return time(h, m, sec)
         raise ValueError(f"Cannot convert {type(value).__name__} to TIME")
 
-    def from_database(self, value: Any, target_type: Type, options: Optional[Dict] = None) -> Optional[time]:
+    def from_database(self, value: Any, target_type: Type, options: Optional[Dict] = None, **kwargs) -> Optional[time]:
         if value is None:
             return None
         if isinstance(value, time):
@@ -229,7 +229,7 @@ class FirebirdDatetimeAdapter(SQLTypeAdapter):
             return datetime.strptime(value, '%Y-%m-%d %H:%M:%S')
         raise ValueError(f"Cannot convert {type(value).__name__} to TIMESTAMP")
 
-    def from_database(self, value: Any, target_type: Type, options: Optional[Dict] = None) -> Optional[datetime]:
+    def from_database(self, value: Any, target_type: Type, options: Optional[Dict] = None, **kwargs) -> Optional[datetime]:
         if value is None:
             return None
         if isinstance(value, datetime):
@@ -288,7 +288,7 @@ class FirebirdUUIDAdapter(SQLTypeAdapter):
             f"UUID values can only be bound as str or bytes, got {target_type.__name__}"
         )
 
-    def from_database(self, value: Any, target_type: Type, options: Optional[Dict] = None) -> Optional[UUID]:
+    def from_database(self, value: Any, target_type: Type, options: Optional[Dict] = None, **kwargs) -> Optional[UUID]:
         if value is None:
             return None
         if isinstance(value, UUID):
@@ -332,7 +332,7 @@ class FirebirdJsonAdapter(SQLTypeAdapter):
             return value.decode('utf-8')
         return str(value)
 
-    def from_database(self, value: Any, target_type: Type, options: Optional[Dict] = None) -> Any:
+    def from_database(self, value: Any, target_type: Type, options: Optional[Dict] = None, **kwargs) -> Any:
         if value is None:
             return None
         if isinstance(value, (dict, list)):
