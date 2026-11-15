@@ -20,21 +20,21 @@ permissions:
 jobs:
   test:
     name: Python ${{ matrix.python-version }} / Firebird ${{ matrix.firebird-version }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         include:
-          - { python-version: '3.11', firebird-version: '5', port: 3050 }
-          - { python-version: '3.12', firebird-version: '6-snapshot', port: 3051 }
-          - { python-version: '3.13', firebird-version: '5', port: 3052 }
-          - { python-version: '3.14', firebird-version: '6-snapshot', port: 3053 }
+          - { python-version: '3.11', firebird-version: '5', port: 3050, os: ubuntu-latest }
+          - { python-version: '3.12', firebird-version: '6-snapshot', port: 3051, os: ubuntu-latest }
+          - { python-version: '3.13', firebird-version: '5', port: 3052, os: ubuntu-latest }
+          - { python-version: '3.14', firebird-version: '6-snapshot', port: 3053, os: ubuntu-latest }
           # Python 3.15 leg. GIL only: `firebird-driver` ships a universal
           # (py3-none-any) wheel, which runs on 3.15 without a native build, but
           # no cp315t distribution, so a free-threaded 3.15t leg has nothing to
           # run and is deliberately not declared. Port 3054 is the next free
           # slot in the 3050+ run used by this matrix.
-          - { python-version: '3.15', firebird-version: '6-snapshot', port: 3054 }
+          - { python-version: '3.15', firebird-version: '6-snapshot', port: 3054, os: ubuntu-latest }
 
     services:
       firebird:
