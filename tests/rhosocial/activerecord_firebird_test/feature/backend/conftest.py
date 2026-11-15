@@ -31,7 +31,7 @@ import pytest
 
 import support.firebird
 
-from rhosocial.activerecord.testsuite.core.declarations import database_name
+from rhosocial.activerecord.testsuite.pytest_plugin.declarations import database_name
 
 # Databases already cleared in this process, keyed by (scenario, database).
 _PREPARED_DATABASES = set()

@@ -14,7 +14,7 @@ from pathlib import Path
 
 import pytest
 import support.firebird
-from rhosocial.activerecord.testsuite.core.declarations import database_name
+from rhosocial.activerecord.testsuite.pytest_plugin.declarations import database_name
 
 from rhosocial.activerecord.backend.impl.firebird.backend import FirebirdBackend
 from rhosocial.activerecord.backend.impl.firebird.dialect import FirebirdDialect
