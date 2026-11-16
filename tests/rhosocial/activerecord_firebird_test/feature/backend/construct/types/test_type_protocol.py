@@ -303,6 +303,15 @@ class TestSuggestedDataTypes:
         assert "jsonb" in suggestions
         assert suggestions["jsonb"] is TextType
 
+    def test_boolean_is_substituted_only_before_fb3(self):
+        """2.5 has no BOOLEAN; from 3.0 the renderer owns the concept."""
+        old = FirebirdDialect((2, 5, 0))
+        assert old.substitute_data_types()["boolean"] is SmallIntType
+        assert "boolean" not in old.supports_data_types()
+        new = FirebirdDialect((3, 0, 0))
+        assert "boolean" not in new.substitute_data_types()
+        assert "boolean" in new.supports_data_types()
+
     def test_enum_suggested_as_varchar(self, dialect):
         suggestions = dialect.substitute_data_types()
         assert "enum" in suggestions

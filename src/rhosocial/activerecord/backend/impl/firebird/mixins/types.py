@@ -1021,6 +1021,13 @@ class FirebirdTypeSupportMixin(DDLTypeMixin, DDLTypeSupport):
         would trade a clear "not supported" for a worse one whose advice does not
         work.
 
+        ``boolean``
+            **Before 3.0 Firebird has no ``BOOLEAN`` type at all**, so the
+            concept is neither rendered nor, currently, substituted -- D9's
+            "silence is not an answer" on every 2.5 server. A flag is stored
+            as ``SMALLINT`` 0/1 there, which is the honest replacement; from
+            3.0 the renderer owns the concept and no substitute is given.
+
         ``json`` / ``jsonb``
             Firebird has no JSON type. ``BLOB SUB_TYPE TEXT`` holding JSON text is
             the documented way to store it — hence :class:`TextType`, which is
@@ -1109,7 +1116,7 @@ class FirebirdTypeSupportMixin(DDLTypeMixin, DDLTypeSupport):
             ``TimestampType``", then "a ``TIMESTAMP`` takes no precision argument".
             Nothing is dropped.
         """
-        return {
+        substitutes = {
             "json": TextType,
             "jsonb": TextType,
             "xml": TextType,
@@ -1119,6 +1126,12 @@ class FirebirdTypeSupportMixin(DDLTypeMixin, DDLTypeSupport):
             "timetz": TimeType,
             "timestamptz": TimestampType,
         }
+        # 2.5 has no BOOLEAN; the flag is a SMALLINT there. From 3.0 the
+        # renderer owns the concept, so listing it here too would be a second
+        # contradictory answer.
+        if _norm_version(getattr(self, "version", (3, 0, 0))) < (3, 0, 0):
+            substitutes["boolean"] = SmallIntType
+        return substitutes
 
     # Every substitution above loses something, and the caller is the only one
     # who can act on it — so each caveat goes into the error they are already
@@ -1126,6 +1139,9 @@ class FirebirdTypeSupportMixin(DDLTypeMixin, DDLTypeSupport):
     # the same meaning (it usually does; "usually" is why it must not say so),
     # which leaves the specific loss to be stated here.
     _LOSSY_SUBSTITUTIONS = {
+        "boolean": "Firebird 2.5 has no BOOLEAN, so the flag is a SMALLINT "
+                   "0/1 with neither NULL semantics nor the three-valued "
+                   "logic the type concept promises.",
         "json": "Firebird has no JSON type, so the document is stored as text "
                 "and nothing on the server validates it; that is the "
                 "application's job now.",
