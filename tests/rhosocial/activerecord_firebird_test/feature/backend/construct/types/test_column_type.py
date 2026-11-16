@@ -24,17 +24,32 @@ from typing import Any, Tuple
 
 import pytest
 
+from rhosocial.activerecord.backend.adapters import (
+    BitString,
+    Geometry,
+    MacAddress,
+    Multirange,
+    Range,
+    Vector,
+)
 from rhosocial.activerecord.backend.dialect.mixins import ColumnTypeMixin
 from rhosocial.activerecord.backend.expression.column_types import (
     BinaryColumn,
+    BitStringColumn,
     BooleanColumn,
     ColumnBase,
+    GeometryColumn,
     IntegerColumn,
+    IntervalColumn,
     JSONColumn,
+    MacAddressColumn,
+    MultirangeColumn,
     NumericColumn,
+    RangeColumn,
     StringColumn,
     TimestampColumn,
     UUIDColumn,
+    VectorColumn,
 )
 from rhosocial.activerecord.backend.impl.firebird.dialect import FirebirdDialect
 from rhosocial.activerecord.backend.impl.firebird.mixins import (
@@ -68,6 +83,12 @@ COMMON_TYPES: Tuple[Any, ...] = (
     set,
     frozenset,
     enum.Enum,
+    Geometry,
+    Vector,
+    BitString,
+    Range,
+    Multirange,
+    MacAddress,
 )
 
 #: The entries Firebird answers ``None`` for. Five, and every one of them is
@@ -76,8 +97,8 @@ FIREBIRD_REFUSALS = frozenset({dict, list, tuple, set, frozenset})
 
 _ENTRY_IDS = [getattr(entry, "__name__", str(entry)) for entry in COMMON_TYPES]
 
-#: The thirteen entries Firebird answers with a real column class -- the
-#: eighteen, minus the five deliberate refusals.
+#: The nineteen entries Firebird answers with a real column class -- the
+#: twenty-four, minus the five deliberate refusals.
 _ANSWERED_TYPES = tuple(e for e in COMMON_TYPES if e not in FIREBIRD_REFUSALS)
 _ANSWERED_IDS = [getattr(entry, "__name__", str(entry)) for entry in _ANSWERED_TYPES]
 
@@ -232,9 +253,15 @@ class TestBaseline:
             (datetime.date, TimestampColumn),
             (datetime.time, TimestampColumn),
             (datetime.datetime, TimestampColumn),
-            (datetime.timedelta, NumericColumn),
+            (datetime.timedelta, IntervalColumn),
             (uuid.UUID, UUIDColumn),
             (enum.Enum, StringColumn),
+            (Geometry, GeometryColumn),
+            (Vector, VectorColumn),
+            (BitString, BitStringColumn),
+            (Range, RangeColumn),
+            (Multirange, MultirangeColumn),
+            (MacAddress, MacAddressColumn),
         ],
     )
     def test_entry_resolves_to_its_column_class(self, dialect, annotation, expected):

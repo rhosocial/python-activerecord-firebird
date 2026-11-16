@@ -102,21 +102,36 @@ import enum
 import uuid
 from typing import Any, Dict, Optional, Set, Type
 
+from rhosocial.activerecord.backend.adapters import (
+    BitString,
+    Geometry,
+    MacAddress,
+    Multirange,
+    Range,
+    Vector,
+)
 from rhosocial.activerecord.backend.dialect.mixins import ColumnTypeMixin
 from rhosocial.activerecord.backend.expression.column_types import (
     BinaryColumn,
+    BitStringColumn,
     BooleanColumn,
     ColumnBase,
+    GeometryColumn,
     IntegerColumn,
+    IntervalColumn,
+    MacAddressColumn,
+    MultirangeColumn,
     NumericColumn,
+    RangeColumn,
     StringColumn,
     TimestampColumn,
     UUIDColumn,
+    VectorColumn,
 )
 
 #: Firebird's full table: ``{common Python type: ColumnBase subclass or None}``.
 #:
-#: Every one of the framework's eighteen common entries is answered, so a caller
+#: Every one of the framework's twenty-four entries is answered, so a caller
 #: reading this table is told a decision rather than finding a hole. The five
 #: ``None`` answers are the two groups documented in the module docstring, and
 #: :attr:`FirebirdColumnTypeMixin.unsupported_column_entries` reads them back out
@@ -160,7 +175,7 @@ FIREBIRD_COLUMN_TYPES: Dict[Any, Optional[Type[ColumnBase]]] = {
     # arithmetic uses internally. The driver also refuses a Python timedelta
     # outright, so the value layer has to bind a number regardless -- a
     # fact about binding, and no reason to refuse the entry here.
-    datetime.timedelta: NumericColumn,
+    datetime.timedelta: IntervalColumn,
     # Equality and IN only, which is the portable guarantee set for UUID;
     # Firebird has no UUID function and does not need one. `CHAR(16)
     # CHARACTER SET OCTETS` (or 36 hex characters) is the DDL side's choice.
@@ -182,6 +197,19 @@ FIREBIRD_COLUMN_TYPES: Dict[Any, Optional[Type[ColumnBase]]] = {
     # constraint, and the CHECK is what enforces it. The column class is the
     # string one because that is what the value compares and sorts as.
     enum.Enum: StringColumn,
+    # -- Complex families ------------------------------------------------
+    # Their core classes promise only the surface every column has -- alias,
+    # null tests, casting and collation -- because no distance, containment,
+    # overlap, bitwise or similarity operation is spelled the same way on
+    # every backend. Richer family operations belong to a Firebird-named
+    # subclass in this backend's extra table. Storage is answered in the
+    # data-type suggestion module.
+    Geometry: GeometryColumn,
+    Vector: VectorColumn,
+    BitString: BitStringColumn,
+    Range: RangeColumn,
+    Multirange: MultirangeColumn,
+    MacAddress: MacAddressColumn,
 }
 
 
@@ -193,7 +221,7 @@ class FirebirdColumnTypeMixin(ColumnTypeMixin):
     side by side: that mixin answers *what the column is declared as*, this one
     answers *what the field's value can do*.
 
-    **Every one of the protocol's eighteen entries is answered**, and an entry
+    **Every one of the protocol's twenty-four entries is answered**, and an entry
     this backend cannot express answers ``None`` rather than going missing: the
     difference between "Firebird has nothing for a ``dict``" and "nobody filled
     that cell in" is the difference between a decision a caller can act on and a
