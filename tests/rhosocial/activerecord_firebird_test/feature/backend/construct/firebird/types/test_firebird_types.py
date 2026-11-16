@@ -71,9 +71,25 @@ class TestFirebirdTzTypes:
         (FirebirdTimeTzType, "TIME WITH TIME ZONE"),
         (FirebirdTimeWithoutTimeZoneType, "TIME WITHOUT TIME ZONE"),
     ])
-    @pytest.mark.parametrize("precision", [0, 3, 6])
-    def test_a_declared_precision_is_refused_by_name(self, cls, declaration,
-                                                     precision):
+    @pytest.mark.parametrize("precision", [0, 1, 3, 4])
+    def test_a_precision_up_to_four_renders_the_bare_declaration(self, cls,
+                                                                declaration,
+                                                                precision):
+        """Firebird keeps 1/10000 s, so any precision up to four is accepted
+        and rendered as the bare declaration -- the server has one width."""
+        dialect = FirebirdDialect((4, 0, 0))
+        rendered = dialect.format_data_type(cls(dialect, precision=precision))[0]
+        assert rendered == declaration
+        assert "(" not in rendered
+
+    @pytest.mark.parametrize("cls,declaration", [
+        (FirebirdTimeStampTzType, "TIMESTAMP WITH TIME ZONE"),
+        (FirebirdTimeTzType, "TIME WITH TIME ZONE"),
+        (FirebirdTimeWithoutTimeZoneType, "TIME WITHOUT TIME ZONE"),
+    ])
+    @pytest.mark.parametrize("precision", [5, 6])
+    def test_a_precision_beyond_four_is_refused_by_name(self, cls, declaration,
+                                                        precision):
         """The refusal must name the field and say why, so a caller can act."""
         dialect = FirebirdDialect((4, 0, 0))
         with pytest.raises(UnsupportedFeatureError) as excinfo:
