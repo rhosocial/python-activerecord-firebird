@@ -101,7 +101,7 @@ class FirebirdTimeStampTzType(TimestampTzType):
     synonymous to their respective WITHOUT TIME ZONE data types"*) and rendering
     the generic concept with it would declare a column that silently drops the
     zone. The dialect names the unzoned concept as ``timestamptz``'s substitute in
-    ``suggested_data_types`` and reaches this class by its Firebird name instead.
+    ``substitute_data_types`` and reaches this class by its Firebird name instead.
     """
 
     name = "firebird_timestamptz"

@@ -1,7 +1,7 @@
 # src/rhosocial/activerecord/backend/impl/firebird/mixins/column_type.py
 """Firebird's answer to "what does this Python type mean *as a column* here".
 
-The sibling of :meth:`FirebirdTypeSupportMixin.suggested_data_types`, and a
+The sibling of :meth:`FirebirdTypeSupportMixin.substitute_data_types`, and a
 different question from it. That one names the ``DataType`` a column is
 **created** with; this one names the **column class** whose operations a field's
 value carries. The two are deliberately separate objects -- a model decides

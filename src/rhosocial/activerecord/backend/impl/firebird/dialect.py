@@ -161,6 +161,7 @@ from .mixins import (
     FirebirdPartitionMixin,
     FirebirdTypeSupportMixin,
     FirebirdColumnTypeMixin,
+    FirebirdDataTypeSuggestionsMixin,
     FirebirdDomainMixin,
     FirebirdExceptionMixin,
     FirebirdRoutineMixin,
@@ -497,6 +498,11 @@ class FirebirdDialect(
     # reads the other -- and because the Firebird entries that answer None
     # (dict, the container family) are the reason the split matters here.
     FirebirdColumnTypeMixin,
+    # The suggested storage declarations -- the DDL half of the same answer. It
+    # has to precede FirebirdTypeSupportMixin: `suggested_data_types` is also
+    # defined by the core DataTypeMixin that mixin inherits, and a base listed
+    # later never wins over one listed earlier.
+    FirebirdDataTypeSuggestionsMixin,
     FirebirdTypeSupportMixin,
     # Must come AFTER FirebirdTypeSupportMixin: a dialect's bases resolve left to
     # right, and this Protocol restates the firebird_* formatter and support names

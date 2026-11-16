@@ -13,7 +13,7 @@ does **not** render, and the reason is that it cannot: Firebird's ``TIME`` and
 ``TIMESTAMP`` are its **unzoned** types (§3.4 — *"TIME and TIMESTAMP are
 synonymous to their respective WITHOUT TIME ZONE data types"*), so the only words
 a formatter could write for a zoned concept would declare a column that discards
-the zone offset. Both are named in :meth:`suggested_data_types` with the unzoned
+the zone offset. Both are named in :meth:`substitute_data_types` with the unzoned
 concept of the same family as their substitute, and Firebird's own zoned columns
 stay reachable under ``firebird_timetz`` / ``firebird_timestamptz``. See the
 "timetz / timestamptz: deliberately absent" comment above
@@ -695,7 +695,7 @@ class FirebirdTypeSupportMixin(DDLTypeMixin, DDLTypeSupport):
     # --- timetz / timestamptz: deliberately absent ---------------------------
     #
     # There is no ``format_data_type_timetz`` and no ``format_data_type_timestamptz``.
-    # Both concepts are **substituted** in :meth:`suggested_data_types` instead,
+    # Both concepts are **substituted** in :meth:`substitute_data_types` instead,
     # and the reason is that Firebird's grammar makes the two impossible to render
     # from the generic concepts:
     #
@@ -964,7 +964,7 @@ class FirebirdTypeSupportMixin(DDLTypeMixin, DDLTypeSupport):
     # WITHOUT TIME ZONE data types"). The zoned columns are Firebird's own words
     # — ``TIME WITH TIME ZONE`` / ``TIMESTAMP WITH TIME ZONE``, 4.0+ — and they
     # are rendered by ``firebird_timetz`` and ``firebird_timestamptz`` below.
-    # Naming the unzoned substitute is ``suggested_data_types``' job; see the
+    # Naming the unzoned substitute is ``substitute_data_types``' job; see the
     # "timetz / timestamptz: deliberately absent" comment above
     # ``format_data_type_timestamp``.
 
@@ -1005,7 +1005,7 @@ class FirebirdTypeSupportMixin(DDLTypeMixin, DDLTypeSupport):
         return self.version_at_least((4, 0, 0))
 
     # ------------------------------------------------------------------
-    # suggested_data_types() — D9
+    # substitute_data_types() — D9
     #
     # Every concept the framework models must be either rendered here or named
     # here. Firebird renders the scalar types and its own ``firebird_*`` family;
@@ -1013,7 +1013,7 @@ class FirebirdTypeSupportMixin(DDLTypeMixin, DDLTypeSupport):
     # gap from a bare "unsupported".
     # ------------------------------------------------------------------
 
-    def suggested_data_types(self) -> Dict[str, type]:
+    def substitute_data_types(self) -> Dict[str, type]:
         """Cross-backend type-consistency suggestions for Firebird.
 
         Values are the suggested replacement ``DataType`` **classes**, each one a

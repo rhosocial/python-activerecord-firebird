@@ -10,7 +10,7 @@ system and the Firebird backend:
   its own because it is a spelling of ``integer``;
 - ``supports_data_types()`` merges the ``firebird_*`` namespaced family
   with the core family;
-- ``suggested_data_types()`` values are real ``DataType`` classes this dialect
+- ``substitute_data_types()`` values are real ``DataType`` classes this dialect
   can render, its keys are disjoint from the supported keys, and **every core
   concept is either rendered or suggested** — silence is the one answer D9
   does not allow;
@@ -191,20 +191,20 @@ class TestSupportsDataTypesMapping:
 
 
 class TestSuggestedDataTypes:
-    """suggested_data_types(): real classes, disjoint from supported keys."""
+    """substitute_data_types(): real classes, disjoint from supported keys."""
 
     def test_returns_dict(self, dialect):
-        result = dialect.suggested_data_types()
+        result = dialect.substitute_data_types()
         assert isinstance(result, dict)
 
     def test_values_are_data_type_classes(self, dialect):
-        suggestions = dialect.suggested_data_types()
+        suggestions = dialect.substitute_data_types()
         for key, klass in suggestions.items():
             assert isinstance(klass, type), key
             assert issubclass(klass, DataType), key
 
     def test_keys_disjoint_from_supported(self, dialect):
-        suggestions = dialect.suggested_data_types()
+        suggestions = dialect.substitute_data_types()
         supported = dialect.supports_data_types()
         assert not (set(suggestions) & set(supported))
 
@@ -215,7 +215,7 @@ class TestSuggestedDataTypes:
         work.
         """
         supported = dialect.supports_data_types()
-        for key, klass in dialect.suggested_data_types().items():
+        for key, klass in dialect.substitute_data_types().items():
             assert klass.name in supported, f"{key} -> {klass.__name__}"
 
     def test_zoned_core_concepts_are_substituted_not_rendered(self, dialect):
@@ -239,7 +239,7 @@ class TestSuggestedDataTypes:
             assert not hasattr(FirebirdDialect, f"format_data_type_{name}")
             assert not hasattr(FirebirdDialect, f"supports_data_type_{name}")
             assert name not in dialect.supports_data_types()
-            assert dialect.suggested_data_types()[name] is substitute
+            assert dialect.substitute_data_types()[name] is substitute
 
     def test_the_substitution_does_not_collide_with_a_formatter(self, dialect):
         """D9: rendered and suggested keys are disjoint.
@@ -251,7 +251,7 @@ class TestSuggestedDataTypes:
         """
         rendered = set(dialect.supports_data_types())
         for name in ("timetz", "timestamptz"):
-            assert name in dialect.suggested_data_types()
+            assert name in dialect.substitute_data_types()
             assert name not in rendered
 
     def test_the_zoned_columns_are_reachable_under_their_firebird_names(self,
@@ -294,24 +294,24 @@ class TestSuggestedDataTypes:
                 dialect.format_data_type(cls(precision=6))
 
     def test_json_suggested_as_text(self, dialect):
-        suggestions = dialect.suggested_data_types()
+        suggestions = dialect.substitute_data_types()
         assert "json" in suggestions
         assert suggestions["json"] is TextType
 
     def test_jsonb_suggested_as_text(self, dialect):
-        suggestions = dialect.suggested_data_types()
+        suggestions = dialect.substitute_data_types()
         assert "jsonb" in suggestions
         assert suggestions["jsonb"] is TextType
 
     def test_enum_suggested_as_varchar(self, dialect):
-        suggestions = dialect.suggested_data_types()
+        suggestions = dialect.substitute_data_types()
         assert "enum" in suggestions
         assert suggestions["enum"] is VarCharType
 
     def test_xml_suggested_as_text(self, dialect):
         """Firebird has no XML type — no document model, no XPath, no schema
         validation — so the document is stored as text."""
-        suggestions = dialect.suggested_data_types()
+        suggestions = dialect.substitute_data_types()
         assert "xml" in suggestions
         assert suggestions["xml"] is TextType
 
@@ -325,7 +325,7 @@ class TestSuggestedDataTypes:
         ``BlobType`` was a false statement about the engine rather than a
         fallback.
         """
-        suggestions = dialect.suggested_data_types()
+        suggestions = dialect.substitute_data_types()
         assert "array" in suggestions
         assert suggestions["array"] is not BlobType
 
@@ -343,7 +343,7 @@ class TestSuggestedDataTypes:
         """
         from rhosocial.activerecord.backend.expression.types import CustomType
 
-        suggestions = dialect.suggested_data_types()
+        suggestions = dialect.substitute_data_types()
         assert suggestions["array"] is CustomType
         assert CustomType.name in dialect.supports_data_types()
         assert dialect.format_data_type(CustomType(raw="T")) == ("T", ())
@@ -357,13 +357,13 @@ class TestSuggestedDataTypes:
         naming the door a caller has to write the declaration through.
         """
         assert dialect.supports_array_type() is True
-        assert "array" in dialect.suggested_data_types()
+        assert "array" in dialect.substitute_data_types()
         assert "array" not in dialect.supports_data_types()
 
     def test_interval_suggested_as_bigint(self, dialect):
         """Firebird has no INTERVAL type; its own idiom for a duration is a
         64-bit integer counting 1/10000-second units."""
-        suggestions = dialect.suggested_data_types()
+        suggestions = dialect.substitute_data_types()
         assert "interval" in suggestions
         assert suggestions["interval"] is BigIntType
 
@@ -393,7 +393,7 @@ class TestEveryCoreConceptIsDeclared:
 
     def test_every_core_concept_is_rendered_or_suggested(self, dialect):
         supported = dialect.supports_data_types()
-        suggested = dialect.suggested_data_types()
+        suggested = dialect.substitute_data_types()
         undeclared = sorted(
             name
             for name in self._core_concepts()
@@ -516,7 +516,7 @@ class TestFirebirdTypeSupportProtocol:
         """A dialect's bases resolve left to right, so a Protocol that restated
         the concrete members with empty bodies ahead of the mixin would make
         every one of them answer ``None``."""
-        assert dialect.suggested_data_types() is not None
+        assert dialect.substitute_data_types() is not None
         assert dialect.format_data_type(FirebirdInt128Type()) == ("INT128", ())
 
 
