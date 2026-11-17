@@ -7,19 +7,23 @@ assert.
 **Parallel by default.** expression-dialect 12.1: parallel is the test
 directory's default configuration, not a flag each run adds, and the construct
 layer is exactly the part that qualifies -- every case there builds a node and
-renders it, holds no connection, and shares no mutable state.
-``--dist=loadgroup`` keeps every ungrouped case parallel and honours an
-explicit ``xdist_group``; ``--dist=loadscope`` / ``--dist=loadfile`` would
-bind whole modules together and hide the inter-test dependencies parallel
+renders it, holds no connection, and shares no mutable state. This conftest's
+``DECLARATION`` declares ``parallel=False`` for the whole backend area, so
+plain rendering directories stay ungrouped and run in unlimited parallel.
+``--dist=loadgroup`` (set below) keeps ungrouped cases parallel and honours the
+per-directory groups declared by the database-backed directories. Only those
+directories declare ``parallel=True`` in their own conftest, which is what pins
+them to one worker per scenario: ``--dist=loadscope`` / ``--dist=loadfile``
+would bind whole modules together and hide the inter-test dependencies parallel
 execution exists to expose.
 
 **Each executing directory owns its database.** The root ``fb_config`` already
 derives the logical database from the test directory; this conftest adds the
 missing half -- it clears that database once per (scenario, database), before
-the directory's first test connects, and pins a directory's items to one
-worker so parallel workers never reset tables another worker is using. The
-construct layer registers nothing and stays freely parallel, because it never
-takes a connection.
+the directory's first test connects. The directories that use it declare
+``parallel=True`` themselves, so parallel workers never reset tables another
+worker is using. The construct layer declares nothing of the sort and stays
+freely parallel, because it never takes a connection.
 
 A caller who wants a specific worker count keeps it: ``-n 0`` or an explicit
 ``-n`` leaves the choice alone.
@@ -31,7 +35,23 @@ import pytest
 
 import support.firebird
 
+from rhosocial.activerecord.testsuite.pytest_plugin import Declaration
 from rhosocial.activerecord.testsuite.pytest_plugin.declarations import database_name
+
+# The backend area is ungrouped by default; only directories that use their own
+# database opt in to per-scenario serialisation with their own DECLARATION.
+DECLARATION = Declaration(
+    parallel=False,
+    purpose=(
+        "Backend-owned tests: keep construct/render directories freely parallel; "
+        "only database-backed directories are pinned to one worker per scenario."
+    ),
+    passes_means=(
+        "Backend tests pass -- pure rendering stays parallel, and database-backed "
+        "directories are serialised by their own declaration."
+    ),
+    fails_means="A backend-owned test failed.",
+)
 
 # Databases already cleared in this process, keyed by (scenario, database).
 _PREPARED_DATABASES = set()
@@ -82,21 +102,6 @@ def fb_config(request):
     database = _database_for(request)
     _prepare_database(scenario, database)
     return scenario.make_config(database)
-
-
-def pytest_collection_modifyitems(config, items):
-    """Pin a backend directory's tests to one worker.
-
-    These directories create and drop tables in the directory's own database,
-    so two workers must never run tests from the same directory at once.
-    """
-    for item in items:
-        parts = item.path.parts
-        if "backend" not in parts:
-            continue
-        item.add_marker(
-            pytest.mark.xdist_group("firebird-backend::" + str(item.path.parent))
-        )
 
 
 def pytest_configure(config):
