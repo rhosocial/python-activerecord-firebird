@@ -17,7 +17,8 @@ import pytest
 
 from rhosocial.activerecord.backend.expression import (
     CreateTableStatement, ColumnDefinition, ColumnConstraint,
-    ColumnDefaultConstraint, ColumnNotNullConstraint, ColumnPrimaryKeyConstraint,
+    ColumnDefaultConstraint, ColumnNotNullConstraint, ColumnNullableConstraint,
+    ColumnPrimaryKeyConstraint,
 )
 from rhosocial.activerecord.backend.expression.objects import Table
 from rhosocial.activerecord.backend.expression.types import (
@@ -87,3 +88,21 @@ class TestAutoIncrementDDL:
         )
         sql, _ = dialect.format_create_table_statement(expr)
         assert "TIMESTAMP" in sql.upper()
+
+    def test_explicit_null_constraint_is_omitted(self, dialect):
+        """Firebird rejects a bare ``NULL`` column clause (SQLCODE -104).
+
+        A nullable column is nullable by default here, so the portable
+        `` NULL`` the core DDL mixin emits must be dropped rather than sent to
+        the server.
+        """
+        expr = CreateTableStatement(
+            dialect=dialect, table=Table(dialect, "null_test"),
+            columns=[
+                ColumnDefinition(dialect, "id", IntegerType(dialect), constraints=_pk(dialect)),
+                ColumnDefinition(dialect, "code", VarCharType(length=16, dialect=dialect),
+                    constraints=[ColumnConstraint(dialect, branch=ColumnNullableConstraint(dialect))]),
+            ],
+        )
+        sql, _ = dialect.format_create_table_statement(expr)
+        assert " NULL" not in sql.replace(" NOT NULL", "")

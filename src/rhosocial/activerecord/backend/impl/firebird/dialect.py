@@ -15,7 +15,7 @@ Firebird SQL dialect features and version support:
     Firebird); INTERSECT / EXCEPT do not exist (tracker CORE808 open)
 """
 
-from typing import Optional, Tuple
+from typing import Any, Optional, Tuple
 
 from rhosocial.activerecord.backend.dialect.base import SQLDialectBase
 from rhosocial.activerecord.backend.dialect.protocols import (
@@ -938,3 +938,13 @@ class FirebirdDialect(
         older versions have ``GEN_ID`` but not the clause this dialect renders.
         """
         return self.supports_identity_column()
+
+    def format_column_nullable_constraint(self, constraint: Any) -> Tuple[str, Tuple]:
+        """Firebird has no explicit ``NULL`` column constraint (SQLCODE -104).
+
+        A column is nullable by default, so the portable `` NULL`` the core
+        DDL mixin emits for an explicitly nullable field is not just redundant
+        here -- the Firebird parser rejects the bare ``NULL`` keyword in a
+        column definition.  Drop the clause; the column stays nullable.
+        """
+        return "", ()
