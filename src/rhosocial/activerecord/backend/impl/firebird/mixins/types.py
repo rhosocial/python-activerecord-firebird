@@ -114,7 +114,7 @@ Three Firebird facts settle the fields that could not be honoured:
 from __future__ import annotations
 
 import re
-from typing import Dict, Tuple
+from typing import Dict, Optional, Tuple
 
 from rhosocial.activerecord.backend.dialect.exceptions import UnsupportedFeatureError
 from rhosocial.activerecord.backend.dialect.mixins import DDLTypeMixin
@@ -643,6 +643,38 @@ class FirebirdTypeSupportMixin(DDLTypeMixin, DDLTypeSupport):
             length = self.type_parameter_defaults()["char"]["length"]
         return f"CHAR({length})", ()
 
+    def _firebird_lob_length(self, data_type, declaration: str) -> Optional[int]:
+        """Read a ``TextType``/``BlobType`` ``length`` and validate its shape.
+
+        Firebird's LOB declaration has no maximum-size argument — ``BLOB`` and
+        ``BLOB SUB_TYPE TEXT`` are unbounded and already hold any minimum a
+        caller asks for — so the length cannot choose a wider tier the way it
+        does on MySQL (TEXT -> MEDIUMTEXT) or Oracle (VARCHAR2 -> CLOB). It does
+        have one numeric attribute, ``SEGMENT SIZE``, which both formatters write
+        from this value. That is the only place the field can reach the DDL; a
+        formatter that ignored it would render ``BLOB`` for two declarations the
+        framework considers different columns while reporting success.
+
+        ``length=None`` is the ordinary unbounded declaration and returns None;
+        a declared length is returned so the caller can append the clause. The
+        shape check is separate from the refusal the formatters own: a wrong
+        type is a ``TypeError`` about the value, not an unsupported feature.
+        """
+        length = data_type.length
+        if length is None:
+            return None
+        if isinstance(length, bool) or not isinstance(length, int):
+            raise TypeError(
+                f"length must be an int, got {type(length).__name__}; it "
+                f"becomes a SEGMENT SIZE clause in the {declaration} DDL."
+            )
+        if length <= 0:
+            raise ValueError(
+                f"length must be a positive number of bytes for {declaration}, "
+                f"got {length}."
+            )
+        return length
+
     def format_data_type_text(self, data_type: TextType) -> Tuple[str, tuple]:
         """``TEXT`` — rendered as ``BLOB SUB_TYPE TEXT``, which is how Firebird
         spells unbounded character data.
@@ -653,9 +685,17 @@ class FirebirdTypeSupportMixin(DDLTypeMixin, DDLTypeSupport):
         Asking for that spelling is therefore an error rather than a quiet rewrite.
         The default spelling must always render, or the concept would be
         unusable on this backend.
+
+        A declared ``length`` is written as ``SEGMENT SIZE`` via
+        :meth:`_firebird_lob_length`, the only numeric attribute Firebird's BLOB
+        declaration carries. The column stays unbounded, so a minimum larger
+        than any VARCHAR limit is still satisfied; what changes is the declared
+        segment size, which keeps the field identity in the DDL.
         """
         self.check_spelling(data_type, ("text",))
-        return "BLOB SUB_TYPE TEXT", ()
+        length = self._firebird_lob_length(data_type, "BLOB SUB_TYPE TEXT")
+        segment = f" SEGMENT SIZE {length}" if length is not None else ""
+        return f"BLOB SUB_TYPE TEXT{segment}", ()
 
     def format_data_type_datetime(self, data_type: DateTimeType) -> Tuple[str, tuple]:
         """``DATETIME`` is not a Firebird type name; Firebird's is ``TIMESTAMP``,
@@ -739,9 +779,16 @@ class FirebirdTypeSupportMixin(DDLTypeMixin, DDLTypeSupport):
         rather than silently answered with a ``BLOB``: the request named a
         PostgreSQL declaration, and quietly substituting this backend's is
         exactly the substitution the gate exists to catch.
+
+        A declared ``length`` is written as ``SEGMENT SIZE`` via
+        :meth:`_firebird_lob_length`, the only numeric attribute Firebird's BLOB
+        declaration carries. The column stays unbounded, so the minimum the
+        declaration asks for is always met without narrowing the storage.
         """
         self.check_spelling(data_type, ("blob",))
-        return "BLOB", ()
+        length = self._firebird_lob_length(data_type, "BLOB")
+        segment = f" SEGMENT SIZE {length}" if length is not None else ""
+        return f"BLOB{segment}", ()
 
     def format_data_type_binary(self, data_type: BinaryType) -> Tuple[str, tuple]:
         return (f"CHAR({data_type.length}) CHARACTER SET OCTETS" if data_type.length is not None else "BLOB"), ()
