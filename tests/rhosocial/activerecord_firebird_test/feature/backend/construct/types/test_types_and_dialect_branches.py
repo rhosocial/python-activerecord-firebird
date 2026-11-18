@@ -93,8 +93,10 @@ def dialect() -> FirebirdDialect:
     return FirebirdDialect((4, 0))
 
 
-def _column(dialect, name, data_type, *constraints):
-    return ColumnDefinition(dialect, name, data_type, list(constraints))
+def _column(dialect, name, data_type, *constraints, attributes=None):
+    return ColumnDefinition(
+        dialect, name, data_type, list(constraints), attributes=attributes
+    )
 
 
 class TestFB4TypeGateSupportedSide:
@@ -998,13 +1000,17 @@ class TestCreateTableRebuildSnapshots:
         )
 
     def test_numeric_default_with_explicit_null(self, dialect):
+        # Firebird rejects a bare NULL clause (SQLCODE -104); a column is
+        # nullable by default, so the renderer drops the explicit constraint
+        # (see FirebirdDialect.format_column_nullable_constraint). The column
+        # is still nullable -- the DDL just does not spell it out.
         col = _column(
             dialect, "amount", DecimalType(precision=18, scale=2, dialect=dialect),
             ColumnConstraint(dialect, branch=ColumnDefaultConstraint(dialect, 0)),
             ColumnConstraint(dialect, branch=ColumnNullableConstraint(dialect)),
         )
         assert CreateTableStatement(dialect, Table(dialect, "t5c"), [col]).to_sql() == (
-            'CREATE TABLE "T5C" ("AMOUNT" DECIMAL(18, 2) DEFAULT 0 NULL)', ()
+            'CREATE TABLE "T5C" ("AMOUNT" DECIMAL(18, 2) DEFAULT 0)', ()
         )
 
     def test_table_constraints_snapshot(self, dialect):

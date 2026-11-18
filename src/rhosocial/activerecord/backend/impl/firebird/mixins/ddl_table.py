@@ -316,7 +316,13 @@ class FirebirdTableMixin:
             # before this change a column-level CHECK and a column-level
             # ``REFERENCES`` produced no SQL at all on this backend.
             suffix, suffix_params = self.format_column_constraint(constraint)
-            constraint_parts.append(suffix.strip())
+            suffix = suffix.strip()
+            # A constraint this dialect intentionally drops -- the explicit
+            # NULL clause, which Firebird's grammar rejects -- renders as an
+            # empty suffix. Appending it would leave a stray space in the
+            # joined column definition ("DEFAULT 0 )"), so skip it entirely.
+            if suffix:
+                constraint_parts.append(suffix)
             params.extend(suffix_params)
 
         # Firebird requires the DEFAULT clause to follow the data type directly;
