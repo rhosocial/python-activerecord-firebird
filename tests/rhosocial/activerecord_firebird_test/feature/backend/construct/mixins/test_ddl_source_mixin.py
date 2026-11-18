@@ -268,6 +268,8 @@ class PlainModel(ActiveRecord):
     def table_name(cls):
         return "ddl_source_plain"
 
+    __primary_key__ = "id"
+
     id: int
     optional: Optional[str] = None
 
@@ -276,6 +278,8 @@ class AsyncPlainModel(AsyncActiveRecord):
     @classmethod
     def table_name(cls):
         return "ddl_source_async_plain"
+
+    __primary_key__ = "id"
 
     id: int
     optional: Optional[str] = None
