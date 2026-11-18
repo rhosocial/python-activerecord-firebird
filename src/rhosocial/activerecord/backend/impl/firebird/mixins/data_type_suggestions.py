@@ -25,6 +25,10 @@ What Firebird has and what it does not decide the table:
   argument is mandatory" in every reference this backend addresses), so the
   text suggestions that use it state one: 255 for ``str`` and for an enum's
   labels, 36 for a UUID, 17 for a MAC address.
+* **Bare ``DECIMAL`` has scale 0.** Firebird stores a declaration that names
+  no scale as ``DECIMAL(9, 0)``, which would drop the fractional digits of a
+  bare ``Decimal`` field. The suggestion states a precision and scale instead
+  (18 and 2), just as the text entries state a width.
 * **``TIMESTAMP`` stores four fractional digits, not six.** That is
   :attr:`FirebirdTypeSupportMixin.FIREBIRD_FRACTION_DIGITS` -- 1/10000 second --
   and a precision of 4 is what this backend accepts; 3 would understate the
@@ -82,7 +86,14 @@ FIREBIRD_DATA_TYPE_SUGGESTIONS: Dict[Any, Optional[Any]] = {
     bool: SmallIntType(),
     int: IntegerType(),
     float: DoubleType(),
-    decimal.Decimal: DecimalType(),
+    # A bare ``DECIMAL`` is ``DECIMAL(9, 0)`` in Firebird -- the server supplies
+    # scale 0 -- so a bare ``Decimal`` field would silently lose every fraction
+    # (``Decimal("12.34")`` round-trips as ``Decimal("12")``). State a scale the
+    # way the VARCHAR entries state a width: 18 is the largest precision
+    # Firebird's DECIMAL accepts, and 2 fractional digits cover the values the
+    # framework models as money-like quantities. A field that needs another
+    # scale says so with UseSqlType(DecimalType(...)).
+    decimal.Decimal: DecimalType(precision=18, scale=2),
     # ``VARCHAR`` has no default width in Firebird, and the backend's own text
     # type writes the database character set (UTF8) on the column as well.
     str: FirebirdVarCharType(length=255),
