@@ -347,8 +347,9 @@ class AsyncFirebirdBackend(
         loop = asyncio.get_event_loop()
 
         def _run():
-            if params:
-                cursor.execute(sql, params)
+            prepared = self._coerce_blob_text_params(cursor, sql, params)
+            if prepared:
+                cursor.execute(sql, prepared)
             else:
                 cursor.execute(sql)
             return cursor

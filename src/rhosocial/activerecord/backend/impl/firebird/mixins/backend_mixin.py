@@ -305,6 +305,64 @@ class FirebirdBackendMixin:
             transient=transient,
         ) from error
 
+    # SQLDataType.BLOB and its text sub-type, as reported by the driver's
+    # prepared-statement input metadata. Firebird's unbounded character type
+    # (``BLOB SUB_TYPE TEXT``) is what :class:`TextType` renders to.
+    _FB_BLOB_DATATYPE = 520
+    _FB_BLOB_TEXT_SUBTYPE = 1
+
+    def _coerce_blob_text_params(self, cursor, sql: str, params):
+        """Stringify values bound to ``BLOB SUB_TYPE TEXT`` parameters.
+
+        The firebird driver auto-converts non-string values to text only for
+        ``TEXT``/``VARYING`` parameters. A ``BLOB`` parameter takes its own
+        binding path whose packer calls ``len(value)`` directly, so binding an
+        ``int``, ``bool``, ``Decimal``, etc. to a text BLOB raises ``TypeError``
+        (surfaced as a ``DatabaseError``).
+
+        Fields declared with a text storage type can still carry a non-string
+        Python value -- a ``Union[str, int]`` field's ``0`` default is the
+        concrete case. Every other backend's driver coerces that to text at the
+        binding boundary; Firebird needs the same courtesy here. The parameter
+        types come from the driver's own prepared-statement metadata, so this
+        is exact: no SQL sniffing and no guessing which placeholders are text.
+        """
+        if not params:
+            return params
+        try:
+            statement = cursor.prepare(sql)
+        except Exception:
+            # Preparing for metadata is best-effort; execute() prepares the
+            # statement itself and will surface any real SQL problem.
+            return params
+        try:
+            meta = getattr(statement, "_in_meta", None)
+            count = getattr(statement, "_in_cnt", 0)
+            if meta is None or not count:
+                return params
+            coerced = None
+            for index in range(min(count, len(params))):
+                value = params[index]
+                if value is None or isinstance(value, (str, bytes, bytearray)):
+                    continue
+                try:
+                    is_text_blob = (
+                        meta.get_type(index) == self._FB_BLOB_DATATYPE
+                        and meta.get_subtype(index) == self._FB_BLOB_TEXT_SUBTYPE
+                    )
+                except Exception:
+                    continue
+                if is_text_blob:
+                    if coerced is None:
+                        coerced = list(params)
+                    coerced[index] = str(value)
+            return tuple(coerced) if coerced is not None else params
+        finally:
+            try:
+                statement.free()
+            except Exception:
+                pass
+
     def get_default_adapter_suggestions(self) -> Dict[Type, Tuple[SQLTypeAdapter, Type]]:
         """Provide default type adapter suggestions for Firebird.
 
