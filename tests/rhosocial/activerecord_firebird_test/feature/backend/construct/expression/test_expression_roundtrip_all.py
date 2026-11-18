@@ -76,7 +76,11 @@ from typing import Dict
 
 import pytest
 
-from rhosocial.activerecord.backend.dialect.exceptions import (ProtocolNotImplementedError, UnsupportedFeatureError)
+from rhosocial.activerecord.backend.dialect.exceptions import (
+    ProtocolNotImplementedError,
+    UnsupportedDataTypeError,
+    UnsupportedFeatureError,
+)
 from rhosocial.activerecord.backend.expression import graph as graph_mod
 from rhosocial.activerecord.backend.expression.advanced_functions import (
     CaseExpression,
@@ -1083,7 +1087,7 @@ LEGITIMATE_NON_RENDERS = {
     # (``DataType.__init_subclass__``), so the root's own ``None`` reaches the
     # dispatch and is reported as the unspelled generic type it is.
     "rhosocial.activerecord.backend.expression.types._base.DataType": (
-        TypeError, "does not support the generic type",
+        UnsupportedDataTypeError, "does not support the generic type",
     ),
 
     # ---- object kinds Firebird does not have ------------------------------
@@ -1151,33 +1155,33 @@ LEGITIMATE_NON_RENDERS = {
     # names. An unsupported *type* is a dialect gap and is reported as one, which
     # is why these are TypeError and not UnsupportedFeatureError.
     "rhosocial.activerecord.backend.expression.types.array.ArrayType": (
-        TypeError, "does not support the generic type 'array'",
+        UnsupportedDataTypeError, "does not support the generic type 'array'",
     ),
     "rhosocial.activerecord.backend.expression.types.datetime_.IntervalType": (
-        TypeError, "does not support the generic type 'interval'",
+        UnsupportedDataTypeError, "does not support the generic type 'interval'",
     ),
     # ENUM is MySQL/MariaDB native; Firebird's nearest form is a CHECK over a
     # text column, so the generic name dispatches to nothing and the refusal
     # says what the backend would use instead.
     "rhosocial.activerecord.backend.expression.types.enum_.EnumType": (
-        TypeError, "does not support the generic type 'enum'",
+        UnsupportedDataTypeError, "does not support the generic type 'enum'",
     ),
     # TIME WITH TIME ZONE and TIMESTAMP WITH TIME ZONE exist in Firebird, but
     # only under their own classes; the generic names dispatch to nothing.
     "rhosocial.activerecord.backend.expression.types.datetime_.TimeTzType": (
-        TypeError, "does not support the generic type 'timetz'",
+        UnsupportedDataTypeError, "does not support the generic type 'timetz'",
     ),
     "rhosocial.activerecord.backend.expression.types.datetime_.TimestampTzType": (
-        TypeError, "does not support the generic type 'timestamptz'",
+        UnsupportedDataTypeError, "does not support the generic type 'timestamptz'",
     ),
     "rhosocial.activerecord.backend.expression.types.json_.JsonType": (
-        TypeError, "does not support the generic type 'json'",
+        UnsupportedDataTypeError, "does not support the generic type 'json'",
     ),
     "rhosocial.activerecord.backend.expression.types.json_.JsonBType": (
-        TypeError, "does not support the generic type 'jsonb'",
+        UnsupportedDataTypeError, "does not support the generic type 'jsonb'",
     ),
     "rhosocial.activerecord.backend.expression.types.xml_.XmlType": (
-        TypeError, "does not support the generic type 'xml'",
+        UnsupportedDataTypeError, "does not support the generic type 'xml'",
     ),
 
     # ---- type DDL: Firebird has no user-defined types ---------------------
