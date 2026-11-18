@@ -28,6 +28,7 @@ freely parallel, because it never takes a connection.
 A caller who wants a specific worker count keeps it: ``-n 0`` or an explicit
 ``-n`` leaves the choice alone.
 """
+from rhosocial.activerecord.testsuite.pytest_plugin import Declaration
 
 from pathlib import Path
 
@@ -35,7 +36,6 @@ import pytest
 
 import support.firebird
 
-from rhosocial.activerecord.testsuite.pytest_plugin import Declaration
 from rhosocial.activerecord.testsuite.pytest_plugin.declarations import database_name
 
 # The backend area is ungrouped by default; only directories that use their own
