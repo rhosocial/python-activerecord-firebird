@@ -1,4 +1,5 @@
 # src/rhosocial/activerecord/backend/impl/firebird/mixins/__init__.py
+from .integer_auto_increment_column_suggestion import FirebirdIntegerAutoIncrementColumnSuggestionMixin
 from .version_boundaries import FIREBIRD_VERSION_BOUNDARIES
 from .transaction import FirebirdTransactionMixin
 from .backend_mixin import (
@@ -53,6 +54,7 @@ from .literal import FirebirdLiteralValueMixin
 from .unsupported import FirebirdUnsupportedFeaturesMixin
 
 __all__ = [
+    'FirebirdIntegerAutoIncrementColumnSuggestionMixin',
     "FIREBIRD_VERSION_BOUNDARIES",
     "FirebirdTransactionMixin",
     "FirebirdBackendMixin",

@@ -135,6 +135,7 @@ FIREBIRD_PROTOCOLS = [
     # with its switch False, so a caller learns the answer by name and the
     # formatter refuses rather than emitting a token the server rejects.
     dialect_protocols.IdentityColumnSupport,
+    dialect_protocols.IntegerAutoIncrementColumnSuggestionSupport,
     dialect_protocols.GraphSupport,
     dialect_protocols.ILIKESupport,
     dialect_protocols.IntrospectionSupport,

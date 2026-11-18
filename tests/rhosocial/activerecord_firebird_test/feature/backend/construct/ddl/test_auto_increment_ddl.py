@@ -12,6 +12,7 @@ Covers bugs found in rbac cross-backend testing:
 - BooleanType with DEFAULT True must be accepted.
 - TimestampType must map to TIMESTAMP.
 """
+from rhosocial.activerecord.backend.expression.statements import auto_increment_parts  # noqa: E402
 
 import pytest
 
@@ -32,15 +33,22 @@ def dialect():
     return FirebirdDialect((3, 0, 0))
 
 
-def _pk(dialect):
-    return [ColumnConstraint(dialect, branch=ColumnPrimaryKeyConstraint(dialect, is_auto_increment=True))]
+def _id_column(dialect, data_type, **kwargs):
+    """Build an integer auto-increment id column from the backend suggestion."""
+    suggested_type, attributes = auto_increment_parts(dialect, data_type)
+    return ColumnDefinition(
+        dialect, "id", suggested_type,
+        constraints=[ColumnConstraint(dialect, branch=ColumnPrimaryKeyConstraint(dialect))],
+        attributes=attributes,
+        **kwargs,
+    )
 
 
 def _build_table(dialect):
     return CreateTableStatement(
         dialect=dialect, table=Table(dialect, "test_tbl"),
         columns=[
-            ColumnDefinition(dialect, "id", IntegerType(dialect), constraints=_pk(dialect)),
+            _id_column(dialect, IntegerType(dialect)),
             ColumnDefinition(dialect, "name", TextType(dialect),
                 constraints=[ColumnConstraint(dialect, branch=ColumnNotNullConstraint(dialect))]),
             ColumnDefinition(dialect, "flag", BooleanType(dialect),
@@ -69,7 +77,7 @@ class TestAutoIncrementDDL:
         expr = CreateTableStatement(
             dialect=dialect, table=Table(dialect, "bool_test"),
             columns=[
-                ColumnDefinition(dialect, "id", IntegerType(dialect), constraints=_pk(dialect)),
+                _id_column(dialect, IntegerType(dialect)),
                 ColumnDefinition(dialect, "flag", BooleanType(dialect),
                     constraints=[ColumnConstraint(dialect, branch=ColumnNotNullConstraint(dialect)),
                                  ColumnConstraint(dialect, branch=ColumnDefaultConstraint(dialect, True))]),
@@ -82,7 +90,7 @@ class TestAutoIncrementDDL:
         expr = CreateTableStatement(
             dialect=dialect, table=Table(dialect, "ts_test"),
             columns=[
-                ColumnDefinition(dialect, "id", IntegerType(dialect), constraints=_pk(dialect)),
+                _id_column(dialect, IntegerType(dialect)),
                 ColumnDefinition(dialect, "created_at", TimestampType(dialect=dialect)),
             ],
         )
@@ -99,7 +107,7 @@ class TestAutoIncrementDDL:
         expr = CreateTableStatement(
             dialect=dialect, table=Table(dialect, "null_test"),
             columns=[
-                ColumnDefinition(dialect, "id", IntegerType(dialect), constraints=_pk(dialect)),
+                _id_column(dialect, IntegerType(dialect)),
                 ColumnDefinition(dialect, "code", VarCharType(length=16, dialect=dialect),
                     constraints=[ColumnConstraint(dialect, branch=ColumnNullableConstraint(dialect))]),
             ],

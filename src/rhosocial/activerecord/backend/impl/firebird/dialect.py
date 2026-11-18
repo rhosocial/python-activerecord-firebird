@@ -192,6 +192,7 @@ from .mixins import (
     FirebirdTruncateMixin,
     FirebirdLiteralValueMixin,
     FirebirdUnsupportedFeaturesMixin,
+    FirebirdIntegerAutoIncrementColumnSuggestionMixin,
 )
 from .protocols import (
     FirebirdDMLOperationSupport,
@@ -228,6 +229,8 @@ from .protocols import (
 
 
 class FirebirdDialect(
+    # Backend suggestion first: no core mixin may shadow its answer.
+    FirebirdIntegerAutoIncrementColumnSuggestionMixin,
     # The bases below come in bundles: a backend mixin, then the core bundle
     # it stands in for. The backend's answer has to come first -- a mixin
     # placed after the class it overrides never wins -- so a new mixin goes

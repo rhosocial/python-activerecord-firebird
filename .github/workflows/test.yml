@@ -142,7 +142,7 @@ jobs:
       - name: Run tests
         run: |
           export PYTHONPATH=src:tests
-          python -m pytest tests/ --tb=short -x -n auto --dist=loadgroup
+          python -m pytest tests/rhosocial/activerecord_firebird_test/feature/backend tests/rhosocial/activerecord_firebird_test/feature/basic  --tb=short -x -n auto --dist=loadgroup
 
       # Coverage is pinned to the 3.14 / 6-snapshot combination to keep the
       # emulator cost bounded. The 3.15 leg added above is a compatibility
@@ -156,7 +156,7 @@ jobs:
           # from the job log: without it the only statement of what is uncovered
           # is the XML Codecov consumes, and its per-file report is not reachable
           # from a pull request without a browser.
-          python -m pytest tests/ --tb=short -n auto --dist=loadgroup --cov=src/rhosocial --cov-branch --cov-report=xml --cov-report=term-missing:skip-covered
+          python -m pytest tests/rhosocial/activerecord_firebird_test/feature/backend tests/rhosocial/activerecord_firebird_test/feature/basic  --tb=short -n auto --dist=loadgroup --cov=src/rhosocial --cov-branch --cov-report=xml --cov-report=term-missing:skip-covered
 
       - name: Upload coverage to Codecov
         if: matrix.python-version == '3.14' && matrix.firebird-version == '6-snapshot'

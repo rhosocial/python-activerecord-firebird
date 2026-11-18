@@ -41,6 +41,7 @@ from rhosocial.activerecord.testsuite.pytest_plugin.declarations import database
 # The backend area is ungrouped by default; only directories that use their own
 # database opt in to per-scenario serialisation with their own DECLARATION.
 DECLARATION = Declaration(
+    uses_database=True,
     parallel=False,
     purpose=(
         "Backend-owned tests: keep construct/render directories freely parallel; "
