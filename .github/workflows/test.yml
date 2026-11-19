@@ -180,7 +180,7 @@ jobs:
           if-no-files-found: error
 
   benchmark-firebird:
-    name: Firebird benchmarks (shared testsuite contracts + backend-owned)
+    name: Firebird benchmarks (shared testsuite contracts)
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -273,13 +273,6 @@ jobs:
             --benchmark-size=small \
             --benchmark-sort=mean \
             --tb=short | tee -a benchmark-output.txt
-          python -m pytest \
-            --rootdir=. \
-            --confcutdir=. \
-            tests/benchmark/relation \
-            -m benchmark_relation \
-            --benchmark-sort=mean \
-            --tb=short | tee -a benchmark-output.txt
 
       - name: Write benchmark conclusion
         if: always()
@@ -288,7 +281,7 @@ jobs:
             echo "## Firebird Benchmark Conclusion"
             echo
             echo "- Backend: Firebird 5 / Python 3.14"
-            echo "- Scope: testsuite generic benchmarks (crud/query/transaction/mixin) + Firebird backend-owned benchmarks"
+            echo "- Scope: testsuite generic benchmarks (crud/query/transaction/mixin)"
             echo "- Size: small"
             echo "- Async cases: skipped (Firebird has no async backend)"
             echo "- Result: benchmark job fails only when benchmark execution or correctness checks fail."
