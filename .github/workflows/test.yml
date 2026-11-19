@@ -156,7 +156,7 @@ jobs:
           # from the job log: without it the only statement of what is uncovered
           # is the XML Codecov consumes, and its per-file report is not reachable
           # from a pull request without a browser.
-          python -m pytest tests/ --tb=short -n auto --dist=loadgroup --cov=src/rhosocial --cov-branch --cov-report=xml --cov-report=term-missing:skip-covered --ignore=tests/benchmark
+          python -m pytest tests/ --tb=short -n auto --dist=loadgroup --cov=rhosocial.activerecord.backend.impl.firebird --cov-branch --cov-report=xml --cov-report=term-missing:skip-covered --ignore=tests/benchmark
 
       - name: Upload coverage to Codecov
         if: matrix.python-version == '3.14' && matrix.firebird-version == '6-snapshot'
