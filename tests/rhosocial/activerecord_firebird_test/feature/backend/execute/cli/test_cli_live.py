@@ -54,27 +54,32 @@ def _connection_argv(config):
 
 
 def _drop_probe_table(backend) -> None:
-    """Drop the probe table, tolerating 'not there' and committing the drop."""
+    """Drop the probe table, tolerating 'not there'.
+
+    Matches the other connected suites in this tree: DDL goes through
+    ``backend.execute`` and Firebird commits it itself. Calling
+    ``commit_transaction()`` here fails with "No active transaction to commit"
+    because there is no transaction left after a DDL statement.
+    """
     try:
-        backend.execute(f"DROP TABLE {PROBE_TABLE}")
-        try:
-            backend.commit_transaction()
-        except Exception:
-            pass
+        backend.execute(f"DROP TABLE {PROBE_TABLE}", fetch=False)
     except Exception:
         pass
 
 
 def _create_probe_table(backend) -> None:
-    """Create a small user table so catalogue questions have a real answer."""
+    """Create a small user table so catalogue questions have a real answer.
+
+    No explicit commit: Firebird auto-commits DDL, so the table is already
+    visible to the CLI's separate connection. This is the same pattern the
+    introspection live suites use for their probe objects.
+    """
     _drop_probe_table(backend)
     backend.execute(
         f"CREATE TABLE {PROBE_TABLE} ("
-        "id INTEGER NOT NULL PRIMARY KEY, label VARCHAR(64) NOT NULL)"
+        "id INTEGER NOT NULL PRIMARY KEY, label VARCHAR(64) NOT NULL)",
+        fetch=False,
     )
-    # The CLI opens a second connection; the table must be committed to be
-    # visible there, not just inside this fixture's transaction.
-    backend.commit_transaction()
 
 
 @pytest.fixture
