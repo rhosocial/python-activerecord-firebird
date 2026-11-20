@@ -60,7 +60,11 @@ from rhosocial.activerecord.field import DefaultTimestampMixin, IntegerPKMixin
 from rhosocial.activerecord.model import ActiveRecord
 
 
-class User(IntegerPKMixin, DefaultTimestampMixin, ActiveRecord):
+class User(
+    IntegerPKMixin,         # auto-increment integer primary key (`id`)
+    DefaultTimestampMixin,  # injects `created_at` / `updated_at` timestamps
+    ActiveRecord,           # persistence, query builder, relations
+):
     name: Annotated[str, UseSqlType(VarCharType(length=100))]
     email: Annotated[str, UseSqlType(VarCharType(length=255))]
     age: int = 0
@@ -123,7 +127,7 @@ generators-as-sequences all switch on at 3.0. CI runs against Firebird 5 and a
 > and some features are not yet production-ready. The asynchronous API is experimental
 > (see Quick Start).
 
-## Contributing, License, Links
+## Documentation
 
 ### Contributing
 
