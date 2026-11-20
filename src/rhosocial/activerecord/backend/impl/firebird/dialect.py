@@ -193,6 +193,7 @@ from .mixins import (
     FirebirdLiteralValueMixin,
     FirebirdUnsupportedFeaturesMixin,
     FirebirdIntegerAutoIncrementColumnSuggestionMixin,
+    FirebirdPartitionSuggestionMixin,
 )
 from .protocols import (
     FirebirdDMLOperationSupport,
@@ -229,7 +230,11 @@ from .protocols import (
 
 
 class FirebirdDialect(
-    # Backend suggestion first: no core mixin may shadow its answer.
+    # Backend suggestions first: no core mixin may shadow their answers. Both
+    # answer "how" questions the core leaves unanswered; the partition one is
+    # unconditional because Firebird has no partitioning at all (every support
+    # probe is False, see FirebirdPartitionMixin below).
+    FirebirdPartitionSuggestionMixin,
     FirebirdIntegerAutoIncrementColumnSuggestionMixin,
     # The bases below come in bundles: a backend mixin, then the core bundle
     # it stands in for. The backend's answer has to come first -- a mixin
