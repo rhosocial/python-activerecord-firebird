@@ -37,6 +37,10 @@
 
 * [CLI usage](cli/README.md)
 
+## Migrations
+
+* [Migrations on the Firebird backend](migration/README.md)
+
 ## Testing
 
 * [Test configuration](testing/README.md)

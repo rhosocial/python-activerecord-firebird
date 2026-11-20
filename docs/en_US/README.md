@@ -49,13 +49,17 @@ restate the core library's ActiveRecord, query or migration documentation.
 8. **[Command Line](cli/README.md)**
      * **[CLI usage](cli/README.md)**: `python -m rhosocial.activerecord.backend.impl.firebird`
 
-9. **[Testing](testing/README.md)**
+9. **[Migrations](migration/README.md)**
+      * **[Migrations on the Firebird backend](migration/README.md)**: configuration, transactional DDL, dialect/version gating, synchronous function-style and `named-migration` wiring
+
+10. **[Testing](testing/README.md)**
      * **[Test configuration](testing/README.md)**: scenario YAML, environment variables, CI matrix, local targeted runs
 
-10. **[Runnable examples](../examples/README.md)**
+11. **[Runnable examples](../examples/README.md)**
      * **[connection.py](../examples/connection.py)**: config + declarative model + first CRUD
      * **[ddl.py](../examples/ddl.py)**: table DDL plus a domain, generator and stored procedure
      * **[introspection.py](../examples/introspection.py)**: catalogue and data families
+     * **[Migration examples](../examples/migration/README.md)**: synchronous function-style and class-style migration demos
 
 ---
 
