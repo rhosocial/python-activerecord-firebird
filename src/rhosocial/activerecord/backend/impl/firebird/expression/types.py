@@ -15,6 +15,7 @@ from rhosocial.activerecord.backend.expression.types import (
     DoubleType,
     FloatType,
     IntegerType,
+    PRECISION_PARAMETERS,
     SmallIntType,
     TextType,
     TimeType,
@@ -100,7 +101,7 @@ class FirebirdTimeStampTzType(TimestampTzType):
     synonymous to their respective WITHOUT TIME ZONE data types"*) and rendering
     the generic concept with it would declare a column that silently drops the
     zone. The dialect names the unzoned concept as ``timestamptz``'s substitute in
-    ``suggested_data_types`` and reaches this class by its Firebird name instead.
+    ``substitute_data_types`` and reaches this class by its Firebird name instead.
     """
 
     name = "firebird_timestamptz"
@@ -191,7 +192,8 @@ class FirebirdDecFloatType(DecimalType):
             raise ValueError(f"DECFLOAT precision must be 16 or 34, got {precision}")
         self.precision: int = precision
 
-    PARAMETERS = ("precision",)
+    #: The shared object, not a copy: ``identity()`` compares the tuple.
+    PARAMETERS = PRECISION_PARAMETERS
 
 class FirebirdInt128Type(DataType):
     """Firebird ``INT128`` — signed 128-bit integer (Firebird 4.0+).

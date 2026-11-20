@@ -1,4 +1,5 @@
 # src/rhosocial/activerecord/backend/impl/firebird/mixins/__init__.py
+from .integer_auto_increment_column_suggestion import FirebirdIntegerAutoIncrementColumnSuggestionMixin
 from .version_boundaries import FIREBIRD_VERSION_BOUNDARIES
 from .transaction import FirebirdTransactionMixin
 from .backend_mixin import (
@@ -18,6 +19,7 @@ from .blob import FirebirdBlobMixin
 from .introspection import FirebirdIntrospectionMixin
 from .types import FirebirdTypeSupportMixin
 from .column_type import FirebirdColumnTypeMixin
+from .data_type_suggestions import FirebirdDataTypeSuggestionsMixin
 from .partition import FirebirdPartitionMixin
 from .ddl_alter_table_modifier import FirebirdAlterTableModifierMixin
 from .constraint import FirebirdConstraintMixin
@@ -52,6 +54,7 @@ from .literal import FirebirdLiteralValueMixin
 from .unsupported import FirebirdUnsupportedFeaturesMixin
 
 __all__ = [
+    'FirebirdIntegerAutoIncrementColumnSuggestionMixin',
     "FIREBIRD_VERSION_BOUNDARIES",
     "FirebirdTransactionMixin",
     "FirebirdBackendMixin",
@@ -69,6 +72,7 @@ __all__ = [
     "FirebirdIntrospectionMixin",
     "FirebirdTypeSupportMixin",
     "FirebirdColumnTypeMixin",
+    "FirebirdDataTypeSuggestionsMixin",
     "FirebirdPartitionMixin",
     "FirebirdAlterTableModifierMixin",
     "FirebirdConstraintMixin",

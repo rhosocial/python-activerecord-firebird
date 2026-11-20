@@ -20,21 +20,21 @@ permissions:
 jobs:
   test:
     name: Python ${{ matrix.python-version }} / Firebird ${{ matrix.firebird-version }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         include:
-          - { python-version: '3.11', firebird-version: '5', port: 3050 }
-          - { python-version: '3.12', firebird-version: '6-snapshot', port: 3051 }
-          - { python-version: '3.13', firebird-version: '5', port: 3052 }
-          - { python-version: '3.14', firebird-version: '6-snapshot', port: 3053 }
+          - { python-version: '3.11', firebird-version: '5', port: 3050, os: ubuntu-24.04 }
+          - { python-version: '3.12', firebird-version: '6-snapshot', port: 3051, os: ubuntu-24.04 }
+          - { python-version: '3.13', firebird-version: '5', port: 3052, os: ubuntu-24.04 }
+          - { python-version: '3.14', firebird-version: '6-snapshot', port: 3053, os: ubuntu-26.04 }
           # Python 3.15 leg. GIL only: `firebird-driver` ships a universal
           # (py3-none-any) wheel, which runs on 3.15 without a native build, but
           # no cp315t distribution, so a free-threaded 3.15t leg has nothing to
           # run and is deliberately not declared. Port 3054 is the next free
           # slot in the 3050+ run used by this matrix.
-          - { python-version: '3.15', firebird-version: '6-snapshot', port: 3054 }
+          - { python-version: '3.15', firebird-version: '6-snapshot', port: 3054, os: ubuntu-26.04 }
 
     services:
       firebird:
@@ -142,7 +142,7 @@ jobs:
       - name: Run tests
         run: |
           export PYTHONPATH=src:tests
-          python -m pytest tests/ --tb=short -x -n auto --dist=loadgroup
+          python -m pytest tests/ --tb=short -x -n auto --dist=loadgroup --ignore=tests/benchmark
 
       # Coverage is pinned to the 3.14 / 6-snapshot combination to keep the
       # emulator cost bounded. The 3.15 leg added above is a compatibility
@@ -156,7 +156,7 @@ jobs:
           # from the job log: without it the only statement of what is uncovered
           # is the XML Codecov consumes, and its per-file report is not reachable
           # from a pull request without a browser.
-          python -m pytest tests/ --tb=short -n auto --dist=loadgroup --cov=src/rhosocial --cov-branch --cov-report=xml --cov-report=term-missing:skip-covered
+          python -m pytest tests/ --tb=short -n auto --dist=loadgroup --cov=rhosocial.activerecord.backend.impl.firebird --cov-branch --cov-report=xml --cov-report=term-missing:skip-covered --ignore=tests/benchmark
 
       - name: Upload coverage to Codecov
         if: matrix.python-version == '3.14' && matrix.firebird-version == '6-snapshot'
@@ -178,4 +178,116 @@ jobs:
           name: coverage-firebird-${{ matrix.python-version }}-${{ matrix.firebird-version }}
           path: coverage.xml
           if-no-files-found: error
+
+  benchmark-firebird:
+    name: Firebird benchmarks (shared testsuite contracts)
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+
+    services:
+      firebird:
+        image: firebirdsql/firebird:5
+        env:
+          FIREBIRD_ROOT_PASSWORD: password
+          FIREBIRD_USE_LEGACY_AUTH: "true"
+          FIREBIRD_DATABASE: /var/lib/firebird/data/test_db
+          TZ: UTC
+        options: >-
+          --health-cmd "bash -c 'fbsvcmgr localhost:service_mgr user SYSDBA password password info_server_version 2>/dev/null | head -1' || bash -c 'echo \"select 1 from rdb\$database\" | isql -u SYSDBA -p password localhost:service_mgr 2>/dev/null | head -1'"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+        ports:
+          - 3055:3050
+
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v6
+
+      - name: Set up Python 3.14
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.14'
+
+      - name: Install firebird client library
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libfbclient2
+
+      - name: Install activerecord and testsuite
+        run: |
+          pip install "rhosocial-activerecord @ git+https://github.com/rhosocial/python-activerecord.git@release/v1.0.0.dev30"  # NOSONAR
+          pip install "rhosocial-activerecord-testsuite @ git+https://github.com/rhosocial/python-activerecord-testsuite.git@release/v1.0.0.dev17"  # NOSONAR
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install -r requirements-dev.txt
+
+      - name: Create Firebird scenario config
+        run: |
+          cat > firebird_scenarios.yaml << EOF
+          scenarios:
+            firebird_default:
+              host: 127.0.0.1
+              port: 3055
+              database: /var/lib/firebird/data/test_db
+              username: SYSDBA
+              password: password
+              charset: UTF8
+              autocommit: false
+              timezone: UTC
+          EOF
+          echo "FIREBIRD_SCENARIOS_CONFIG_PATH=$(pwd)/firebird_scenarios.yaml" >> $GITHUB_ENV
+          echo "FIREBIRD_HOST=127.0.0.1" >> $GITHUB_ENV
+          echo "FIREBIRD_PORT=3055" >> $GITHUB_ENV
+          echo "FIREBIRD_DATABASE=/var/lib/firebird/data/test_db" >> $GITHUB_ENV
+          echo "FIREBIRD_USERNAME=SYSDBA" >> $GITHUB_ENV
+          echo "FIREBIRD_PASSWORD=password" >> $GITHUB_ENV
+          echo "FIREBIRD_CHARSET=UTF8" >> $GITHUB_ENV
+
+      # Single process (no -n): each case owns a fresh Firebird database file.
+      # Async contract cases skip because every async_setup() returns None
+      # (Firebird has no async backend in this release).
+      - name: Run benchmark suite
+        run: |
+          set -o pipefail
+          export PYTHONPATH=src:tests
+          TESTSUITE_DIR=$(python - <<'PY'
+          import pathlib
+          import rhosocial.activerecord.testsuite as testsuite
+
+          print(pathlib.Path(testsuite.__file__).parent)
+          PY
+          )
+          python -m pytest \
+            -p tests.benchmark.providers \
+            --rootdir=. \
+            --confcutdir=. \
+            "$TESTSUITE_DIR/benchmark/crud/core" \
+            "$TESTSUITE_DIR/benchmark/query" \
+            "$TESTSUITE_DIR/benchmark/transaction" \
+            "$TESTSUITE_DIR/benchmark/mixin" \
+            -m benchmark \
+            --benchmark-size=small \
+            --benchmark-sort=mean \
+            --tb=short | tee -a benchmark-output.txt
+
+      - name: Write benchmark conclusion
+        if: always()
+        run: |
+          {
+            echo "## Firebird Benchmark Conclusion"
+            echo
+            echo "- Backend: Firebird 5 / Python 3.14"
+            echo "- Scope: testsuite generic benchmarks (crud/query/transaction/mixin)"
+            echo "- Size: small"
+            echo "- Async cases: skipped (Firebird has no async backend)"
+            echo "- Result: benchmark job fails only when benchmark execution or correctness checks fail."
+            echo
+            echo '```text'
+            grep -A 120 "benchmark:" benchmark-output.txt || cat benchmark-output.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
 

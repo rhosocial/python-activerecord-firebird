@@ -15,7 +15,7 @@ Firebird SQL dialect features and version support:
     Firebird); INTERSECT / EXCEPT do not exist (tracker CORE808 open)
 """
 
-from typing import Optional, Tuple
+from typing import Any, Optional, Tuple
 
 from rhosocial.activerecord.backend.dialect.base import SQLDialectBase
 from rhosocial.activerecord.backend.dialect.protocols import (
@@ -48,6 +48,7 @@ from rhosocial.activerecord.backend.dialect.protocols import (
     ConstraintSupport,
     IntrospectionSupport,
     TransactionControlSupport,
+    TransactionalDDLSupport,
     GeneratedColumnSupport,
     IdentityColumnSupport,
     AutoIncrementColumnSupport,
@@ -160,6 +161,7 @@ from .mixins import (
     FirebirdPartitionMixin,
     FirebirdTypeSupportMixin,
     FirebirdColumnTypeMixin,
+    FirebirdDataTypeSuggestionsMixin,
     FirebirdDomainMixin,
     FirebirdExceptionMixin,
     FirebirdRoutineMixin,
@@ -190,6 +192,7 @@ from .mixins import (
     FirebirdTruncateMixin,
     FirebirdLiteralValueMixin,
     FirebirdUnsupportedFeaturesMixin,
+    FirebirdIntegerAutoIncrementColumnSuggestionMixin,
 )
 from .protocols import (
     FirebirdDMLOperationSupport,
@@ -226,6 +229,8 @@ from .protocols import (
 
 
 class FirebirdDialect(
+    # Backend suggestion first: no core mixin may shadow its answer.
+    FirebirdIntegerAutoIncrementColumnSuggestionMixin,
     # The bases below come in bundles: a backend mixin, then the core bundle
     # it stands in for. The backend's answer has to come first -- a mixin
     # placed after the class it overrides never wins -- so a new mixin goes
@@ -422,6 +427,7 @@ class FirebirdDialect(
     ConstraintSupport,
     IntrospectionSupport,
     TransactionControlSupport,
+    TransactionalDDLSupport,
     GeneratedColumnSupport,
     # IdentityColumnSupport is satisfied by the core IdentityColumnMixin with
     # Firebird's measured probes; AutoIncrementColumnSupport by the core
@@ -495,6 +501,11 @@ class FirebirdDialect(
     # reads the other -- and because the Firebird entries that answer None
     # (dict, the container family) are the reason the split matters here.
     FirebirdColumnTypeMixin,
+    # The suggested storage declarations -- the DDL half of the same answer. It
+    # has to precede FirebirdTypeSupportMixin: `suggested_data_types` is also
+    # defined by the core DataTypeMixin that mixin inherits, and a base listed
+    # later never wins over one listed earlier.
+    FirebirdDataTypeSuggestionsMixin,
     FirebirdTypeSupportMixin,
     # Must come AFTER FirebirdTypeSupportMixin: a dialect's bases resolve left to
     # right, and this Protocol restates the firebird_* formatter and support names
@@ -551,6 +562,10 @@ class FirebirdDialect(
         """
         version = _norm_version(self.version_or_none)
         return version is not None and version >= _norm_version(floor)
+
+    def supports_transactional_ddl(self) -> bool:
+        """Firebird DDL participates in transactions."""
+        return True
 
     def supports_window_functions(self) -> bool:
         return self.version_at_least((3, 0, 0))
@@ -783,7 +798,15 @@ class FirebirdDialect(
 
 
     def supports_rename_table(self) -> bool:
-        return True
+        """Firebird 5 has no table-rename clause.
+
+        The ``ALTER TABLE`` syntax in the Firebird 5.0 Language Reference
+        lists ADD / DROP / ALTER COLUMN / constraints / SQL SECURITY /
+        publication only; the ``TO newname`` form renames a *column*, not a
+        table.  ``RECREATE TABLE`` is the closest primitive, and it drops the
+        old table, so a swap needs an explicit copy step.
+        """
+        return False
 
     def supports_rename_column(self) -> bool:
         return True
@@ -909,3 +932,22 @@ class FirebirdDialect(
     # moved core default from silently becoming Firebird's contract.
     #
     # endregion
+
+    def supports_database_assigned_integer_column(self) -> bool:
+        """Firebird assigns the value through its identity column.
+
+        Delegates to :meth:`supports_identity_column`: the standard
+        ``GENERATED ... AS IDENTITY`` clause exists from Firebird 3.0, while
+        older versions have ``GEN_ID`` but not the clause this dialect renders.
+        """
+        return self.supports_identity_column()
+
+    def format_column_nullable_constraint(self, constraint: Any) -> Tuple[str, Tuple]:
+        """Firebird has no explicit ``NULL`` column constraint (SQLCODE -104).
+
+        A column is nullable by default, so the portable `` NULL`` the core
+        DDL mixin emits for an explicitly nullable field is not just redundant
+        here -- the Firebird parser rejects the bare ``NULL`` keyword in a
+        column definition.  Drop the clause; the column stays nullable.
+        """
+        return "", ()

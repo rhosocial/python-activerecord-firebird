@@ -1,2 +1,3 @@
 # tests/rhosocial/activerecord_firebird_test/feature/query/error_handling/test_error_handling.py
-from rhosocial.activerecord.testsuite.feature.query.error_handling.test_error_handling import *  # noqa: F403
+"""Bridge to the shared ``query/error_handling`` contract."""
+from rhosocial.activerecord.testsuite.feature.query.error_handling.test_error_handling import *  # noqa: F401,F403

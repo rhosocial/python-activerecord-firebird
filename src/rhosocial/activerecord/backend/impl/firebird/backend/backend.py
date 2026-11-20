@@ -156,6 +156,15 @@ class FirebirdBackend(
     def _prepare_sql_and_params(self, sql: str, params: Optional[Tuple] = None) -> Tuple[str, Optional[Tuple]]:
         return sql, params
 
+    def _execute_query(self, cursor, sql: str, params: Optional[Tuple]):
+        """Execute with Firebird-specific BLOB-text parameter coercion."""
+        prepared = self._coerce_blob_text_params(cursor, sql, params)
+        if prepared:
+            cursor.execute(sql, prepared)
+        else:
+            cursor.execute(sql)
+        return cursor
+
     def _detect_statement_type(self, sql: str) -> StatementType:
         sql_upper = sql.strip().upper()
         if sql_upper.startswith(('SELECT', 'WITH', 'EXECUTE BLOCK')):

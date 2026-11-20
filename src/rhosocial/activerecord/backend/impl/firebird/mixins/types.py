@@ -13,7 +13,7 @@ does **not** render, and the reason is that it cannot: Firebird's ``TIME`` and
 ``TIMESTAMP`` are its **unzoned** types (§3.4 — *"TIME and TIMESTAMP are
 synonymous to their respective WITHOUT TIME ZONE data types"*), so the only words
 a formatter could write for a zoned concept would declare a column that discards
-the zone offset. Both are named in :meth:`suggested_data_types` with the unzoned
+the zone offset. Both are named in :meth:`substitute_data_types` with the unzoned
 concept of the same family as their substitute, and Firebird's own zoned columns
 stay reachable under ``firebird_timetz`` / ``firebird_timestamptz``. See the
 "timetz / timestamptz: deliberately absent" comment above
@@ -105,13 +105,16 @@ Three Firebird facts settle the fields that could not be honoured:
     refuses the same string rather than reading a precision out of a production
     that has no place for one. FirebirdSQL/firebird#4779 (CORE-4459) asks for
     ``TIME(p)``/``TIMESTAMP(p)`` and is still open; an unmerged feature request is
-    not a documented capability.
+    not a documented capability. What *is* honoured is a precision the column can
+    keep: :attr:`FirebirdTypeSupportMixin.FIREBIRD_FRACTION_DIGITS` digits is what
+    the server stores, so ``precision=3`` — the framework's millisecond default —
+    renders ``TIMESTAMP`` and is true.
 """
 
 from __future__ import annotations
 
 import re
-from typing import Dict, Tuple
+from typing import Dict, Optional, Tuple
 
 from rhosocial.activerecord.backend.dialect.exceptions import UnsupportedFeatureError
 from rhosocial.activerecord.backend.dialect.mixins import DDLTypeMixin
@@ -158,6 +161,19 @@ from ..expression.types import (
 
 
 class FirebirdTypeSupportMixin(DDLTypeMixin, DDLTypeSupport):
+    """Firebird's data-type rendering.
+
+    A ``TIME`` / ``TIMESTAMP`` declaration accepts a fractional-seconds
+    precision at or below :attr:`FIREBIRD_FRACTION_DIGITS` — the four digits the
+    server stores — because such a column can honour what it declares; above
+    that it cannot, and the declaration is refused.
+    """
+
+    #: Fractional-second digits a Firebird ``TIME``/``TIMESTAMP`` column stores
+    #: (language reference §3.4, *Fractions of Seconds*). A declared precision
+    #: at or below this is honoured by the column and renders to the bare word;
+    #: above it, the declaration is refused.
+    FIREBIRD_FRACTION_DIGITS = 4
 
     # --- Precision / scale validation helpers ---
 
@@ -343,11 +359,10 @@ class FirebirdTypeSupportMixin(DDLTypeMixin, DDLTypeSupport):
     #: renders one of them — a per-formatter check is a per-formatter bug waiting
     #: to happen.
     def _check_firebird_temporal_precision(self, data_type, declaration: str) -> None:
-        """Refuse ``precision=`` on any Firebird ``TIME``/``TIMESTAMP`` column.
+        """Refuse ``precision=`` above four digits; accept it at or below.
 
         ``precision=None`` returns — that is a plain declaration and nothing
-        about it is in question. A declared precision has nowhere to go, so it is
-        refused **by name** rather than dropped.
+        about it is in question.
 
         **There is no grammar for it.**  The Firebird 4.0 and 5.0 references
         give the same declaration syntax for these types in two places, and
@@ -363,41 +378,51 @@ class FirebirdTypeSupportMixin(DDLTypeMixin, DDLTypeSupport):
 
         Compare the two types that *do* take an argument in the same production:
         ``FLOAT [(bin_prec)]`` and ``DECFLOAT [(dec_prec)]``. The absence is the
-        documentation's, not an omission in this rendering.
+        documentation's, not an omission in this rendering — which is also
+        why refining ``TIMESTAMP(6)`` means rendering the **same** ``TIMESTAMP``
+        word rather than a different one.
 
-        **And there is nothing it would mean if it were there.**  §3.4, *Fractions
-        of Seconds*: *"If fractions of seconds are stored in date and time data
-        types, Firebird stores them to ten-thousandths of a second. If a lower
-        granularity is preferred, the fraction can be specified explicitly as
-        thousandths, hundredths or tenths of a second, or second, in Dialect 3
-        databases of ODS 11 or higher."*  That last sentence is about how a
-        *value* is written — ``CURRENT_TIMESTAMP(3)`` and the like — not about
-        what a column may declare. The column stores four fractional digits
-        whatever the declaration said, so honouring the field would write a
-        number into DDL and a different column into the database.
+        **What the number would mean if it were there.**  §3.4, *Fractions of
+        Seconds*: *"If fractions of seconds are stored in date and time data
+        types, Firebird stores them to ten-thousandths of a second."*  So a
+        declaration the column cannot honour — ``precision=6``, a precision
+        Firebird's own manual names as "extreme precision" — is refused, while
+        one it can honour is **accepted**: ``precision=3`` (milliseconds, the
+        framework's shared default) and ``precision=4`` describe exactly what
+        this column stores.  The rendering is ``TIMESTAMP`` either way, because
+        the precision is satisfied by the column's own storage rather than by a
+        suffix the grammar does not have.
 
-        **The request exists and is unmerged.**  FirebirdSQL/firebird#4779
+        This is the distinction the old blanket refusal did not make: it treated
+        "the grammar has no argument" and "the server cannot honour the number"
+        as one thing, so a millisecond column — the one precision every backend
+        can honour — was refused on a backend that stores ten-thousandths. A
+        column that stores four digits *can* keep three of them, so accepting
+        it is the honest answer.
+
+        **The request for the grammar remains open.**  FirebirdSQL/firebird#4779
         (CORE-4459), *"Add precision specification to TIME and TIMESTAMP in
         datatype and cast"*, is open: ``state: "open"``, no closing date. Until
-        it merges the field stays refused, and if it ever does merge this method
-        is the single place that has to change.
+        it merges, a precision Firebird honours still renders to the bare word,
+        and this method is the single place that has to change.
         """
         if data_type.precision is None:
             return
+        if data_type.precision <= self.FIREBIRD_FRACTION_DIGITS:
+            return
         raise UnsupportedFeatureError(
             self.name,
-            f"a fractional-seconds precision on {declaration}",
-            f"Firebird's {declaration} declaration takes no precision argument "
-            f"(language reference, chapter 3 Data Types and Subtypes: "
-            f"'TIME [{{WITHOUT | WITH}} TIME ZONE]' in section 3.4.2 and "
-            f"'TIMESTAMP [{{WITHOUT | WITH}} TIME ZONE]' in section 3.4.3, and "
-            f"the same two productions in the section 3.12 Data Type Declaration "
-            f"Syntax — identical in the 4.0 and 5.0 references). The field is "
-            f"refused rather than dropped because a declared precision would not "
-            f"reach the database: Firebird stores fractional seconds to "
-            f"ten-thousandths of a second whatever the declaration says, so a "
-            f"lower granularity belongs in the value, not in the type. Requested "
-            f"upstream as FirebirdSQL/firebird#4779 (CORE-4459).",
+            f"a fractional-seconds precision above "
+            f"{self.FIREBIRD_FRACTION_DIGITS} digits on {declaration}",
+            f"Firebird stores fractional seconds to ten-thousandths of a second, "
+            f"so {data_type.precision} digits cannot be honoured by this column "
+            f"(and Firebird's {declaration} declaration takes no precision "
+            f"argument to say otherwise: language reference, chapter 3 Data "
+            f"Types and Subtypes, 'TIME [{{WITHOUT | WITH}} TIME ZONE]' in "
+            f"section 3.4.2 and 'TIMESTAMP [{{WITHOUT | WITH}} TIME ZONE]' in "
+            f"section 3.4.3, and the same two productions in section 3.12 Data "
+            f"Type Declaration Syntax — identical in the 4.0 and 5.0 references). "
+            f"Requested upstream as FirebirdSQL/firebird#4779 (CORE-4459).",
         )
 
     # --- Core types (pure names) rendered to real Firebird SQL ---
@@ -618,6 +643,38 @@ class FirebirdTypeSupportMixin(DDLTypeMixin, DDLTypeSupport):
             length = self.type_parameter_defaults()["char"]["length"]
         return f"CHAR({length})", ()
 
+    def _firebird_lob_length(self, data_type, declaration: str) -> Optional[int]:
+        """Read a ``TextType``/``BlobType`` ``length`` and validate its shape.
+
+        Firebird's LOB declaration has no maximum-size argument — ``BLOB`` and
+        ``BLOB SUB_TYPE TEXT`` are unbounded and already hold any minimum a
+        caller asks for — so the length cannot choose a wider tier the way it
+        does on MySQL (TEXT -> MEDIUMTEXT) or Oracle (VARCHAR2 -> CLOB). It does
+        have one numeric attribute, ``SEGMENT SIZE``, which both formatters write
+        from this value. That is the only place the field can reach the DDL; a
+        formatter that ignored it would render ``BLOB`` for two declarations the
+        framework considers different columns while reporting success.
+
+        ``length=None`` is the ordinary unbounded declaration and returns None;
+        a declared length is returned so the caller can append the clause. The
+        shape check is separate from the refusal the formatters own: a wrong
+        type is a ``TypeError`` about the value, not an unsupported feature.
+        """
+        length = data_type.length
+        if length is None:
+            return None
+        if isinstance(length, bool) or not isinstance(length, int):
+            raise TypeError(
+                f"length must be an int, got {type(length).__name__}; it "
+                f"becomes a SEGMENT SIZE clause in the {declaration} DDL."
+            )
+        if length <= 0:
+            raise ValueError(
+                f"length must be a positive number of bytes for {declaration}, "
+                f"got {length}."
+            )
+        return length
+
     def format_data_type_text(self, data_type: TextType) -> Tuple[str, tuple]:
         """``TEXT`` — rendered as ``BLOB SUB_TYPE TEXT``, which is how Firebird
         spells unbounded character data.
@@ -628,9 +685,17 @@ class FirebirdTypeSupportMixin(DDLTypeMixin, DDLTypeSupport):
         Asking for that spelling is therefore an error rather than a quiet rewrite.
         The default spelling must always render, or the concept would be
         unusable on this backend.
+
+        A declared ``length`` is written as ``SEGMENT SIZE`` via
+        :meth:`_firebird_lob_length`, the only numeric attribute Firebird's BLOB
+        declaration carries. The column stays unbounded, so a minimum larger
+        than any VARCHAR limit is still satisfied; what changes is the declared
+        segment size, which keeps the field identity in the DDL.
         """
         self.check_spelling(data_type, ("text",))
-        return "BLOB SUB_TYPE TEXT", ()
+        length = self._firebird_lob_length(data_type, "BLOB SUB_TYPE TEXT")
+        segment = f" SEGMENT SIZE {length}" if length is not None else ""
+        return f"BLOB SUB_TYPE TEXT{segment}", ()
 
     def format_data_type_datetime(self, data_type: DateTimeType) -> Tuple[str, tuple]:
         """``DATETIME`` is not a Firebird type name; Firebird's is ``TIMESTAMP``,
@@ -670,7 +735,7 @@ class FirebirdTypeSupportMixin(DDLTypeMixin, DDLTypeSupport):
     # --- timetz / timestamptz: deliberately absent ---------------------------
     #
     # There is no ``format_data_type_timetz`` and no ``format_data_type_timestamptz``.
-    # Both concepts are **substituted** in :meth:`suggested_data_types` instead,
+    # Both concepts are **substituted** in :meth:`substitute_data_types` instead,
     # and the reason is that Firebird's grammar makes the two impossible to render
     # from the generic concepts:
     #
@@ -714,9 +779,16 @@ class FirebirdTypeSupportMixin(DDLTypeMixin, DDLTypeSupport):
         rather than silently answered with a ``BLOB``: the request named a
         PostgreSQL declaration, and quietly substituting this backend's is
         exactly the substitution the gate exists to catch.
+
+        A declared ``length`` is written as ``SEGMENT SIZE`` via
+        :meth:`_firebird_lob_length`, the only numeric attribute Firebird's BLOB
+        declaration carries. The column stays unbounded, so the minimum the
+        declaration asks for is always met without narrowing the storage.
         """
         self.check_spelling(data_type, ("blob",))
-        return "BLOB", ()
+        length = self._firebird_lob_length(data_type, "BLOB")
+        segment = f" SEGMENT SIZE {length}" if length is not None else ""
+        return f"BLOB{segment}", ()
 
     def format_data_type_binary(self, data_type: BinaryType) -> Tuple[str, tuple]:
         return (f"CHAR({data_type.length}) CHARACTER SET OCTETS" if data_type.length is not None else "BLOB"), ()
@@ -939,7 +1011,7 @@ class FirebirdTypeSupportMixin(DDLTypeMixin, DDLTypeSupport):
     # WITHOUT TIME ZONE data types"). The zoned columns are Firebird's own words
     # — ``TIME WITH TIME ZONE`` / ``TIMESTAMP WITH TIME ZONE``, 4.0+ — and they
     # are rendered by ``firebird_timetz`` and ``firebird_timestamptz`` below.
-    # Naming the unzoned substitute is ``suggested_data_types``' job; see the
+    # Naming the unzoned substitute is ``substitute_data_types``' job; see the
     # "timetz / timestamptz: deliberately absent" comment above
     # ``format_data_type_timestamp``.
 
@@ -980,7 +1052,7 @@ class FirebirdTypeSupportMixin(DDLTypeMixin, DDLTypeSupport):
         return self.version_at_least((4, 0, 0))
 
     # ------------------------------------------------------------------
-    # suggested_data_types() — D9
+    # substitute_data_types() — D9
     #
     # Every concept the framework models must be either rendered here or named
     # here. Firebird renders the scalar types and its own ``firebird_*`` family;
@@ -988,13 +1060,20 @@ class FirebirdTypeSupportMixin(DDLTypeMixin, DDLTypeSupport):
     # gap from a bare "unsupported".
     # ------------------------------------------------------------------
 
-    def suggested_data_types(self) -> Dict[str, type]:
+    def substitute_data_types(self) -> Dict[str, type]:
         """Cross-backend type-consistency suggestions for Firebird.
 
         Values are the suggested replacement ``DataType`` **classes**, each one a
         type this dialect really renders — suggesting a class it cannot write
         would trade a clear "not supported" for a worse one whose advice does not
         work.
+
+        ``boolean``
+            **Before 3.0 Firebird has no ``BOOLEAN`` type at all**, so the
+            concept is neither rendered nor, currently, substituted -- D9's
+            "silence is not an answer" on every 2.5 server. A flag is stored
+            as ``SMALLINT`` 0/1 there, which is the honest replacement; from
+            3.0 the renderer owns the concept and no substitute is given.
 
         ``json`` / ``jsonb``
             Firebird has no JSON type. ``BLOB SUB_TYPE TEXT`` holding JSON text is
@@ -1084,7 +1163,7 @@ class FirebirdTypeSupportMixin(DDLTypeMixin, DDLTypeSupport):
             ``TimestampType``", then "a ``TIMESTAMP`` takes no precision argument".
             Nothing is dropped.
         """
-        return {
+        substitutes = {
             "json": TextType,
             "jsonb": TextType,
             "xml": TextType,
@@ -1094,6 +1173,12 @@ class FirebirdTypeSupportMixin(DDLTypeMixin, DDLTypeSupport):
             "timetz": TimeType,
             "timestamptz": TimestampType,
         }
+        # 2.5 has no BOOLEAN; the flag is a SMALLINT there. From 3.0 the
+        # renderer owns the concept, so listing it here too would be a second
+        # contradictory answer.
+        if _norm_version(getattr(self, "version", (3, 0, 0))) < (3, 0, 0):
+            substitutes["boolean"] = SmallIntType
+        return substitutes
 
     # Every substitution above loses something, and the caller is the only one
     # who can act on it — so each caveat goes into the error they are already
@@ -1101,6 +1186,9 @@ class FirebirdTypeSupportMixin(DDLTypeMixin, DDLTypeSupport):
     # the same meaning (it usually does; "usually" is why it must not say so),
     # which leaves the specific loss to be stated here.
     _LOSSY_SUBSTITUTIONS = {
+        "boolean": "Firebird 2.5 has no BOOLEAN, so the flag is a SMALLINT "
+                   "0/1 with neither NULL semantics nor the three-valued "
+                   "logic the type concept promises.",
         "json": "Firebird has no JSON type, so the document is stored as text "
                 "and nothing on the server validates it; that is the "
                 "application's job now.",

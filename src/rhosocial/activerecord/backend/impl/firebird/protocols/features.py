@@ -229,7 +229,7 @@ class FirebirdTypeSupport(DataTypeSupport, Protocol):
     ``INT128`` here?" is answerable without issuing DDL and finding out.
 
     The core-concept half of the contract — total ``format_data_type`` dispatch,
-    ``parse_type``, ``supports_data_types`` and ``suggested_data_types`` — is
+    ``parse_type``, ``supports_data_types`` and ``substitute_data_types`` — is
     inherited from :class:`DataTypeSupport` rather than restated here: a Protocol
     that redeclared those members with empty bodies would shadow the concrete
     implementations when the dialect lists it among its bases, because a
@@ -239,7 +239,7 @@ class FirebirdTypeSupport(DataTypeSupport, Protocol):
     renders neither — Firebird's ``TIME`` and ``TIMESTAMP`` are its *unzoned*
     types (language reference §3.4), so writing them for a zoned concept would
     declare a column that drops the zone — and it names the unzoned concept as
-    their substitute through ``suggested_data_types``. The zoned columns
+    their substitute through ``substitute_data_types``. The zoned columns
     themselves are the ``firebird_timetz`` / ``firebird_timestamptz`` formatters
     above, under Firebird's own words.
     """

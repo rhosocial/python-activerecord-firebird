@@ -8,7 +8,7 @@ from contextlib import redirect_stderr, redirect_stdout
 import pytest
 
 from rhosocial.activerecord.backend.impl.firebird.__main__ import main
-from providers.scenarios import get_scenario_raw
+from support.firebird import get_scenario_raw
 
 import socket
 COMMANDS = [

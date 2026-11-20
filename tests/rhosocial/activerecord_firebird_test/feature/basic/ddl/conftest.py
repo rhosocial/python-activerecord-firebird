@@ -1,10 +1,9 @@
 # tests/rhosocial/activerecord_firebird_test/feature/basic/ddl/conftest.py
-"""
-Pytest configuration for the basic/ddl ALTER TABLE tests.
+"""Use the shared ``basic/ddl`` minimal test set.
 
-This file imports fixtures from the corresponding testsuite subtopic, making
-them (and the ``requires_protocol`` protocol-check autouse fixture) available
-to the tests in this directory.
+The shared group has no tables: the ALTER TABLE contracts render expressions
+only.  Firebird-specific live checks in this directory use the root
+``fb_config`` fixture, which points at this directory's own database file.
 """
 
-from rhosocial.activerecord.testsuite.feature.basic.ddl.conftest import *  # noqa: F403
+from rhosocial.activerecord.testsuite.feature.basic.ddl.conftest import *  # noqa: F401,F403

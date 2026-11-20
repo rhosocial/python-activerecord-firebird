@@ -1,6 +1,10 @@
 # src/rhosocial/activerecord/backend/impl/firebird/backend/async_backend.py
 """Firebird asynchronous backend implementation.
 
+EXPERIMENTAL — DO NOT USE IN PRODUCTION. firebird-driver has no native async
+API; this class exists only for API-shape parity and is not recommended for
+production workloads. Use the synchronous ``FirebirdBackend`` instead.
+
 This module provides the async Firebird backend using a thread pool
 wrapper around the synchronous firebird-driver (fdb), since there is
 no native async driver for Firebird.
@@ -347,8 +351,9 @@ class AsyncFirebirdBackend(
         loop = asyncio.get_event_loop()
 
         def _run():
-            if params:
-                cursor.execute(sql, params)
+            prepared = self._coerce_blob_text_params(cursor, sql, params)
+            if prepared:
+                cursor.execute(sql, prepared)
             else:
                 cursor.execute(sql)
             return cursor

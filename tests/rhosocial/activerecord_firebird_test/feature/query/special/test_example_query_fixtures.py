@@ -1,2 +1,3 @@
 # tests/rhosocial/activerecord_firebird_test/feature/query/special/test_example_query_fixtures.py
-from rhosocial.activerecord.testsuite.feature.query.special.test_example_query_fixtures import *  # noqa: F403
+"""Bridge to the shared ``query/special`` contract."""
+from rhosocial.activerecord.testsuite.feature.query.special.test_example_query_fixtures import *  # noqa: F401,F403
