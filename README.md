@@ -105,6 +105,14 @@ rows = User.query().where(User.c.email == "alice@example.com").all()
 
 ### Async
 
+> **Experimental — do not use in production.** The Firebird driver
+> (`firebird-driver`) has no native async support. `AsyncFirebirdBackend` is a
+> *pseudo-async* wrapper that runs every synchronous driver call in a thread
+> pool (`run_in_executor`). It carries no performance benefit over the
+> synchronous backend, is subject to thread-pool contention under load, and is
+> provided only for API-shape parity. Use the synchronous `FirebirdBackend` in
+> production.
+
 `AsyncFirebirdBackend` exposes the same API. Method names are identical; add
 `await`.
 
@@ -169,6 +177,11 @@ oldest release carry no gate and are omitted.
 
 ## Known Limitations
 
+- **Async is experimental.** `firebird-driver` has no native async API. The
+  `AsyncFirebirdBackend` / `AsyncFirebirdIntrospector` /
+  `AsyncFirebirdTransactionManager` classes are thread-pool (`run_in_executor`)
+  wrappers over synchronous calls, kept for API parity only. **Do not use them
+  in production** — use the synchronous backend.
 - **No connection pooling.** `pool_size` and `pool_timeout` are accepted by
   the config class but not consumed by the backend.
 - **No full-text search and no JSON.** `fulltext_index`, `functional_index`

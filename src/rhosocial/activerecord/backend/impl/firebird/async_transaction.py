@@ -1,4 +1,9 @@
-"""Firebird asynchronous transaction manager implementation."""
+"""Firebird asynchronous transaction manager implementation.
+
+EXPERIMENTAL — DO NOT USE IN PRODUCTION. firebird-driver has no native async
+API; this class wraps synchronous transaction calls in a thread pool and is
+kept only for API parity. Use the synchronous transaction manager instead.
+"""
 
 import asyncio
 from typing import Optional

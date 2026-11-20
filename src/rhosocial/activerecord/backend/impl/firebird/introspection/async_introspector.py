@@ -1,5 +1,10 @@
 # src/rhosocial/activerecord/backend/impl/firebird/introspection/async_introspector.py
-"""Firebird async introspector — wraps sync cursor ops in a thread pool."""
+"""Firebird async introspector — wraps sync cursor ops in a thread pool.
+
+EXPERIMENTAL — DO NOT USE IN PRODUCTION. firebird-driver has no native async
+API; this class is a thread-pool wrapper over synchronous introspection calls,
+kept only for API parity. Use the synchronous introspector instead.
+"""
 
 from typing import Any, Dict, List, Optional
 
