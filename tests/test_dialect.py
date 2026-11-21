@@ -134,23 +134,23 @@ class TestFirebirdDialectPagination:
     """Pagination support tests."""
 
     def test_rows_syntax_fb2_5(self, sqlite_style_dialect):
-        sql, params = sqlite_style_dialect.format_limit_offset(limit=10, offset=20)
+        sql, params = sqlite_style_dialect.build_limit_offset(limit=10, offset=20)
         assert "ROWS" in sql
         assert "21" in sql
         assert "30" in sql
 
     def test_offset_fetch_fb4(self, fb4_dialect):
-        sql, params = fb4_dialect.format_limit_offset(limit=10, offset=20)
+        sql, params = fb4_dialect.build_limit_offset(limit=10, offset=20)
         assert "OFFSET" in sql
         assert "FETCH" in sql
 
     def test_offset_fetch_fb3(self, dialect):
-        sql, params = dialect.format_limit_offset(limit=10, offset=20)
+        sql, params = dialect.build_limit_offset(limit=10, offset=20)
         assert "OFFSET" in sql
         assert "FETCH" in sql
 
     def test_no_limit_offset(self, dialect):
-        sql, params = dialect.format_limit_offset()
+        sql, params = dialect.build_limit_offset()
         assert sql == ""
 
 

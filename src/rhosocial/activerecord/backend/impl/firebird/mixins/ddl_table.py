@@ -217,7 +217,7 @@ class FirebirdTableMixin:
 
         return ' '.join(parts), tuple(all_params)
 
-    def format_column_definition(self, col_def: "ColumnDefinition") -> Tuple[str, tuple]:
+    def format_column_definition(self, expr: "ColumnDefinition") -> Tuple[str, tuple]:
         """Format a single column definition with Firebird-specific syntax.
 
         Accepts both the generic ``ColumnDefinition`` and the Firebird
@@ -233,13 +233,12 @@ class FirebirdTableMixin:
         from rhosocial.activerecord.backend.expression.statements import (
             ColumnDefaultConstraint,
             ColumnGeneratedConstraint,
-            ColumnPrimaryKeyConstraint,
         )
         from rhosocial.activerecord.backend.impl.firebird.expression.column import (
             FirebirdColumnDefinition,
         )
 
-        if col_def.comment is not None:
+        if expr.comment is not None:
             # Firebird annotates column comments through the standalone
             # COMMENT ON COLUMN statement (no inline column clause); a comment
             # on a column definition is never silently dropped.
@@ -250,28 +249,28 @@ class FirebirdTableMixin:
                 "COMMENT ON COLUMN statement.",
             )
 
-        type_sql, _ = col_def.data_type.to_sql()
-        parts = [self.format_identifier(col_def.name), type_sql]
+        type_sql, _ = expr.data_type.to_sql()
+        parts = [self.format_identifier(expr.name), type_sql]
         params: List[Any] = []
 
-        attr_sql, attr_params = self.format_column_attributes(col_def)
+        attr_sql, attr_params = self.format_column_attributes(expr)
         if attr_sql:
             parts.append(attr_sql.strip())
         params.extend(attr_params)
 
-        if isinstance(col_def, FirebirdColumnDefinition) and col_def.character_set:
-            parts.append(f"CHARACTER SET {col_def.character_set}")
+        if isinstance(expr, FirebirdColumnDefinition) and expr.character_set:
+            parts.append(f"CHARACTER SET {expr.character_set}")
 
         # ``computed_by`` is FirebirdColumnDefinition's field; the generic
         # column definition declares no such clause, so the kind decides
         # whether the question exists, then the field is read.
-        if isinstance(col_def, FirebirdColumnDefinition) and col_def.computed_by:
-            parts.append(f"COMPUTED BY ({col_def.computed_by})")
+        if isinstance(expr, FirebirdColumnDefinition) and expr.computed_by:
+            parts.append(f"COMPUTED BY ({expr.computed_by})")
         else:
             # A generic ColumnGeneratedConstraint maps onto Firebird's
             # ``COMPUTED BY (<expr>)`` form (Firebird has no GENERATED ALWAYS
             # syntax); a declared generated column is never silently dropped.
-            generated = col_def.generated_expression
+            generated = expr.generated_expression
             if generated is not None:
                 gen_sql, gen_params = generated.expression.to_sql()
                 parts.append(f"COMPUTED BY ({gen_sql})")
@@ -279,7 +278,7 @@ class FirebirdTableMixin:
 
         constraint_parts = []
         default_parts: List[str] = []
-        for constraint in col_def.constraints:
+        for constraint in expr.constraints:
             branch = constraint.branch
             if isinstance(branch, ColumnDefaultConstraint):
                 # ``DEFAULT`` is rendered through its own branch value rather
@@ -337,8 +336,8 @@ class FirebirdTableMixin:
         # ``collation`` is FirebirdColumnDefinition's field; the generic column
         # definition declares no such clause, so the kind decides whether the
         # question exists, then the field is read.
-        if isinstance(col_def, FirebirdColumnDefinition) and col_def.collation:
-            parts.append(f"COLLATE {col_def.collation}")
+        if isinstance(expr, FirebirdColumnDefinition) and expr.collation:
+            parts.append(f"COLLATE {expr.collation}")
 
         return ' '.join(parts), tuple(params)
 

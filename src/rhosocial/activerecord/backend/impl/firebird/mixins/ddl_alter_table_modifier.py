@@ -56,7 +56,7 @@ class FirebirdAlterTableModifierMixin:
         """
         return False
 
-    def format_add_column_action(self, action: Any) -> Tuple[str, tuple]:
+    def format_add_column_action(self, expr: Any) -> Tuple[str, tuple]:
         """Format ALTER TABLE ADD COLUMN for Firebird.
 
         Firebird <= 5.0.4 does not support ``ADD COLUMN IF NOT EXISTS``.
@@ -65,7 +65,7 @@ class FirebirdAlterTableModifierMixin:
         """
         # ``if_not_exists`` is AddColumnAction's declared field; the guard
         # reads it under its own name rather than probing for it.
-        if action.if_not_exists is True:
+        if expr.if_not_exists is True:
             raise UnsupportedFeatureError(
                 self.name,
                 "ADD COLUMN IF NOT EXISTS",
@@ -74,9 +74,9 @@ class FirebirdAlterTableModifierMixin:
                 "EXECUTE STATEMENT with WHEN ANY DO BEGIN END. Firebird "
                 "6.0 (unreleased) will support it natively.",
             )
-        return super().format_add_column_action(action)
+        return super().format_add_column_action(expr)
 
-    def format_drop_column_action(self, action: Any) -> Tuple[str, tuple]:
+    def format_drop_column_action(self, expr: Any) -> Tuple[str, tuple]:
         """Format ALTER TABLE DROP COLUMN for Firebird.
 
         Firebird <= 5.0.4 does not support ``DROP COLUMN IF EXISTS``.
@@ -85,16 +85,16 @@ class FirebirdAlterTableModifierMixin:
         """
         # ``if_exists`` is DropColumnAction's declared field; the guard
         # reads it under its own name rather than probing for it.
-        if action.if_exists is True:
+        if expr.if_exists is True:
             raise UnsupportedFeatureError(
                 self.name,
                 "DROP COLUMN IF EXISTS",
                 "Firebird <= 5.0.4 does not support IF EXISTS on "
                 "DROP COLUMN. Pre-check RDB$RELATION_FIELDS.",
             )
-        return super().format_drop_column_action(action)
+        return super().format_drop_column_action(expr)
 
-    def format_drop_table_constraint_action(self, action: Any) -> Tuple[str, tuple]:
+    def format_drop_table_constraint_action(self, expr: Any) -> Tuple[str, tuple]:
         """Format ALTER TABLE DROP CONSTRAINT for Firebird.
 
         Firebird <= 5.0.4 does not support ``DROP CONSTRAINT IF EXISTS``.
@@ -103,61 +103,61 @@ class FirebirdAlterTableModifierMixin:
         """
         # ``if_exists`` is DropTableConstraintAction's declared field; the
         # guard reads it under its own name rather than probing for it.
-        if action.if_exists is True:
+        if expr.if_exists is True:
             raise UnsupportedFeatureError(
                 self.name,
                 "DROP CONSTRAINT IF EXISTS",
                 "Firebird <= 5.0.4 does not support IF EXISTS on "
                 "DROP CONSTRAINT. Pre-check RDB$RELATION_CONSTRAINTS.",
             )
-        return super().format_drop_table_constraint_action(action)
+        return super().format_drop_table_constraint_action(expr)
 
-    def format_set_generated_action(self, action: Any) -> Tuple[str, tuple]:
+    def format_set_generated_action(self, expr: Any) -> Tuple[str, tuple]:
         """Format ALTER COLUMN ... SET GENERATED {ALWAYS | BY DEFAULT}.
 
         Identity column clause, available since Firebird 3.0.
         """
         self._check_identity_version("SET GENERATED")
         return (
-            f"ALTER COLUMN {self.format_identifier(action.column_name)} "
-            f"SET GENERATED {action.generated}",
+            f"ALTER COLUMN {self.format_identifier(expr.column_name)} "
+            f"SET GENERATED {expr.generated}",
             (),
         )
 
-    def format_restart_identity_action(self, action: Any) -> Tuple[str, tuple]:
+    def format_restart_identity_action(self, expr: Any) -> Tuple[str, tuple]:
         """Format ALTER COLUMN ... RESTART [WITH value].
 
         Resets the current value of an identity column; Firebird 3.0+.
         """
         self._check_identity_version("RESTART")
-        col = self.format_identifier(action.column_name)
+        col = self.format_identifier(expr.column_name)
         # ``restart_with`` is RestartIdentityAction's declared field; the
         # renderer reads it under its own name rather than probing for it.
-        if action.restart_with is not None:
-            return f"ALTER COLUMN {col} RESTART WITH {action.restart_with}", ()
+        if expr.restart_with is not None:
+            return f"ALTER COLUMN {col} RESTART WITH {expr.restart_with}", ()
         return f"ALTER COLUMN {col} RESTART", ()
 
-    def format_set_increment_action(self, action: Any) -> Tuple[str, tuple]:
+    def format_set_increment_action(self, expr: Any) -> Tuple[str, tuple]:
         """Format ALTER COLUMN ... SET INCREMENT [BY] n.
 
         Changes the identity increment; Firebird 3.0+.
         """
         self._check_identity_version("SET INCREMENT")
         return (
-            f"ALTER COLUMN {self.format_identifier(action.column_name)} "
-            f"SET INCREMENT {action.increment}",
+            f"ALTER COLUMN {self.format_identifier(expr.column_name)} "
+            f"SET INCREMENT {expr.increment}",
             (),
         )
 
-    def format_drop_identity_action(self, action: Any) -> Tuple[str, tuple]:
+    def format_drop_identity_action(self, expr: Any) -> Tuple[str, tuple]:
         """Format ALTER COLUMN ... DROP IDENTITY.
 
         Converts an identity column to a plain column; Firebird 3.0+.
         """
         self._check_identity_version("DROP IDENTITY")
-        return f"ALTER COLUMN {self.format_identifier(action.column_name)} DROP IDENTITY", ()
+        return f"ALTER COLUMN {self.format_identifier(expr.column_name)} DROP IDENTITY", ()
 
-    def format_set_position_action(self, action: Any) -> Tuple[str, tuple]:
+    def format_set_position_action(self, expr: Any) -> Tuple[str, tuple]:
         """Format ALTER COLUMN ... POSITION n.
 
         Reorders a column within the table; Firebird 4.0+.
@@ -170,7 +170,7 @@ class FirebirdAlterTableModifierMixin:
                 "Firebird 4.0 or later is required for column POSITION reordering.",
             )
         return (
-            f"ALTER COLUMN {self.format_identifier(action.column_name)} POSITION {action.position}",
+            f"ALTER COLUMN {self.format_identifier(expr.column_name)} POSITION {expr.position}",
             (),
         )
 

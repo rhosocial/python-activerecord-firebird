@@ -53,7 +53,7 @@ class FirebirdLiteralValueMixin:
     and the override wins by that position.
     """
 
-    def format_literal(self, value: Any) -> str:
+    def format_literal(self, expr: Any) -> str:
         """Render *value* as inline SQL text, Firebird's spelling where it
         has one.
 
@@ -68,11 +68,11 @@ class FirebirdLiteralValueMixin:
                 no literal form for (``timedelta`` among them -- see the
                 module docstring), and this adds nothing on top of it.
         """
-        if isinstance(value, (bytes, bytearray)):
-            return f"X'{bytes(value).hex().upper()}'"
-        if isinstance(value, uuid.UUID):
+        if isinstance(expr, (bytes, bytearray)):
+            return f"X'{bytes(expr).hex().upper()}'"
+        if isinstance(expr, uuid.UUID):
             # All Firebird has is a text home, so the canonical form quoted
             # as text is the whole spelling; a ::uuid-style suffix would
             # not parse.
-            return super().format_literal(str(value))
-        return super().format_literal(value)
+            return super().format_literal(str(expr))
+        return super().format_literal(expr)

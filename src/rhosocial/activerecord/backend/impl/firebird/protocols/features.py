@@ -246,35 +246,35 @@ class FirebirdTypeSupport(DataTypeSupport, Protocol):
 
     # --- Firebird 4.0+ types: version-gated formatters ---
 
-    def format_data_type_firebird_timestamptz(self, data_type: Any) -> Tuple[str, tuple]:
+    def format_data_type_firebird_timestamptz(self, expr: Any) -> Tuple[str, tuple]:
         """Render ``TIMESTAMP WITH TIME ZONE``."""
         ...
 
-    def format_data_type_firebird_timetz(self, data_type: Any) -> Tuple[str, tuple]:
+    def format_data_type_firebird_timetz(self, expr: Any) -> Tuple[str, tuple]:
         """Render ``TIME WITH TIME ZONE``."""
         ...
 
     def format_data_type_firebird_time_without_time_zone(
-        self, data_type: Any
+        self, expr: Any
     ) -> Tuple[str, tuple]:
         """Render ``TIME WITHOUT TIME ZONE``."""
         ...
 
-    def format_data_type_firebird_decfloat(self, data_type: Any) -> Tuple[str, tuple]:
+    def format_data_type_firebird_decfloat(self, expr: Any) -> Tuple[str, tuple]:
         """Render ``DECFLOAT(16|34)``."""
         ...
 
-    def format_data_type_firebird_int128(self, data_type: Any) -> Tuple[str, tuple]:
+    def format_data_type_firebird_int128(self, expr: Any) -> Tuple[str, tuple]:
         """Render ``INT128``."""
         ...
 
     # --- Types every Firebird version this backend supports has ---
 
-    def format_data_type_firebird_char(self, data_type: Any) -> Tuple[str, tuple]:
+    def format_data_type_firebird_char(self, expr: Any) -> Tuple[str, tuple]:
         """Render ``CHAR(n) CHARACTER SET UTF8``."""
         ...
 
-    def format_data_type_firebird_varchar(self, data_type: Any) -> Tuple[str, tuple]:
+    def format_data_type_firebird_varchar(self, expr: Any) -> Tuple[str, tuple]:
         """Render ``VARCHAR(n) CHARACTER SET UTF8``."""
         ...
 
