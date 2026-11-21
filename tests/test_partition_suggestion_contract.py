@@ -22,7 +22,7 @@ from rhosocial.activerecord.backend.dialect.protocols import (
 )
 from rhosocial.activerecord.backend.expression.statements import PartitionStrategy
 from rhosocial.activerecord.backend.impl.firebird.dialect import FirebirdDialect
-from rhosocial.activerecord.backend.impl.firebird.mixins import FirebirdPartitionSuggestionMixin
+from rhosocial.activerecord.backend.impl.firebird.suggestion import FirebirdPartitionSuggestionMixin
 
 CASES = [
     ("build", PartitionBuildSuggestionSupport, "suggest_partition_build"),

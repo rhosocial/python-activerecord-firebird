@@ -161,7 +161,6 @@ from .mixins import (
     FirebirdPartitionMixin,
     FirebirdTypeSupportMixin,
     FirebirdColumnTypeMixin,
-    FirebirdDataTypeSuggestionsMixin,
     FirebirdDomainMixin,
     FirebirdExceptionMixin,
     FirebirdRoutineMixin,
@@ -192,6 +191,9 @@ from .mixins import (
     FirebirdTruncateMixin,
     FirebirdLiteralValueMixin,
     FirebirdUnsupportedFeaturesMixin,
+)
+from .suggestion import (
+    FirebirdDataTypeSuggestionsMixin,
     FirebirdIntegerAutoIncrementColumnSuggestionMixin,
     FirebirdPartitionSuggestionMixin,
 )

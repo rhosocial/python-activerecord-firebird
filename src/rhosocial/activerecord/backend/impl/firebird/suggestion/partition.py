@@ -1,4 +1,4 @@
-# src/rhosocial/activerecord/backend/impl/firebird/mixins/partition_suggestion.py
+# src/rhosocial/activerecord/backend/impl/firebird/suggestion/partition.py
 """Firebird's partition-lifecycle suggestions.
 
 Firebird has no native table partitioning and no partition-maintenance
@@ -14,7 +14,7 @@ these synchronous suggestions are meaningful; there is no async counterpart.
 
 from typing import TYPE_CHECKING
 
-from ....expression import (
+from rhosocial.activerecord.backend.suggestion import (
     PartitionAddSuggestion,
     PartitionBuildSuggestion,
     PartitionDropSuggestion,

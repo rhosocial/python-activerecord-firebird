@@ -1,4 +1,4 @@
-# src/rhosocial/activerecord/backend/impl/firebird/mixins/data_type_suggestions.py
+# src/rhosocial/activerecord/backend/impl/firebird/suggestion/data_types.py
 """Firebird's **suggested data types**: the declaration a bare field gets here.
 
 This is the DDL half of Firebird's type answer, and it is deliberately separate
