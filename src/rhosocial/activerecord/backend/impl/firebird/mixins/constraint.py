@@ -787,7 +787,7 @@ class FirebirdConstraintMixin:
     # Render-time gates over core's formatters
     # ------------------------------------------------------------------
 
-    def format_constraint_traits(self, constraint: "ColumnConstraint") -> Tuple[str, str]:
+    def format_constraint_traits(self, expr: "ColumnConstraint") -> Tuple[str, str]:
         """Render the column clause's traits after this backend's gates.
 
         Core's renderer would refuse the deferral family with one generic
@@ -795,9 +795,9 @@ class FirebirdConstraintMixin:
         spelling, and everything else (including core's own check of the
         enforcement probe) is delegated.
         """
-        self._require_no_constraint_deferral(constraint)
-        self._require_constraint_enforcement(constraint)
-        return super().format_constraint_traits(constraint)
+        self._require_no_constraint_deferral(expr)
+        self._require_constraint_enforcement(expr)
+        return super().format_constraint_traits(expr)
 
     def format_table_constraint(self, expr: "TableConstraint") -> Tuple[str, Tuple]:
         """Render a table-level constraint through this backend's gates.

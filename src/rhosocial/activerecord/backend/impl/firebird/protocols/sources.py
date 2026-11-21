@@ -26,7 +26,7 @@ from typing import Optional, Protocol, Tuple, runtime_checkable
 class FirebirdRowSourceSupport(Protocol):
     """Rendering contract for a Firebird row source."""
 
-    def format_named_relation(self, ref: object) -> Tuple[str, tuple]:
+    def format_named_relation(self, expr: object) -> Tuple[str, tuple]:
         """Render a ``FROM`` reference to a named relation."""
         ...  # pragma: no cover
 

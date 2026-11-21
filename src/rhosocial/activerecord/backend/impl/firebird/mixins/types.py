@@ -431,7 +431,7 @@ class FirebirdTypeSupportMixin(DDLTypeMixin, DDLTypeSupport):
     # ``IntegerType``'s concept, so there is no ``format_data_type_int`` and no
     # ``supports_data_type_int``. One class, one dispatch key, one rendering.
 
-    def format_data_type_integer(self, data_type: IntegerType) -> Tuple[str, tuple]:
+    def format_data_type_integer(self, expr: IntegerType) -> Tuple[str, tuple]:
         """``INTEGER`` and ``INT`` are both words Firebird's grammar uses for
         this 32-bit integer, and Firebird's own word is ``INTEGER``, so both
         render ``INTEGER``.
@@ -439,11 +439,11 @@ class FirebirdTypeSupportMixin(DDLTypeMixin, DDLTypeSupport):
         ``unsigned`` is refused rather than rendered, and refused **before** the
         spelling check — see :meth:`_check_firebird_signed`.
         """
-        self._check_firebird_signed(data_type)
-        self.check_spelling(data_type, IntegerType)
+        self._check_firebird_signed(expr)
+        self.check_spelling(expr, IntegerType)
         return "INTEGER", ()
 
-    def format_data_type_bigint(self, data_type: BigIntType) -> Tuple[str, tuple]:
+    def format_data_type_bigint(self, expr: BigIntType) -> Tuple[str, tuple]:
         """``BIGINT`` only.
 
         ``INT8`` is how MySQL and PostgreSQL name this concept; Firebird calls it
@@ -454,11 +454,11 @@ class FirebirdTypeSupportMixin(DDLTypeMixin, DDLTypeSupport):
         ``unsigned`` is refused rather than rendered, and refused **before** the
         spelling check — see :meth:`_check_firebird_signed`.
         """
-        self._check_firebird_signed(data_type)
-        self.check_spelling(data_type, ("bigint",))
+        self._check_firebird_signed(expr)
+        self.check_spelling(expr, ("bigint",))
         return "BIGINT", ()
 
-    def format_data_type_smallint(self, data_type: SmallIntType) -> Tuple[str, tuple]:
+    def format_data_type_smallint(self, expr: SmallIntType) -> Tuple[str, tuple]:
         """``SMALLINT`` only.
 
         ``INT2`` is the MySQL/PostgreSQL spelling and is not Firebird's; see
@@ -466,11 +466,11 @@ class FirebirdTypeSupportMixin(DDLTypeMixin, DDLTypeSupport):
         rendered, before the spelling check — see
         :meth:`_check_firebird_signed`.
         """
-        self._check_firebird_signed(data_type)
-        self.check_spelling(data_type, ("smallint",))
+        self._check_firebird_signed(expr)
+        self.check_spelling(expr, ("smallint",))
         return "SMALLINT", ()
 
-    def format_data_type_tinyint(self, data_type: TinyIntType) -> Tuple[str, tuple]:
+    def format_data_type_tinyint(self, expr: TinyIntType) -> Tuple[str, tuple]:
         """Firebird has no 1-byte integer, so the concept is *widened* to the
         next size that exists and the column is a ``SMALLINT``. Both spellings
         are accepted because the caller asked for one concept — refusing either
@@ -480,11 +480,11 @@ class FirebirdTypeSupportMixin(DDLTypeMixin, DDLTypeSupport):
         ``unsigned`` is refused rather than rendered, before the spelling check —
         see :meth:`_check_firebird_signed`.
         """
-        self._check_firebird_signed(data_type)
-        self.check_spelling(data_type, TinyIntType)
+        self._check_firebird_signed(expr)
+        self.check_spelling(expr, TinyIntType)
         return "SMALLINT", ()
 
-    def format_data_type_float(self, data_type: FloatType) -> Tuple[str, tuple]:
+    def format_data_type_float(self, expr: FloatType) -> Tuple[str, tuple]:
         """``FLOAT`` or ``FLOAT(bin_prec)`` — the precision is honoured.
 
         Firebird has exactly one ``FLOAT`` and it is a precision-bearing
@@ -517,13 +517,13 @@ class FirebirdTypeSupportMixin(DDLTypeMixin, DDLTypeSupport):
         ``unsigned`` is refused rather than rendered, before that call — see
         :meth:`_check_firebird_signed`.
         """
-        self._check_firebird_signed(data_type, "approximate numeric (FLOAT)")
-        self._validate_firebird_float(data_type.precision)
-        if data_type.precision is None:
+        self._check_firebird_signed(expr, "approximate numeric (FLOAT)")
+        self._validate_firebird_float(expr.precision)
+        if expr.precision is None:
             return "FLOAT", ()
-        return f"FLOAT({data_type.precision})", ()
+        return f"FLOAT({expr.precision})", ()
 
-    def format_data_type_real(self, data_type: RealType) -> Tuple[str, tuple]:
+    def format_data_type_real(self, expr: RealType) -> Tuple[str, tuple]:
         """``REAL`` renders ``FLOAT`` — Firebird's *own* synonym, so nothing is
         widened and nothing is lost.
 
@@ -554,10 +554,10 @@ class FirebirdTypeSupportMixin(DDLTypeMixin, DDLTypeSupport):
         ``unsigned`` is refused rather than rendered — see
         :meth:`_check_firebird_signed`.
         """
-        self._check_firebird_signed(data_type, "approximate numeric (REAL)")
+        self._check_firebird_signed(expr, "approximate numeric (REAL)")
         return "FLOAT", ()
 
-    def format_data_type_double(self, data_type: DoubleType) -> Tuple[str, tuple]:
+    def format_data_type_double(self, expr: DoubleType) -> Tuple[str, tuple]:
         """``double`` and ``double precision`` are one Firebird type written two
         ways, and Firebird writes the long one, so both render
         ``DOUBLE PRECISION``.
@@ -565,11 +565,11 @@ class FirebirdTypeSupportMixin(DDLTypeMixin, DDLTypeSupport):
         ``unsigned`` is refused rather than rendered, before the spelling check —
         see :meth:`_check_firebird_signed`.
         """
-        self._check_firebird_signed(data_type, "approximate numeric (DOUBLE PRECISION)")
-        self.check_spelling(data_type, DoubleType)
+        self._check_firebird_signed(expr, "approximate numeric (DOUBLE PRECISION)")
+        self.check_spelling(expr, DoubleType)
         return "DOUBLE PRECISION", ()
 
-    def format_data_type_decimal(self, data_type: DecimalType) -> Tuple[str, tuple]:
+    def format_data_type_decimal(self, expr: DecimalType) -> Tuple[str, tuple]:
         """Firebird's grammar spells this concept ``NUMERIC``, ``DECIMAL`` and
         ``DEC``, and all three name the same exact fixed-point storage, so all
         three are accepted and the declared one is rendered as Firebird's
@@ -580,27 +580,27 @@ class FirebirdTypeSupportMixin(DDLTypeMixin, DDLTypeSupport):
         :meth:`_check_firebird_signed`. Those two are untouched and still fire
         for a signed declaration.
         """
-        self._check_firebird_signed(data_type, "exact numeric (DECIMAL)")
-        self.check_spelling(data_type, DecimalType)
-        self._validate_numeric(data_type.precision, data_type.scale)
-        if data_type.precision is not None and data_type.scale is not None:
-            return f"DECIMAL({data_type.precision}, {data_type.scale})", ()
-        if data_type.precision is not None:
-            return f"DECIMAL({data_type.precision})", ()
+        self._check_firebird_signed(expr, "exact numeric (DECIMAL)")
+        self.check_spelling(expr, DecimalType)
+        self._validate_numeric(expr.precision, expr.scale)
+        if expr.precision is not None and expr.scale is not None:
+            return f"DECIMAL({expr.precision}, {expr.scale})", ()
+        if expr.precision is not None:
+            return f"DECIMAL({expr.precision})", ()
         return "DECIMAL", ()
 
-    def format_data_type_boolean(self, data_type: BooleanType) -> Tuple[str, tuple]:
+    def format_data_type_boolean(self, expr: BooleanType) -> Tuple[str, tuple]:
         """``BOOLEAN`` only.
 
         ``BOOL`` is an abbreviation no Firebird version's grammar contains —
         Firebird 3 introduced the type as ``BOOLEAN`` and has no alias for it —
         so the spelling is refused instead of being answered with a declaration
         the server would reject."""
-        self.check_spelling(data_type, ("boolean",))
+        self.check_spelling(expr, ("boolean",))
         self._check_fb3_type("BOOLEAN")
         return "BOOLEAN", ()
 
-    def format_data_type_varchar(self, data_type: VarCharType) -> Tuple[str, tuple]:
+    def format_data_type_varchar(self, expr: VarCharType) -> Tuple[str, tuple]:
         """``VARCHAR``, and ``CHARACTER VARYING`` — SQL's long form of the same
         variable-length character string, which Firebird's own parser accepts and
         which is therefore a legitimate thing to find in a type string read back
@@ -617,13 +617,13 @@ class FirebirdTypeSupportMixin(DDLTypeMixin, DDLTypeSupport):
         :meth:`type_parameter_defaults` entry — a server that will not create the
         column supplies nothing to read back — stays attached to the number.
         """
-        self.check_spelling(data_type, VarCharType)
-        length = data_type.length
+        self.check_spelling(expr, VarCharType)
+        length = expr.length
         if length is None:
             length = self._FB_RENDERED_VARCHAR_LENGTH
         return f"VARCHAR({length})", ()
 
-    def format_data_type_char(self, data_type: CharType) -> Tuple[str, tuple]:
+    def format_data_type_char(self, expr: CharType) -> Tuple[str, tuple]:
         """``CHAR`` and ``CHARACTER`` are the same fixed-length character
         string in Firebird's grammar; both render ``CHAR(n)``, Firebird's own
         word for it.
@@ -637,8 +637,8 @@ class FirebirdTypeSupportMixin(DDLTypeMixin, DDLTypeSupport):
         ``length``; the fallback reads the one declaration so a type built
         without a dialect renders the same number.
         """
-        self.check_spelling(data_type, CharType)
-        length = data_type.length
+        self.check_spelling(expr, CharType)
+        length = expr.length
         if length is None:
             length = self.type_parameter_defaults()["char"]["length"]
         return f"CHAR({length})", ()
@@ -675,7 +675,7 @@ class FirebirdTypeSupportMixin(DDLTypeMixin, DDLTypeSupport):
             )
         return length
 
-    def format_data_type_text(self, data_type: TextType) -> Tuple[str, tuple]:
+    def format_data_type_text(self, expr: TextType) -> Tuple[str, tuple]:
         """``TEXT`` — rendered as ``BLOB SUB_TYPE TEXT``, which is how Firebird
         spells unbounded character data.
 
@@ -692,12 +692,12 @@ class FirebirdTypeSupportMixin(DDLTypeMixin, DDLTypeSupport):
         than any VARCHAR limit is still satisfied; what changes is the declared
         segment size, which keeps the field identity in the DDL.
         """
-        self.check_spelling(data_type, ("text",))
-        length = self._firebird_lob_length(data_type, "BLOB SUB_TYPE TEXT")
+        self.check_spelling(expr, ("text",))
+        length = self._firebird_lob_length(expr, "BLOB SUB_TYPE TEXT")
         segment = f" SEGMENT SIZE {length}" if length is not None else ""
         return f"BLOB SUB_TYPE TEXT{segment}", ()
 
-    def format_data_type_datetime(self, data_type: DateTimeType) -> Tuple[str, tuple]:
+    def format_data_type_datetime(self, expr: DateTimeType) -> Tuple[str, tuple]:
         """``DATETIME`` is not a Firebird type name; Firebird's is ``TIMESTAMP``,
         and in Dialect 3 it is exactly the date-and-time column this concept
         means. So this is a *rename*, not a widening or a narrowing, and the
@@ -708,10 +708,10 @@ class FirebirdTypeSupportMixin(DDLTypeMixin, DDLTypeSupport):
         on a type Firebird spells the same way, because the substitute shares the
         unzoned ``TimestampType``'s grammar and so cannot carry the field either.
         """
-        self._check_firebird_temporal_precision(data_type, "TIMESTAMP")
+        self._check_firebird_temporal_precision(expr, "TIMESTAMP")
         return "TIMESTAMP", ()
 
-    def format_data_type_date(self, data_type: DateType) -> Tuple[str, tuple]:
+    def format_data_type_date(self, expr: DateType) -> Tuple[str, tuple]:
         """``DATE``.
 
         ``DateType`` declares no identity field, so there is nothing here to
@@ -720,7 +720,7 @@ class FirebirdTypeSupportMixin(DDLTypeMixin, DDLTypeSupport):
         """
         return "DATE", ()
 
-    def format_data_type_time(self, data_type: TimeType) -> Tuple[str, tuple]:
+    def format_data_type_time(self, expr: TimeType) -> Tuple[str, tuple]:
         """``TIME`` — §3.4.2: *"For a bare TIME, WITHOUT TIME ZONE is assumed"*,
         so the short word names the unzoned column exactly, and
         :class:`FirebirdTimeWithoutTimeZoneType` renders the long spelling of the
@@ -729,7 +729,7 @@ class FirebirdTypeSupportMixin(DDLTypeMixin, DDLTypeSupport):
         ``precision`` is refused rather than rendered or dropped — see
         :meth:`_check_firebird_temporal_precision`.
         """
-        self._check_firebird_temporal_precision(data_type, "TIME")
+        self._check_firebird_temporal_precision(expr, "TIME")
         return "TIME", ()
 
     # --- timetz / timestamptz: deliberately absent ---------------------------
@@ -760,17 +760,17 @@ class FirebirdTypeSupportMixin(DDLTypeMixin, DDLTypeSupport):
     #   the unzoned concept *and* that concept refuses a precision by name. See
     #   :meth:`_check_firebird_temporal_precision`.
 
-    def format_data_type_timestamp(self, data_type: TimestampType) -> Tuple[str, tuple]:
+    def format_data_type_timestamp(self, expr: TimestampType) -> Tuple[str, tuple]:
         """``TIMESTAMP`` — §3.4.3: *"For a bare TIMESTAMP, WITHOUT TIME ZONE is
         assumed"*, so the short word names the unzoned column exactly.
 
         ``precision`` is refused rather than rendered or dropped — see
         :meth:`_check_firebird_temporal_precision`.
         """
-        self._check_firebird_temporal_precision(data_type, "TIMESTAMP")
+        self._check_firebird_temporal_precision(expr, "TIMESTAMP")
         return "TIMESTAMP", ()
 
-    def format_data_type_blob(self, data_type: BlobType) -> Tuple[str, tuple]:
+    def format_data_type_blob(self, expr: BlobType) -> Tuple[str, tuple]:
         """``BLOB`` — the concept's default spelling and Firebird's own name for
         unbounded binary storage.
 
@@ -785,26 +785,26 @@ class FirebirdTypeSupportMixin(DDLTypeMixin, DDLTypeSupport):
         declaration carries. The column stays unbounded, so the minimum the
         declaration asks for is always met without narrowing the storage.
         """
-        self.check_spelling(data_type, ("blob",))
-        length = self._firebird_lob_length(data_type, "BLOB")
+        self.check_spelling(expr, ("blob",))
+        length = self._firebird_lob_length(expr, "BLOB")
         segment = f" SEGMENT SIZE {length}" if length is not None else ""
         return f"BLOB{segment}", ()
 
-    def format_data_type_binary(self, data_type: BinaryType) -> Tuple[str, tuple]:
-        return (f"CHAR({data_type.length}) CHARACTER SET OCTETS" if data_type.length is not None else "BLOB"), ()
+    def format_data_type_binary(self, expr: BinaryType) -> Tuple[str, tuple]:
+        return (f"CHAR({expr.length}) CHARACTER SET OCTETS" if expr.length is not None else "BLOB"), ()
 
-    def format_data_type_varbinary(self, data_type: VarBinaryType) -> Tuple[str, tuple]:
-        return (f"VARCHAR({data_type.length}) CHARACTER SET OCTETS" if data_type.length is not None else "BLOB"), ()
+    def format_data_type_varbinary(self, expr: VarBinaryType) -> Tuple[str, tuple]:
+        return (f"VARCHAR({expr.length}) CHARACTER SET OCTETS" if expr.length is not None else "BLOB"), ()
 
-    def format_data_type_uuid(self, data_type: UUIDType) -> Tuple[str, tuple]:
+    def format_data_type_uuid(self, expr: UUIDType) -> Tuple[str, tuple]:
         return "CHAR(16) CHARACTER SET OCTETS", ()
 
-    def format_data_type_custom(self, data_type: CustomType) -> Tuple[str, tuple]:
-        return data_type.raw, ()
+    def format_data_type_custom(self, expr: CustomType) -> Tuple[str, tuple]:
+        return expr.raw, ()
 
     # --- Firebird-specific type formatters (dispatch key = type name) ---
 
-    def format_data_type_firebird_char(self, data_type: FirebirdCharType) -> Tuple[str, tuple]:
+    def format_data_type_firebird_char(self, expr: FirebirdCharType) -> Tuple[str, tuple]:
         """``CHAR(n) CHARACTER SET UTF8`` — the fixed-length concept with the
         column's character set written out, so the declaration does not depend on
         the database default. ``CHARACTER`` is accepted for the same reason as in
@@ -814,26 +814,26 @@ class FirebirdTypeSupportMixin(DDLTypeMixin, DDLTypeSupport):
         the one declaration rather than repeated; see :meth:`format_data_type_char`
         for why Firebird's 1 is a documented default and not a choice of this
         backend."""
-        self.check_spelling(data_type, CharType)
-        length = data_type.length
+        self.check_spelling(expr, CharType)
+        length = expr.length
         if length is None:
             length = self.type_parameter_defaults()["firebird_char"]["length"]
         return f"CHAR({length}) CHARACTER SET UTF8", ()
 
-    def format_data_type_firebird_varchar(self, data_type: FirebirdVarCharType) -> Tuple[str, tuple]:
+    def format_data_type_firebird_varchar(self, expr: FirebirdVarCharType) -> Tuple[str, tuple]:
         """``VARCHAR(n) CHARACTER SET UTF8``; see
         :meth:`format_data_type_firebird_char` for why the character set is part
         of the rendered declaration, and :meth:`format_data_type_varchar` for why
         the unsized ``VARCHAR(255)`` here is a decision of this backend rather
         than a Firebird default — it is the same number, named once in
         :attr:`_FB_RENDERED_VARCHAR_LENGTH`."""
-        self.check_spelling(data_type, VarCharType)
-        length = data_type.length
+        self.check_spelling(expr, VarCharType)
+        length = expr.length
         if length is None:
             length = self._FB_RENDERED_VARCHAR_LENGTH
         return f"VARCHAR({length}) CHARACTER SET UTF8", ()
 
-    def format_data_type_firebird_timestamptz(self, data_type: FirebirdTimeStampTzType) -> Tuple[str, tuple]:
+    def format_data_type_firebird_timestamptz(self, expr: FirebirdTimeStampTzType) -> Tuple[str, tuple]:
         """``TIMESTAMP WITH TIME ZONE`` — Firebird 4.0+, and the whole declaration.
 
         No precision is written, and a declared one is **refused** — see
@@ -848,10 +848,10 @@ class FirebirdTypeSupportMixin(DDLTypeMixin, DDLTypeSupport):
         a capability this backend may write.
         """
         self._check_fb4_type("TIMESTAMP WITH TIME ZONE")
-        self._check_firebird_temporal_precision(data_type, "TIMESTAMP WITH TIME ZONE")
+        self._check_firebird_temporal_precision(expr, "TIMESTAMP WITH TIME ZONE")
         return "TIMESTAMP WITH TIME ZONE", ()
 
-    def format_data_type_firebird_timetz(self, data_type: FirebirdTimeTzType) -> Tuple[str, tuple]:
+    def format_data_type_firebird_timetz(self, expr: FirebirdTimeTzType) -> Tuple[str, tuple]:
         """``TIME WITH TIME ZONE`` — Firebird 4.0+.
 
         Six bytes: the four of a ``TIME`` plus two for either an offset in minutes
@@ -864,12 +864,12 @@ class FirebirdTypeSupportMixin(DDLTypeMixin, DDLTypeSupport):
         :meth:`format_data_type_firebird_timestamptz`.
         """
         self._check_fb4_type("TIME WITH TIME ZONE")
-        self._check_firebird_temporal_precision(data_type, "TIME WITH TIME ZONE")
+        self._check_firebird_temporal_precision(expr, "TIME WITH TIME ZONE")
         return "TIME WITH TIME ZONE", ()
 
     def format_data_type_firebird_time_without_time_zone(
         self,
-        data_type: FirebirdTimeWithoutTimeZoneType,
+        expr: FirebirdTimeWithoutTimeZoneType,
     ) -> Tuple[str, tuple]:
         """``TIME WITHOUT TIME ZONE`` — Firebird 4.0+'s spelled-out long form of
         the bare ``TIME``, which Firebird required alongside its zoned ``TIME WITH
@@ -886,10 +886,10 @@ class FirebirdTypeSupportMixin(DDLTypeMixin, DDLTypeSupport):
         :meth:`format_data_type_firebird_timestamptz`.
         """
         self._check_fb4_type("TIME WITHOUT TIME ZONE")
-        self._check_firebird_temporal_precision(data_type, "TIME WITHOUT TIME ZONE")
+        self._check_firebird_temporal_precision(expr, "TIME WITHOUT TIME ZONE")
         return "TIME WITHOUT TIME ZONE", ()
 
-    def format_data_type_firebird_decfloat(self, data_type: FirebirdDecFloatType) -> Tuple[str, tuple]:
+    def format_data_type_firebird_decfloat(self, expr: FirebirdDecFloatType) -> Tuple[str, tuple]:
         """``DECFLOAT(dec_prec)`` — Firebird 4.0+, with the width always written.
 
         The width is written even when the caller did not name one, because the
@@ -906,9 +906,9 @@ class FirebirdTypeSupportMixin(DDLTypeMixin, DDLTypeSupport):
         default follows the same line.
         """
         self._check_fb4_type("DECFLOAT")
-        return f"DECFLOAT({data_type.precision})", ()
+        return f"DECFLOAT({expr.precision})", ()
 
-    def format_data_type_firebird_int128(self, data_type: FirebirdInt128Type) -> Tuple[str, tuple]:
+    def format_data_type_firebird_int128(self, expr: FirebirdInt128Type) -> Tuple[str, tuple]:
         """Format INT128 (Firebird 4.0+)."""
         self._check_fb4_type("INT128")
         return "INT128", ()

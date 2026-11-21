@@ -24,14 +24,14 @@ _SUGGESTION_QUALIFY = "Firebird does not support QUALIFY clause. Use subquery or
 
 class FirebirdUnsupportedFeaturesMixin:
 
-    def format_array_expression(self, _expr: "bases.BaseExpression") -> Tuple[str, tuple]:
+    def format_array_expression(self, expr: "bases.BaseExpression") -> Tuple[str, tuple]:
         raise UnsupportedFeatureError(self.name, "Array operations", _SUGGESTION_ARRAY)
 
-    def format_match_clause(self, _clause: Any) -> Tuple[str, tuple]:
+    def format_match_clause(self, expr: Any) -> Tuple[str, tuple]:
         raise UnsupportedFeatureError(self.name, "graph MATCH clause", _SUGGESTION_GRAPH_MATCH)
 
-    def format_ordered_set_aggregation(self, _aggregation: Any) -> Tuple[str, tuple]:
+    def format_ordered_set_aggregation(self, expr: Any) -> Tuple[str, tuple]:
         raise UnsupportedFeatureError(self.name, "ordered-set aggregate functions", _SUGGESTION_ORDERED_SET_AGG)
 
-    def format_qualify_clause(self, clause: "QualifyClause") -> Tuple[str, tuple]:
+    def format_qualify_clause(self, expr: "QualifyClause") -> Tuple[str, tuple]:
         raise UnsupportedFeatureError(self.name, "QUALIFY clause", _SUGGESTION_QUALIFY)

@@ -4,7 +4,7 @@
 from typing import Any, Dict, List, Optional
 
 
-def format_table(rows: List[Dict[str, Any]], columns: Optional[List[str]] = None) -> str:
+def render_table(rows: List[Dict[str, Any]], columns: Optional[List[str]] = None) -> str:
     """Format query results as a text table.
 
     Args:
@@ -38,21 +38,21 @@ def format_table(rows: List[Dict[str, Any]], columns: Optional[List[str]] = None
     return "\n".join(lines)
 
 
-def format_json(rows: List[Dict[str, Any]]) -> str:
+def format_json(expr: List[Dict[str, Any]]) -> str:
     """Format query results as JSON."""
     import json
-    return json.dumps(rows, indent=2, default=str)
+    return json.dumps(expr, indent=2, default=str)
 
 
-def format_csv(rows: List[Dict[str, Any]]) -> str:
+def format_csv(expr: List[Dict[str, Any]]) -> str:
     """Format query results as CSV."""
-    if not rows:
+    if not expr:
         return ""
 
-    columns = list(rows[0].keys())
+    columns = list(expr[0].keys())
     lines = [",".join(f'"{c}"' for c in columns)]
 
-    for row in rows:
+    for row in expr:
         values = [str(row.get(c, "")).replace('"', '""') for c in columns]
         lines.append(",".join(f'"{v}"' for v in values))
 

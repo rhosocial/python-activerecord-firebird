@@ -20,19 +20,19 @@ class FirebirdLockingMixin:
         """Row-level FOR UPDATE locking requires Firebird 3.0+."""
         return self.version_at_least((3, 0, 0))
 
-    def format_for_update_clause(self, clause: "ForUpdateClause") -> Tuple[str, tuple]:
+    def format_for_update_clause(self, expr: "ForUpdateClause") -> Tuple[str, tuple]:
         from rhosocial.activerecord.backend.dialect.exceptions import UnsupportedFeatureError
         from rhosocial.activerecord.backend.expression import LockStrength
 
-        if clause.strength != LockStrength.UPDATE:
+        if expr.strength != LockStrength.UPDATE:
             raise UnsupportedFeatureError(
-                self.name, f"{clause.strength.value} (unsupported lock strength)"
+                self.name, f"{expr.strength.value} (unsupported lock strength)"
             )
 
         parts = ["FOR UPDATE"]
         params: Tuple = ()
 
-        of_columns = clause.of_columns
+        of_columns = expr.of_columns
         if of_columns:
             of_parts = []
             all_params = []
@@ -48,9 +48,9 @@ class FirebirdLockingMixin:
 
         # Firebird spells row locking "WITH LOCK"; NOWAIT maps onto the same
         # immediate-lock form.
-        if clause.nowait:
+        if expr.nowait:
             parts.append("WITH LOCK")
-        if clause.skip_locked and self.supports_skip_locked():
+        if expr.skip_locked and self.supports_skip_locked():
             # Single source of truth for the threshold lives on the dialect
             # (see FirebirdDialect.supports_skip_locked); this mixin only
             # delegates so the gate cannot drift between the two sites.

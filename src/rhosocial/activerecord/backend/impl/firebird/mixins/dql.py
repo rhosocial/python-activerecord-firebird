@@ -52,8 +52,8 @@ class FirebirdDQLMixin:
                         e.relation = relation
         return super().format_query_statement(expr)
 
-    def format_limit_offset(self, limit: Optional[int] = None,
-                             offset: Optional[int] = None) -> Tuple[str, tuple]:
+    def build_limit_offset(self, limit: Optional[int] = None,
+                           offset: Optional[int] = None) -> Tuple[str, tuple]:
         """Format LIMIT/OFFSET for Firebird.
 
         Firebird 2.5+: ROWS m TO n
@@ -78,13 +78,13 @@ class FirebirdDQLMixin:
                 return f"ROWS {offset + 1} TO {999999999}", ()
             return "", ()
 
-    def format_limit_offset_clause(self, clause: "LimitOffsetClause") -> Tuple[str, tuple]:
+    def format_limit_offset_clause(self, expr: "LimitOffsetClause") -> Tuple[str, tuple]:
         """Format LIMIT/OFFSET clause for Firebird using ROWS/FETCH syntax."""
         all_params = []
-        if clause.limit is None and clause.offset is None:
+        if expr.limit is None and expr.offset is None:
             return "", ()
 
-        if clause.with_ties:
+        if expr.with_ties:
             from rhosocial.activerecord.backend.dialect.exceptions import UnsupportedFeatureError
 
             raise UnsupportedFeatureError(
@@ -95,13 +95,13 @@ class FirebirdDQLMixin:
 
         if _norm_version(self.version) >= (3, 0, 0):
             parts = []
-            if clause.offset is not None:
-                parts.append(f"OFFSET {clause.offset} ROWS")
-            if clause.limit is not None:
-                parts.append(f"FETCH NEXT {clause.limit} ROWS ONLY")
+            if expr.offset is not None:
+                parts.append(f"OFFSET {expr.offset} ROWS")
+            if expr.limit is not None:
+                parts.append(f"FETCH NEXT {expr.limit} ROWS ONLY")
             return " ".join(parts), tuple(all_params)
         else:
-            limit = clause.limit or 999999999
-            if clause.offset is not None and clause.offset > 0:
-                return f"ROWS {clause.offset + 1} TO {clause.offset + limit}", tuple(all_params)
+            limit = expr.limit or 999999999
+            if expr.offset is not None and expr.offset > 0:
+                return f"ROWS {expr.offset + 1} TO {expr.offset + limit}", tuple(all_params)
             return f"ROWS 1 TO {limit}", tuple(all_params)

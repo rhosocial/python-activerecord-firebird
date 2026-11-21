@@ -144,7 +144,7 @@ class FirebirdNamespaceMixin(RelationSourceMixin):
     # Relation references
     # ------------------------------------------------------------------ #
 
-    def format_table_reference(self, ref: Union[Table, str]) -> str:
+    def format_table_reference(self, expr: Union[Table, str]) -> str:
         """Render whatever a statement hands over as a table reference.
 
         Accepts a :class:`Table` schema object or a bare ``str``. A
@@ -165,16 +165,16 @@ class FirebirdNamespaceMixin(RelationSourceMixin):
                 passed here would produce a well-formed statement naming a
                 sequence where a relation was meant.
         """
-        if isinstance(ref, Table):
-            return self.format_table_object(ref)[0]
-        if isinstance(ref, str):
-            return self.format_table_object(Table(self, ref))[0]
+        if isinstance(expr, Table):
+            return self.format_table_object(expr)[0]
+        if isinstance(expr, str):
+            return self.format_table_object(Table(self, expr))[0]
         raise TypeError(
             f"format_table_reference must take a Table or a str, "
-            f"got {type(ref).__name__}"
+            f"got {type(expr).__name__}"
         )
 
-    def format_named_relation(self, ref: NamedRelationRef) -> Tuple[str, tuple]:
+    def format_named_relation(self, expr: NamedRelationRef) -> Tuple[str, tuple]:
         """Render a ``FROM`` reference to a named relation.
 
         The name and the alias are the core's business -- the relation renders
@@ -186,7 +186,7 @@ class FirebirdNamespaceMixin(RelationSourceMixin):
         Raises:
             UnsupportedFeatureError: The reference carries temporal options.
         """
-        if ref.temporal_options:
+        if expr.temporal_options:
             raise UnsupportedFeatureError(
                 self.name,
                 "temporal table options",
@@ -195,7 +195,7 @@ class FirebirdNamespaceMixin(RelationSourceMixin):
                     "for one and it cannot be rendered."
                 ),
             )
-        return super().format_named_relation(ref)
+        return super().format_named_relation(expr)
 
     # ------------------------------------------------------------------ #
     # Row sources

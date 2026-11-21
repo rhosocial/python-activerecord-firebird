@@ -942,7 +942,7 @@ class FirebirdDialect(
         """
         return self.supports_identity_column()
 
-    def format_column_nullable_constraint(self, constraint: Any) -> Tuple[str, Tuple]:
+    def format_column_nullable_constraint(self, expr: Any) -> Tuple[str, Tuple]:
         """Firebird has no explicit ``NULL`` column constraint (SQLCODE -104).
 
         A column is nullable by default, so the portable `` NULL`` the core
