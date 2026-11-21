@@ -75,6 +75,14 @@ def get_all_generic_protocols() -> dict:
 # dialect can render that object's name, not that it can create one -- the
 # capability switches answer that.
 FIREBIRD_PROTOCOLS = [
+    dialect_protocols.PartitionBuildSuggestionSupport,
+    dialect_protocols.PartitionTableDropSuggestionSupport,
+    dialect_protocols.PartitionTableAlterSuggestionSupport,
+    dialect_protocols.PartitionAddSuggestionSupport,
+    dialect_protocols.PartitionDropSuggestionSupport,
+    dialect_protocols.PartitionSplitSuggestionSupport,
+    dialect_protocols.PartitionMergeSuggestionSupport,
+    dialect_protocols.PartitionRetentionSuggestionSupport,
     dialect_protocols.AdvancedGroupingSupport,
     dialect_protocols.AlterDomainSupport,
     dialect_protocols.AlterSequenceSupport,

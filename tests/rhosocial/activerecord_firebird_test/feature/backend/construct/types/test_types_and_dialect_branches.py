@@ -8,7 +8,7 @@ sub-type identity branches, the RETURNING / SKIP LOCKED / SEQUENCE dialect
 branches, and CREATE TABLE rebuild-statement rendering from mixins/table.py —
 all via exact to_sql() snapshots with no database connection.
 """
-from rhosocial.activerecord.backend.expression.statements import auto_increment_parts  # noqa: E402
+from rhosocial.activerecord.backend.suggestion import IntegerAutoIncrementSuggestionRenderer  # noqa: E402
 import pytest
 
 from rhosocial.activerecord.backend.dialect.exceptions import UnsupportedFeatureError
@@ -956,7 +956,7 @@ class TestCreateTableRebuildSnapshots:
         )
 
     def test_auto_increment_constraint_flag(self, dialect):
-        data_type, attributes = auto_increment_parts(dialect, IntegerType(dialect))
+        data_type, attributes = IntegerAutoIncrementSuggestionRenderer().parts(dialect, IntegerType(dialect))
         col = _column(
             dialect, "id", data_type,
             ColumnConstraint(dialect, branch=ColumnPrimaryKeyConstraint(dialect)),
