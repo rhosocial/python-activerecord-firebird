@@ -20,7 +20,8 @@ from rhosocial.activerecord.backend.dialect.protocols import (
     PartitionTableAlterSuggestionSupport,
     PartitionTableDropSuggestionSupport,
 )
-from rhosocial.activerecord.backend.expression.statements import PartitionStrategy
+from rhosocial.activerecord.backend.expression.core import Column
+from rhosocial.activerecord.backend.expression.statements import PartitionByRangeClause
 from rhosocial.activerecord.backend.impl.firebird.dialect import FirebirdDialect
 from rhosocial.activerecord.backend.impl.firebird.suggestion import (
     FirebirdPartitionAddSuggestionMixin,
@@ -70,5 +71,6 @@ def test_dialect_satisfies_all_eight_protocols():
 @pytest.mark.parametrize("name,protocol,method", CASES, ids=[c[0] for c in CASES])
 def test_suggestion_is_explicitly_unsupported(name, protocol, method):
     dialect = FirebirdDialect()
-    suggestion = getattr(dialect, method)(PartitionStrategy.RANGE, None)
+    strategy = PartitionByRangeClause(dialect, [Column(dialect, "id")])
+    suggestion = getattr(dialect, method)(strategy, None)
     assert suggestion.operations is False

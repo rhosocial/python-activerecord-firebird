@@ -9,7 +9,7 @@ answers the explicit "unsupported" state (``operations is False``) rather than
 staying silent, so a caller can report partitioning as unavailable instead of
 guessing at SQL Firebird would reject.
 
-The one shared type (``PartitionStrategy``) and the common base class live here;
+The one shared type (``PartitionByClause``) and the common base class live here;
 each concrete mixin contributes exactly one ``suggest_partition_<x>`` method and
 inherits :class:`FirebirdPartitionSuggestionBase` so the contract is stated in a
 single place. Firebird is a pseudo-async backend (firebird-driver has no real
@@ -20,7 +20,7 @@ counterpart.
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:  # pragma: no cover
-    from ....expression import PartitionStrategy as PartitionStrategy
+    from ....expression import PartitionByClause as PartitionByClause
 
 
 class FirebirdPartitionSuggestionBase:

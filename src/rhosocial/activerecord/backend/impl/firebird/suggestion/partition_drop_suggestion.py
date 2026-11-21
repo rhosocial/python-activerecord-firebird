@@ -14,13 +14,13 @@ from rhosocial.activerecord.backend.suggestion import PartitionDropSuggestion
 from ._common import FirebirdPartitionSuggestionBase
 
 if TYPE_CHECKING:  # pragma: no cover
-    from ._common import PartitionStrategy
+    from ._common import PartitionByClause
 
 
 class FirebirdPartitionDropSuggestionMixin(FirebirdPartitionSuggestionBase):
     """Answer Firebird's lack of partitioning explicitly at partition drop."""
 
     def suggest_partition_drop(
-        self, strategy: "PartitionStrategy", plan: object
+        self, strategy: "PartitionByClause", plan: object
     ) -> PartitionDropSuggestion:
         return PartitionDropSuggestion(False)

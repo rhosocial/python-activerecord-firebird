@@ -14,13 +14,13 @@ from rhosocial.activerecord.backend.suggestion import PartitionAddSuggestion
 from ._common import FirebirdPartitionSuggestionBase
 
 if TYPE_CHECKING:  # pragma: no cover
-    from ._common import PartitionStrategy
+    from ._common import PartitionByClause
 
 
 class FirebirdPartitionAddSuggestionMixin(FirebirdPartitionSuggestionBase):
     """Answer Firebird's lack of partitioning explicitly at partition add."""
 
     def suggest_partition_add(
-        self, strategy: "PartitionStrategy", plan: object
+        self, strategy: "PartitionByClause", plan: object
     ) -> PartitionAddSuggestion:
         return PartitionAddSuggestion(False)
