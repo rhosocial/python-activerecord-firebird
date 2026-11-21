@@ -195,7 +195,14 @@ from .mixins import (
 from .suggestion import (
     FirebirdDataTypeSuggestionsMixin,
     FirebirdIntegerAutoIncrementColumnSuggestionMixin,
-    FirebirdPartitionSuggestionMixin,
+    FirebirdPartitionAddSuggestionMixin,
+    FirebirdPartitionBuildSuggestionMixin,
+    FirebirdPartitionDropSuggestionMixin,
+    FirebirdPartitionMergeSuggestionMixin,
+    FirebirdPartitionRetentionSuggestionMixin,
+    FirebirdPartitionSplitSuggestionMixin,
+    FirebirdPartitionTableAlterSuggestionMixin,
+    FirebirdPartitionTableDropSuggestionMixin,
 )
 from .protocols import (
     FirebirdDMLOperationSupport,
@@ -233,10 +240,20 @@ from .protocols import (
 
 class FirebirdDialect(
     # Backend suggestions first: no core mixin may shadow their answers. Both
-    # answer "how" questions the core leaves unanswered; the partition one is
-    # unconditional because Firebird has no partitioning at all (every support
-    # probe is False, see FirebirdPartitionMixin below).
-    FirebirdPartitionSuggestionMixin,
+    # answer "how" questions the core leaves unanswered; the eight partition
+    # ones are unconditional because Firebird has no partitioning at all (every
+    # support probe is False, see FirebirdPartitionMixin below). Each lifecycle
+    # point is its own mixin, so the dialect lists all eight explicitly; the
+    # common base they share (FirebirdPartitionSuggestionBase) enters the MRO
+    # once, through them, and is deliberately not named here.
+    FirebirdPartitionBuildSuggestionMixin,
+    FirebirdPartitionTableDropSuggestionMixin,
+    FirebirdPartitionTableAlterSuggestionMixin,
+    FirebirdPartitionAddSuggestionMixin,
+    FirebirdPartitionDropSuggestionMixin,
+    FirebirdPartitionSplitSuggestionMixin,
+    FirebirdPartitionMergeSuggestionMixin,
+    FirebirdPartitionRetentionSuggestionMixin,
     FirebirdIntegerAutoIncrementColumnSuggestionMixin,
     # The bases below come in bundles: a backend mixin, then the core bundle
     # it stands in for. The backend's answer has to come first -- a mixin

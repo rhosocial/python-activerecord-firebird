@@ -22,7 +22,16 @@ from rhosocial.activerecord.backend.dialect.protocols import (
 )
 from rhosocial.activerecord.backend.expression.statements import PartitionStrategy
 from rhosocial.activerecord.backend.impl.firebird.dialect import FirebirdDialect
-from rhosocial.activerecord.backend.impl.firebird.suggestion import FirebirdPartitionSuggestionMixin
+from rhosocial.activerecord.backend.impl.firebird.suggestion import (
+    FirebirdPartitionAddSuggestionMixin,
+    FirebirdPartitionBuildSuggestionMixin,
+    FirebirdPartitionDropSuggestionMixin,
+    FirebirdPartitionMergeSuggestionMixin,
+    FirebirdPartitionRetentionSuggestionMixin,
+    FirebirdPartitionSplitSuggestionMixin,
+    FirebirdPartitionTableAlterSuggestionMixin,
+    FirebirdPartitionTableDropSuggestionMixin,
+)
 
 CASES = [
     ("build", PartitionBuildSuggestionSupport, "suggest_partition_build"),
@@ -35,9 +44,21 @@ CASES = [
     ("retention", PartitionRetentionSuggestionSupport, "suggest_partition_retention"),
 ]
 
+MIXINS = [
+    FirebirdPartitionBuildSuggestionMixin,
+    FirebirdPartitionTableDropSuggestionMixin,
+    FirebirdPartitionTableAlterSuggestionMixin,
+    FirebirdPartitionAddSuggestionMixin,
+    FirebirdPartitionDropSuggestionMixin,
+    FirebirdPartitionSplitSuggestionMixin,
+    FirebirdPartitionMergeSuggestionMixin,
+    FirebirdPartitionRetentionSuggestionMixin,
+]
 
-def test_dialect_carries_the_mixin():
-    assert issubclass(FirebirdDialect, FirebirdPartitionSuggestionMixin)
+
+def test_dialect_carries_the_mixins():
+    for mixin in MIXINS:
+        assert issubclass(FirebirdDialect, mixin), mixin.__name__
 
 
 def test_dialect_satisfies_all_eight_protocols():

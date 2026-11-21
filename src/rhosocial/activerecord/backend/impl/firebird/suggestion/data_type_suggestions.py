@@ -1,4 +1,4 @@
-# src/rhosocial/activerecord/backend/impl/firebird/suggestion/data_types.py
+# src/rhosocial/activerecord/backend/impl/firebird/suggestion/data_type_suggestions.py
 """Firebird's **suggested data types**: the declaration a bare field gets here.
 
 This is the DDL half of Firebird's type answer, and it is deliberately separate
@@ -49,6 +49,7 @@ templates. A ``DataType``'s dialect is a mutable rendering attribute, so a
 caller binds the dialect on a **copy of the one entry it uses** -- the table
 itself is never rebound.
 """
+
 import datetime
 import decimal
 import enum
@@ -71,10 +72,11 @@ from rhosocial.activerecord.backend.expression.types import (
     IntegerType,
     SmallIntType,
     TextType,
-    TimeType,
     TimestampType,
+    TimeType,
     VarCharType,
 )
+
 from rhosocial.activerecord.backend.impl.firebird.expression.types import (
     FirebirdVarCharType,
 )
