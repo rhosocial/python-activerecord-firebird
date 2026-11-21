@@ -16,7 +16,8 @@ Run with (from the repository root)::
     PYTHONPATH=src python docs/examples/ar-migration/01_partition_build.py
 """
 
-from rhosocial.activerecord.backend.expression.statements import PartitionStrategy
+from rhosocial.activerecord.backend.expression.core import Column
+from rhosocial.activerecord.backend.expression.statements import PartitionByRangeClause
 from rhosocial.activerecord.backend.impl.firebird.dialect import FirebirdDialect
 
 # (label, method) pairs for all eight partition-lifecycle suggestion points.
@@ -34,7 +35,7 @@ LIFECYCLE_POINTS = (
 
 def main():
     dialect = FirebirdDialect()
-    strategy = PartitionStrategy.RANGE
+    strategy = PartitionByRangeClause(dialect, [Column(dialect, "id")])
 
     print("== Firebird: no table partitioning ==")
     for label, method in LIFECYCLE_POINTS:

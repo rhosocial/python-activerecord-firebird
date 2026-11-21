@@ -26,8 +26,7 @@ from rhosocial.activerecord.backend.expression.statements import (
     TableUniqueConstraint,
 )
 from rhosocial.activerecord.backend.expression.statements.ddl_partition import (
-    PartitionClause,
-    PartitionStrategy,
+    PartitionByRangeClause,
 )
 from rhosocial.activerecord.backend.impl.firebird.dialect import FirebirdDialect
 from rhosocial.activerecord.backend.impl.firebird.expression.column import (
@@ -160,9 +159,8 @@ TABLE_CONSTRAINTS = [
 TABLE_OPTIONS = CreateTableOptions(None, or_replace=True)
 STORAGE_OPTIONS = StorageOptionsExpression(None, {"fillfactor": 80})
 PARTITION_KEY = Column(None, "id")
-TABLE_PARTITION = PartitionClause(
+TABLE_PARTITION = PartitionByRangeClause(
     None,
-    PartitionStrategy.RANGE,
     [PARTITION_KEY],
 )
 INHERITED_TABLES = ["parent_a", "parent_b"]
@@ -412,7 +410,7 @@ def test_table_declarations_are_returned_unchanged(model):
     assert model.table_options().or_replace is True
     assert model.table_storage_options() is STORAGE_OPTIONS
     assert model.table_partition() is TABLE_PARTITION
-    assert model.table_partition().method == PartitionStrategy.RANGE.value
+    assert model.table_partition().method == "RANGE"
     assert model.table_partition().keys[0] is PARTITION_KEY
     assert model.table_inherits() is INHERITED_TABLES
     assert model.table_inherits() == ["parent_a", "parent_b"]

@@ -79,7 +79,6 @@ from rhosocial.activerecord.backend.impl.firebird.expression.generator import (
 )
 from rhosocial.activerecord.backend.impl.firebird.expression.types import (
     FirebirdDecFloatType,
-    FloatType,
     FirebirdInt128Type,
     FirebirdTimeStampTzType,
     FirebirdTimeTzType,
@@ -1057,8 +1056,13 @@ class TestCreateTableRebuildSnapshots:
         assert params == ()
 
     def test_partition_rejected(self, dialect):
-        partition = E.PartitionClause(dialect, method=E.PartitionStrategy.HASH, keys=[E.Column(dialect, "id")])
-        expr = CreateTableStatement(dialect, Table(dialect, "pt"), [_column(dialect, "id", IntegerType(dialect))], partition=partition)
+        partition = E.PartitionByHashClause(dialect, [E.Column(dialect, "id")])
+        expr = CreateTableStatement(
+            dialect,
+            Table(dialect, "pt"),
+            [_column(dialect, "id", IntegerType(dialect))],
+            partition=partition,
+        )
         with pytest.raises(UnsupportedFeatureError) as excinfo:
             expr.to_sql()
         assert "PARTITION BY clause" in str(excinfo.value)
