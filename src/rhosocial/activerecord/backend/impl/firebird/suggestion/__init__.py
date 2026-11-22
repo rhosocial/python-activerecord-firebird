@@ -9,6 +9,7 @@ and not general dialect mixins; the value objects they return come from
 """
 
 from .data_type_suggestions import FirebirdDataTypeSuggestionsMixin
+from .general_suggestions import FirebirdStringConcatenationSuggestionMixin
 from .integer_auto_increment_column_suggestion import (
     FirebirdIntegerAutoIncrementColumnSuggestionMixin,
 )
@@ -23,6 +24,7 @@ from .partition_table_drop_suggestion import FirebirdPartitionTableDropSuggestio
 
 __all__ = [
     "FirebirdDataTypeSuggestionsMixin",
+    "FirebirdStringConcatenationSuggestionMixin",
     "FirebirdIntegerAutoIncrementColumnSuggestionMixin",
     "FirebirdPartitionAddSuggestionMixin",
     "FirebirdPartitionBuildSuggestionMixin",

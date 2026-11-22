@@ -77,7 +77,6 @@ from typing import Dict
 import pytest
 
 from rhosocial.activerecord.backend.dialect.exceptions import (
-    ProtocolNotImplementedError,
     UnsupportedDataTypeError,
     UnsupportedFeatureError,
 )
@@ -186,6 +185,11 @@ from rhosocial.activerecord.backend.expression.statements import (
 from rhosocial.activerecord.backend.expression.statements.ddl_domain import (
     DomainCheckConstraint,
     RenameDomainAction,
+)
+from rhosocial.activerecord.backend.expression.statements.ddl_partition import (
+    PartitionByHashClause,
+    PartitionByListClause,
+    PartitionByRangeClause,
 )
 from rhosocial.activerecord.backend.expression.statements.ddl_table import (
     ColumnConstraint,
@@ -914,6 +918,26 @@ def register_specials():
         "types.custom.CustomType", lambda d: CustomType(d, raw="VARCHAR(10)")
     )
 
+    # Core's dedicated partition-strategy clauses carry ``keys:
+    # Sequence[BaseExpression]``, which the introspective guess reads as the
+    # catalogue Sequence object; they also refuse an empty key list. Firebird
+    # does not partition tables, so after construction each node's render is
+    # classified as Firebird's own UnsupportedFeatureError -- the same shape the
+    # MySQL matrix uses. Naming one real key is the fix rather than a pin: the
+    # classes are constructible and belong in the matrix, not in UNCONSTRUCTIBLE.
+    register_special_constructor(
+        "statements.ddl_partition.PartitionByRangeClause",
+        lambda d: PartitionByRangeClause(d, [Column(d, "id")]),
+    )
+    register_special_constructor(
+        "statements.ddl_partition.PartitionByListClause",
+        lambda d: PartitionByListClause(d, [Column(d, "id")]),
+    )
+    register_special_constructor(
+        "statements.ddl_partition.PartitionByHashClause",
+        lambda d: PartitionByHashClause(d, [Column(d, "id")]),
+    )
+
 
 register_specials()
 
@@ -993,27 +1017,29 @@ LEGITIMATE_NON_RENDERS = {
     # ---- core operational families this dialect does not answer ----
     #  Firebird keeps no per-index use counter, no dependency catalogue and no
 #  per-object DDL retrieval; its statistics are size-oriented. The probes answer
-#  False.
+#  False. Core now routes these through default ``format_*_query_statement``
+#  methods that refuse with UnsupportedFeatureError, so the pinned type and
+#  fragment follow that answer rather than the old ProtocolNotImplementedError.
     "rhosocial.activerecord.backend.expression.introspection.RuntimeMetricsQueryStatement": (
-        ProtocolNotImplementedError, 'does not implement ',
+        UnsupportedFeatureError, 'does not support ',
     ),
     "rhosocial.activerecord.backend.expression.introspection.IndexUsageStatsQueryStatement": (
-        ProtocolNotImplementedError, 'does not implement ',
+        UnsupportedFeatureError, 'does not support ',
     ),
     "rhosocial.activerecord.backend.expression.introspection.ObjectDependencyQueryStatement": (
-        ProtocolNotImplementedError, 'does not implement ',
+        UnsupportedFeatureError, 'does not support ',
     ),
     "rhosocial.activerecord.backend.expression.introspection.DDLStatementQueryStatement": (
-        ProtocolNotImplementedError, 'does not implement ',
+        UnsupportedFeatureError, 'does not support ',
     ),
         # ---- core introspection families this dialect does not answer ----
     #  Firebird keeps no per-index use counter and no per-table access summary; its statistics are size-oriented. The
     # probes answer False, and these classes stay a declared gap until the engine gains such a counter.
     "rhosocial.activerecord.backend.expression.introspection.UnusedIndexesQueryStatement": (
-        ProtocolNotImplementedError, 'does not implement ',
+        UnsupportedFeatureError, 'does not support ',
     ),
     "rhosocial.activerecord.backend.expression.introspection.TableUsageStatsQueryStatement": (
-        ProtocolNotImplementedError, 'does not implement ',
+        UnsupportedFeatureError, 'does not support ',
     ),
 
 # ---- bases that name an expression category, not a renderable thing ----

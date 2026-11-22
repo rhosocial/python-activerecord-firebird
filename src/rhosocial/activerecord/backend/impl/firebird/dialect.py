@@ -193,6 +193,7 @@ from .mixins import (
 )
 from .suggestion import (
     FirebirdDataTypeSuggestionsMixin,
+    FirebirdStringConcatenationSuggestionMixin,
     FirebirdIntegerAutoIncrementColumnSuggestionMixin,
     FirebirdPartitionAddSuggestionMixin,
     FirebirdPartitionBuildSuggestionMixin,
@@ -415,6 +416,12 @@ class FirebirdDialect(
     # Last of the implementation mixins, first of the declarations: see the
     # class comment for why SQLDialectBase cannot lead the list.
     SQLDialectBase,
+    # Concatenation is spelled with ``||`` on Firebird; the core formatter asks
+    # this suggestion before choosing between the operator and a function name.
+    # It must sit AFTER SQLDialectBase: it inherits a runtime-checkable Protocol,
+    # whose own ``__init__`` would otherwise intercept ``super().__init__()`` and
+    # skip the base initialiser (losing ``strict_validation`` and ``_version``).
+    FirebirdStringConcatenationSuggestionMixin,
     CollationSupport,
     CTESupport,
     WindowFunctionSupport,
