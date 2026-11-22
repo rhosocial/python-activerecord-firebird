@@ -117,8 +117,8 @@ import re
 from typing import Dict, Optional, Tuple
 
 from rhosocial.activerecord.backend.dialect.exceptions import UnsupportedFeatureError
-from rhosocial.activerecord.backend.dialect.mixins import DDLTypeMixin
-from rhosocial.activerecord.backend.dialect.protocols import DDLTypeSupport
+from rhosocial.activerecord.backend.dialect.mixins import DataTypeMixin
+from rhosocial.activerecord.backend.dialect.protocols import DataTypeSupport
 from rhosocial.activerecord.backend.expression.types import (
     BigIntType,
     BinaryType,
@@ -160,7 +160,7 @@ from ..expression.types import (
 )
 
 
-class FirebirdTypeSupportMixin(DDLTypeMixin, DDLTypeSupport):
+class FirebirdTypeSupportMixin(DataTypeMixin, DataTypeSupport):
     """Firebird's data-type rendering.
 
     A ``TIME`` / ``TIMESTAMP`` declaration accepts a fractional-seconds
@@ -951,7 +951,7 @@ class FirebirdTypeSupportMixin(DDLTypeMixin, DDLTypeSupport):
             )
 
     # ------------------------------------------------------------------
-    # DDLTypeSupport — per-type support declarations
+    # DataTypeSupport — per-type support declarations
     #
     # 1:1 correspondence with format_data_type_* family (protocol contract).
     # ------------------------------------------------------------------

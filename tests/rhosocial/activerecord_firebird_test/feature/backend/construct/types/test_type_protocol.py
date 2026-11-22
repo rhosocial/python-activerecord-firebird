@@ -46,7 +46,7 @@ system and the Firebird backend:
 import pytest
 
 from rhosocial.activerecord.backend.dialect.exceptions import UnsupportedFeatureError
-from rhosocial.activerecord.backend.dialect.mixins.ddl_type import DDLTypeMixin
+from rhosocial.activerecord.backend.dialect.mixins.ddl_type import DataTypeMixin
 from rhosocial.activerecord.backend.dialect.protocols import DataTypeSupport
 from rhosocial.activerecord.backend.expression.types import (
     BigIntType,
@@ -140,7 +140,7 @@ class TestSupportFormatCorrespondence:
             assert issubclass(klass, DataType), name
 
     def test_inherits_mixin_scan_implementation(self, dialect):
-        assert FirebirdDialect.supports_data_types is DDLTypeMixin.supports_data_types
+        assert FirebirdDialect.supports_data_types is DataTypeMixin.supports_data_types
 
 
 class TestSupportsDataTypesMapping:

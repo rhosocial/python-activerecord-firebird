@@ -107,21 +107,19 @@ from rhosocial.activerecord.backend.dialect.mixins import (
     TriggerMixin,
     GeneratedColumnMixin,
     IdentityColumnMixin,
-    AutoIncrementMixin,
+    AutoIncrementColumnMixin,
     ViewMixin,
     FunctionMixin,
     IntrospectionMixin,
     # Object naming: one mixin per object kind the dialect can spell, plus the
     # NamespaceMixin they all reach through. See the note on the class bases.
-    TableNameMixin,
-    ViewNameMixin,
-    IndexNameMixin,
-    SequenceNameMixin,
-    TriggerNameMixin,
-    FunctionNameMixin,
-    ProcedureNameMixin,
-    DomainNameMixin,
-    TypeNameMixin,
+    TableObjectMixin,
+    ViewObjectMixin,
+    IndexObjectMixin,
+    SequenceObjectMixin,
+    TriggerObjectMixin,
+    RoutineObjectMixin,
+    TypeObjectMixin,
     DatabaseNameMixin,
     SchemaNameMixin,
     # Core infrastructure mixins (shared by all modern backends)
@@ -290,7 +288,7 @@ class FirebirdDialect(
     FirebirdArrayMixin,          # Before ArrayMixin
     FirebirdExplainMixin,        # Before ExplainMixin
     FirebirdGeneratedColumnMixin, # Before GeneratedColumnMixin
-    FirebirdIdentityColumnMixin, # Before IdentityColumnMixin and AutoIncrementMixin
+    FirebirdIdentityColumnMixin, # Before IdentityColumnMixin and AutoIncrementColumnMixin
     FirebirdFunctionMixin,       # Before FunctionMixin
     FirebirdTruncateMixin,       # Before TruncateMixin
     FirebirdUnsupportedFeaturesMixin,  # Before Array/Graph/OrderedSet/Qualify mixins
@@ -377,11 +375,11 @@ class FirebirdDialect(
     # The identity clause and the parameterless AUTO_INCREMENT marker are
     # separate mechanisms with separate protocols; Firebird declares the
     # identity formatter by inheriting IdentityColumnMixin and answers the
-    # auto-increment marker through AutoIncrementMixin's False gate. Neither
+    # auto-increment marker through AutoIncrementColumnMixin's False gate. Neither
     # renders SQL the server rejects: the identity probes are measured and the
     # marker is refused by name.
     IdentityColumnMixin,
-    AutoIncrementMixin,
+    AutoIncrementColumnMixin,
     ViewMixin,
     FunctionMixin,
     IntrospectionMixin,
@@ -402,15 +400,13 @@ class FirebirdDialect(
     # Firebird declares no materialized view, foreign table, synonym or property
     # graph, so those formatters are absent and a statement holding one is
     # refused rather than silently rendered.
-    TableNameMixin,
-    ViewNameMixin,
-    IndexNameMixin,
-    SequenceNameMixin,
-    TriggerNameMixin,
-    FunctionNameMixin,
-    ProcedureNameMixin,
-    DomainNameMixin,
-    TypeNameMixin,
+    TableObjectMixin,
+    ViewObjectMixin,
+    IndexObjectMixin,
+    SequenceObjectMixin,
+    TriggerObjectMixin,
+    RoutineObjectMixin,
+    TypeObjectMixin,
     DatabaseNameMixin,
     SchemaNameMixin,
     NamespaceMixin,
@@ -455,7 +451,7 @@ class FirebirdDialect(
     GeneratedColumnSupport,
     # IdentityColumnSupport is satisfied by the core IdentityColumnMixin with
     # Firebird's measured probes; AutoIncrementColumnSupport by the core
-    # AutoIncrementMixin with Firebird's False answer. Both switches being
+    # AutoIncrementColumnMixin with Firebird's False answer. Both switches being
     # reachable by name is the point -- a capability question should be
     # answerable before rendering, not only as a side effect of a refusal.
     IdentityColumnSupport,
