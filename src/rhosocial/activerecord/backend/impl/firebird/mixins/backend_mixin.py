@@ -373,7 +373,9 @@ class FirebirdBackendMixin:
         The portable baseline supplies the framework's common pairs; Firebird's
         own pairs are merged on top (its driver accepts the temporal and decimal
         values natively, so those targets stay identity-shaped), including the
-        neutral families it carries as VARCHAR / BLOB text.
+        neutral families it carries as VARCHAR / BLOB text. Native scalar types
+        (str/int/float/bytes) are deliberately absent: the driver binds them
+        untouched, and their absence is the sparse table's "pass through" signal.
         """
         if self._default_suggestions_cache is not None:
             return DataAdapterSuggestion(table=self._default_suggestions_cache)
@@ -394,8 +396,10 @@ class FirebirdBackendMixin:
             merge_adapter_suggestions,
         )
 
+        # Native scalar types (str/int/float/bytes) are intentionally NOT listed:
+        # the driver binds them natively, so an adapter entry would violate the
+        # sparse-table contract (absence means "pass through untouched").
         type_mappings = [
-            (int, int), (float, float), (str, str), (bytes, bytes),
             (bool, bool), (dt.datetime, dt.datetime), (dt.date, dt.date),
             (dt.time, dt.time), (Decimal, Decimal), (dict, str), (list, str),
             # Neutral families: Firebird carries them as VARCHAR / BLOB text.
