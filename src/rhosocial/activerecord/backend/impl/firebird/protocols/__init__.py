@@ -1,7 +1,7 @@
 # src/rhosocial/activerecord/backend/impl/firebird/protocols/__init__.py
 """Firebird's protocol declarations, one module per concern.
 
-* :mod:`~.features` -- the Firebird-only capability switches and formatters.
+* :mod:`~.features` -- the Firebird-only support switches and formatters.
 * :mod:`~.namespace` -- Firebird's answer on namespaces: none exist.
 * :mod:`~.sources` -- rendering a row source.
 

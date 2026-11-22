@@ -2,7 +2,7 @@
 """Firebird's dialect-specific feature protocols.
 
 These are the extensions Firebird adds on top of the core protocol set: the
-capability switches and formatters for Firebird-only SQL (GENERATOR, EXECUTE
+support switches and formatters for Firebird-only SQL (GENERATOR, EXECUTE
 BLOCK, BLOB SUB_TYPE, snapshot isolation, DECFLOAT, packages, monitoring
 tables, ...). They are grouped here so that the concerns the schema-object
 refactor introduced -- :mod:`~.namespace` and :mod:`~.sources` -- have a

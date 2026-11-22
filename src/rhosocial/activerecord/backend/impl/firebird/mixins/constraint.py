@@ -155,7 +155,7 @@ class FirebirdConstraintMixin:
 
         Two engine conditions ride on top of the grammar and are properties of
         primary keys rather than of this statement, so they do not belong on a
-        capability switch:
+        support switch:
 
         * the columns must already be ``NOT NULL`` -- ``ALTER TABLE t ADD
           CONSTRAINT pk PRIMARY KEY (id)`` on a nullable column answers

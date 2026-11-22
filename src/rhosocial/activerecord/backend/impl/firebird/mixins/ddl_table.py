@@ -22,7 +22,7 @@ from rhosocial.activerecord.backend.expression.objects import Table
 
 class FirebirdTableMixin:
 
-    # -- Cascade capability switches (declared on the dialect, Ref to DropTableSupport protocol)
+    # -- Cascade support switches (declared on the dialect, Ref to DropTableSupport protocol)
 
     def supports_create_table_as(self) -> bool:
         """Whether ``CREATE TABLE ... AS <query>`` (CTAS) is supported.

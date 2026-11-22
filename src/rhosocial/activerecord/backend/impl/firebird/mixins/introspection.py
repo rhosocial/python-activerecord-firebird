@@ -90,7 +90,7 @@ if TYPE_CHECKING:  # pragma: no cover
 class FirebirdIntrospectionMixin:
     """What Firebird can be asked about, and how each question is spelled.
 
-    The capability switches answer for the dialect; the formatters write the
+    The support switches answer for the dialect; the formatters write the
     SQL. They were previously spread over a ``INTROSPECTION_QUERIES`` mapping
     and a set of ``_make_*`` builders on the introspector, which meant the
     same query existed twice and the formatters -- the only copy the
@@ -1640,7 +1640,7 @@ class FirebirdIntrospectionMixin:
     ) -> tuple:
         """Render the publication listing (Firebird 4 and later).
 
-        The relation is absent on older servers, which the capability switch
+        The relation is absent on older servers, which the support switch
         reports; the formatter is written once and does not branch on version.
         """
         params = expr.get_params()

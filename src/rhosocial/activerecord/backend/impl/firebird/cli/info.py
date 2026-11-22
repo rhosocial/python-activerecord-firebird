@@ -100,7 +100,7 @@ PROTOCOL_FAMILY_GROUPS: Dict[str, list] = {
     ],
     "Transaction & Locking": [LockingSupport, TemporalTableSupport],
     "Query Analysis": [ExplainSupport, GraphSupport, QualifyClauseSupport],
-    # The *ObjectSupport rows are naming contracts, not capability switches:
+    # The *ObjectSupport rows are naming contracts, not support switches:
     # they exist so the report says how a name is spelled, and their support
     # percentage is the namespace answer (0 of 3 on Firebird, which has no
     # namespace above the database file) rather than a DDL capability.
@@ -146,7 +146,7 @@ PROTOCOL_FAMILY_GROUPS: Dict[str, list] = {
         FirebirdDMLOperationSupport,
         # Namespaces: reported because the answer is a refusal, and "0 of 3
         # supported" is exactly the useful thing to see. FirebirdRowSourceSupport
-        # is a rendering contract with no capability switch, so it stays out of
+        # is a rendering contract with no support switch, so it stays out of
         # this report rather than adding an empty row.
         FirebirdNamespaceSupport,
     ],

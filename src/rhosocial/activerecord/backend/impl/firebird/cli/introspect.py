@@ -29,7 +29,7 @@ because a dropped name prints the family listing under a one-object
 question. The operational families Firebird *declines* -- its
 catalogue describes objects, not a statistics collector, and there is no
 ``RDB$`` relation answering for any of them. Those types are offered
-anyway and gated: the capability switch they name answers ``False`` on
+anyway and gated: the support switch they name answers ``False`` on
 this dialect, so a run is refused with "this server cannot answer that"
 rather than reaching a statement the engine has no formatter for. That
 distinction is the whole point of the mapping below -- an offered type
@@ -51,7 +51,7 @@ from rhosocial.activerecord.backend.errors import ConnectionError, QueryError
 from .connection import add_connection_args, resolve_connection_config_from_args, warn_if_async_requested
 from .output import OUTPUT_CHOICES, create_provider
 
-#: CLI type -> the dialect capability switch that answers for it.
+#: CLI type -> the dialect support switch that answers for it.
 #:
 #: The advertised list is derived from this mapping, so adding a family to one
 #: place and forgetting it in the other cannot happen. A type whose switch is

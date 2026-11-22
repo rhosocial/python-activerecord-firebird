@@ -885,7 +885,7 @@ class FirebirdDialect(
         # ``CREATE OR ALTER VIEW``, which is a different statement: OR ALTER
         # also alters the columns and the definition of an existing view,
         # where OR REPLACE only replaces the definition. Substituting one for
-        # the other behind a capability switch would make the switch lie about
+        # the other behind a support switch would make the switch lie about
         # what runs, so it is declared False and
         # ``supports_create_or_replace_view()`` (which the generic renderer
         # actually gates on) refuses ``replace=True``.

@@ -581,7 +581,7 @@ class FirebirdPublicationListQueryStatement(BaseExpression):
 
     Logical replication arrived in Firebird 4: a publication is the set of
     tables replicated together. The relation does not exist on older servers,
-    which is what the capability switch is for -- the statement itself stays
+    which is what the support switch is for -- the statement itself stays
     version-agnostic.
 
     Args:

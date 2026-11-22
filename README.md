@@ -110,7 +110,7 @@ print(sql, params)  # preview the statement before it runs
 This package is a backend layer on top of `rhosocial-activerecord`: your models and
 queries flow through the core's expression and dialect machinery, and this package binds
 them to Firebird SQL and the `firebird-driver`. It contributes the Firebird dialect, DDL
-extensions (domains, generators, PSQL), version-gated capability switches, introspection,
+extensions (domains, generators, PSQL), version-gated support switches, introspection,
 and transaction handling.
 
 For the full picture, start with the [Documentation](https://github.com/rhosocial/python-activerecord/blob/main/docs/en_US/README.md).

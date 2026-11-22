@@ -90,7 +90,7 @@ class FirebirdSequenceMixin:
         Raises:
             TypeError: ``CreateSequenceStatement.sequence`` is not a Sequence. A
                 table would render as a well-formed CREATE SEQUENCE over that
-                table's name, because the object carries its own format method and
+                table's name, because the object carries its own format function and
                 the dialect would reach ``format_table_object`` and get valid SQL
                 naming the wrong kind of thing.
             UnsupportedFeatureError: The dialect predates Firebird 3.0, or the
