@@ -152,10 +152,31 @@ class TestInfoHandle:
         args = parse_args(info_mod, ["info", "-vv"])
         info_mod.handle(args)
         payload = json.loads(capsys.readouterr().out)
-        firebird_protocols = payload["protocols"]["Firebird-specific"]
+        firebird_protocols = payload["capabilities"]["Firebird-specific"]
         assert firebird_protocols
         for stats in firebird_protocols.values():
-            assert set(stats) == {"supported", "total", "percentage", "methods"}
+            assert set(stats) == {
+                "supported", "total", "percentage", "origin", "methods", "method_origins",
+            }
+            assert stats["origin"] == "proprietary"
+
+    def test_report_has_capabilities_server_and_suggestions(self, capsys):
+        args = parse_args(info_mod, ["info", "-o", "json"])
+        info_mod.handle(args)
+        payload = json.loads(capsys.readouterr().out)
+        assert set(payload) == {
+            "database", "server", "features", "capabilities", "suggestions", "protocols",
+        }
+        assert payload["server"]["connected"] is False
+        assert payload["server"]["variables"] == {}
+        assert payload["protocols"] == payload["capabilities"]
+        assert payload["suggestions"]
+        origins = {
+            entry["origin"]
+            for group in payload["capabilities"].values()
+            for entry in group.values()
+        }
+        assert origins <= {"reuse", "override", "proprietary"}
 
     def test_connected_run_uses_backend_dialect(self, monkeypatch, capsys):
         monkeypatch.setattr(firebird_backend_mod, "FirebirdBackend", FakeInfoBackend)
