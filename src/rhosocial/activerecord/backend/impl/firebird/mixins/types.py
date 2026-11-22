@@ -13,7 +13,7 @@ does **not** render, and the reason is that it cannot: Firebird's ``TIME`` and
 ``TIMESTAMP`` are its **unzoned** types (§3.4 — *"TIME and TIMESTAMP are
 synonymous to their respective WITHOUT TIME ZONE data types"*), so the only words
 a formatter could write for a zoned concept would declare a column that discards
-the zone offset. Both are named in :meth:`substitute_data_types` with the unzoned
+the zone offset. Both are named in :meth:`suggest_substitute_types` with the unzoned
 concept of the same family as their substitute, and Firebird's own zoned columns
 stay reachable under ``firebird_timetz`` / ``firebird_timestamptz``. See the
 "timetz / timestamptz: deliberately absent" comment above
@@ -101,7 +101,8 @@ Three Firebird facts settle the fields that could not be honoured:
     so a ``TIME`` column keeps four fractional digits whatever the declaration
     said. Coarser granularity is a *value* concern (how the literal or the
     function call is written), not a declared one. So the field is refused by
-    name: :meth:`_check_firebird_temporal_precision`, and :meth:`parse_type`
+    name: :meth:`_check_firebird_temporal_precision`, and the backend's
+    introspection-only :class:`~...introspection.type_parser.FirebirdTypeParser`
     refuses the same string rather than reading a precision out of a production
     that has no place for one. FirebirdSQL/firebird#4779 (CORE-4459) asks for
     ``TIME(p)``/``TIMESTAMP(p)`` and is still open; an unmerged feature request is
@@ -113,12 +114,15 @@ Three Firebird facts settle the fields that could not be honoured:
 
 from __future__ import annotations
 
-import re
-from typing import Dict, Optional, Tuple
+from typing import Optional, Tuple
 
 from rhosocial.activerecord.backend.dialect.exceptions import UnsupportedFeatureError
 from rhosocial.activerecord.backend.dialect.mixins import DataTypeMixin
 from rhosocial.activerecord.backend.dialect.protocols import DataTypeSupport
+from rhosocial.activerecord.backend.suggestion.definitions import (
+    SubstituteAdviceSuggestion,
+    SubstituteTypeSuggestion,
+)
 from rhosocial.activerecord.backend.expression.types import (
     BigIntType,
     BinaryType,
@@ -126,7 +130,6 @@ from rhosocial.activerecord.backend.expression.types import (
     BooleanType,
     CharType,
     CustomType,
-    DataType,
     DateType,
     DateTimeType,
     DecimalType,
@@ -440,7 +443,7 @@ class FirebirdTypeSupportMixin(DataTypeMixin, DataTypeSupport):
         spelling check — see :meth:`_check_firebird_signed`.
         """
         self._check_firebird_signed(expr)
-        self.check_spelling(expr, IntegerType)
+        self._check_spelling(expr, IntegerType)
         return "INTEGER", ()
 
     def format_data_type_bigint(self, expr: BigIntType) -> Tuple[str, tuple]:
@@ -455,7 +458,7 @@ class FirebirdTypeSupportMixin(DataTypeMixin, DataTypeSupport):
         spelling check — see :meth:`_check_firebird_signed`.
         """
         self._check_firebird_signed(expr)
-        self.check_spelling(expr, ("bigint",))
+        self._check_spelling(expr, ("bigint",))
         return "BIGINT", ()
 
     def format_data_type_smallint(self, expr: SmallIntType) -> Tuple[str, tuple]:
@@ -467,7 +470,7 @@ class FirebirdTypeSupportMixin(DataTypeMixin, DataTypeSupport):
         :meth:`_check_firebird_signed`.
         """
         self._check_firebird_signed(expr)
-        self.check_spelling(expr, ("smallint",))
+        self._check_spelling(expr, ("smallint",))
         return "SMALLINT", ()
 
     def format_data_type_tinyint(self, expr: TinyIntType) -> Tuple[str, tuple]:
@@ -481,7 +484,7 @@ class FirebirdTypeSupportMixin(DataTypeMixin, DataTypeSupport):
         see :meth:`_check_firebird_signed`.
         """
         self._check_firebird_signed(expr)
-        self.check_spelling(expr, TinyIntType)
+        self._check_spelling(expr, TinyIntType)
         return "SMALLINT", ()
 
     def format_data_type_float(self, expr: FloatType) -> Tuple[str, tuple]:
@@ -566,7 +569,7 @@ class FirebirdTypeSupportMixin(DataTypeMixin, DataTypeSupport):
         see :meth:`_check_firebird_signed`.
         """
         self._check_firebird_signed(expr, "approximate numeric (DOUBLE PRECISION)")
-        self.check_spelling(expr, DoubleType)
+        self._check_spelling(expr, DoubleType)
         return "DOUBLE PRECISION", ()
 
     def format_data_type_decimal(self, expr: DecimalType) -> Tuple[str, tuple]:
@@ -581,7 +584,7 @@ class FirebirdTypeSupportMixin(DataTypeMixin, DataTypeSupport):
         for a signed declaration.
         """
         self._check_firebird_signed(expr, "exact numeric (DECIMAL)")
-        self.check_spelling(expr, DecimalType)
+        self._check_spelling(expr, DecimalType)
         self._validate_numeric(expr.precision, expr.scale)
         if expr.precision is not None and expr.scale is not None:
             return f"DECIMAL({expr.precision}, {expr.scale})", ()
@@ -596,7 +599,7 @@ class FirebirdTypeSupportMixin(DataTypeMixin, DataTypeSupport):
         Firebird 3 introduced the type as ``BOOLEAN`` and has no alias for it —
         so the spelling is refused instead of being answered with a declaration
         the server would reject."""
-        self.check_spelling(expr, ("boolean",))
+        self._check_spelling(expr, ("boolean",))
         self._check_fb3_type("BOOLEAN")
         return "BOOLEAN", ()
 
@@ -612,12 +615,13 @@ class FirebirdTypeSupportMixin(DataTypeMixin, DataTypeSupport):
         the n argument is mandatory"); see
         :attr:`_FB_RENDERED_VARCHAR_LENGTH` for the citations and for the open
         tracker issue that adds 255 after 5.0. The number is read from there
-        rather than written here so this fallback and :meth:`parse_type` cannot
-        drift apart on it, and so the reason it is not a
-        :meth:`type_parameter_defaults` entry — a server that will not create the
-        column supplies nothing to read back — stays attached to the number.
+        rather than written here so this fallback and the backend's introspection
+        :class:`~...introspection.type_parser.FirebirdTypeParser` cannot drift
+        apart on it, and so the reason it is a backend choice rather than a
+        server-reported default — a server that will not create the column
+        supplies nothing to read back — stays attached to the number.
         """
-        self.check_spelling(expr, VarCharType)
+        self._check_spelling(expr, VarCharType)
         length = expr.length
         if length is None:
             length = self._FB_RENDERED_VARCHAR_LENGTH
@@ -632,15 +636,15 @@ class FirebirdTypeSupportMixin(DataTypeMixin, DataTypeSupport):
         documented default — *"If the number of characters is not specified, 1 is
         used by default"*, the same sentence in the 2.5, 3.0, 4.0 and 5.0
         references — so the server stores it and reports it back in
-        ``RDB$CHARACTER_LENGTH`` and :meth:`type_parameter_defaults` declares it.
+        ``RDB$CHARACTER_LENGTH``, and :attr:`_FB_CHAR_DEFAULT_LENGTH` records it.
         A type bound to this dialect has already resolved to that 1 in its own
         ``length``; the fallback reads the one declaration so a type built
         without a dialect renders the same number.
         """
-        self.check_spelling(expr, CharType)
+        self._check_spelling(expr, CharType)
         length = expr.length
         if length is None:
-            length = self.type_parameter_defaults()["char"]["length"]
+            length = self._FB_CHAR_DEFAULT_LENGTH
         return f"CHAR({length})", ()
 
     def _firebird_lob_length(self, data_type, declaration: str) -> Optional[int]:
@@ -692,7 +696,7 @@ class FirebirdTypeSupportMixin(DataTypeMixin, DataTypeSupport):
         than any VARCHAR limit is still satisfied; what changes is the declared
         segment size, which keeps the field identity in the DDL.
         """
-        self.check_spelling(expr, ("text",))
+        self._check_spelling(expr, ("text",))
         length = self._firebird_lob_length(expr, "BLOB SUB_TYPE TEXT")
         segment = f" SEGMENT SIZE {length}" if length is not None else ""
         return f"BLOB SUB_TYPE TEXT{segment}", ()
@@ -735,7 +739,7 @@ class FirebirdTypeSupportMixin(DataTypeMixin, DataTypeSupport):
     # --- timetz / timestamptz: deliberately absent ---------------------------
     #
     # There is no ``format_data_type_timetz`` and no ``format_data_type_timestamptz``.
-    # Both concepts are **substituted** in :meth:`substitute_data_types` instead,
+    # Both concepts are **substituted** in :meth:`suggest_substitute_types` instead,
     # and the reason is that Firebird's grammar makes the two impossible to render
     # from the generic concepts:
     #
@@ -752,9 +756,10 @@ class FirebirdTypeSupportMixin(DataTypeMixin, DataTypeSupport):
     #   ``format_data_type_firebird_timestamptz`. Two dispatch keys naming one
     #   Firebird column would make ``name`` — which D3 makes the concept's
     #   identity — a lie for one of them, and would break the round trip the
-    #   catalog relies on: ``parse_type("TIMESTAMP WITH TIME ZONE")`` answers with
-    #   ``FirebirdTimeStampTzType``, so a ``timestamptz`` renderer would emit words
-    #   that parse back into a *different* class.
+    #   catalog relies on: the introspection parser answers
+    #   ``FirebirdTimeStampTzType`` for ``TIMESTAMP WITH TIME ZONE``, so a
+    #   ``timestamptz`` renderer would emit words that parse back into a
+    #   *different* class.
     # * Neither zoned declaration takes a precision argument (§3.4, §3.12), so
     #   ``precision`` could not be honoured either — which is why the substitute is
     #   the unzoned concept *and* that concept refuses a precision by name. See
@@ -785,7 +790,7 @@ class FirebirdTypeSupportMixin(DataTypeMixin, DataTypeSupport):
         declaration carries. The column stays unbounded, so the minimum the
         declaration asks for is always met without narrowing the storage.
         """
-        self.check_spelling(expr, ("blob",))
+        self._check_spelling(expr, ("blob",))
         length = self._firebird_lob_length(expr, "BLOB")
         segment = f" SEGMENT SIZE {length}" if length is not None else ""
         return f"BLOB{segment}", ()
@@ -814,10 +819,10 @@ class FirebirdTypeSupportMixin(DataTypeMixin, DataTypeSupport):
         the one declaration rather than repeated; see :meth:`format_data_type_char`
         for why Firebird's 1 is a documented default and not a choice of this
         backend."""
-        self.check_spelling(expr, CharType)
+        self._check_spelling(expr, CharType)
         length = expr.length
         if length is None:
-            length = self.type_parameter_defaults()["firebird_char"]["length"]
+            length = self._FB_CHAR_DEFAULT_LENGTH
         return f"CHAR({length}) CHARACTER SET UTF8", ()
 
     def format_data_type_firebird_varchar(self, expr: FirebirdVarCharType) -> Tuple[str, tuple]:
@@ -827,7 +832,7 @@ class FirebirdTypeSupportMixin(DataTypeMixin, DataTypeSupport):
         the unsized ``VARCHAR(255)`` here is a decision of this backend rather
         than a Firebird default — it is the same number, named once in
         :attr:`_FB_RENDERED_VARCHAR_LENGTH`."""
-        self.check_spelling(expr, VarCharType)
+        self._check_spelling(expr, VarCharType)
         length = expr.length
         if length is None:
             length = self._FB_RENDERED_VARCHAR_LENGTH
@@ -927,8 +932,8 @@ class FirebirdTypeSupportMixin(DataTypeMixin, DataTypeSupport):
 
         Single source of truth for every Firebird 4.0 gate in this mixin —
         :meth:`_check_fb4_type`, the ``supports_data_type_firebird_*`` probes
-        and the zoned spellings :meth:`parse_type` recognises — so parsing and
-        rendering cannot disagree about whether the type exists.
+        and the zoned spellings the introspection parser recognises — so parsing
+        and rendering cannot disagree about whether the type exists.
 
         A dialect that has not been adapted answers ``False``: the 4.0 types
         are a capability nobody has confirmed yet, and the renderer's refusal
@@ -1011,7 +1016,7 @@ class FirebirdTypeSupportMixin(DataTypeMixin, DataTypeSupport):
     # WITHOUT TIME ZONE data types"). The zoned columns are Firebird's own words
     # — ``TIME WITH TIME ZONE`` / ``TIMESTAMP WITH TIME ZONE``, 4.0+ — and they
     # are rendered by ``firebird_timetz`` and ``firebird_timestamptz`` below.
-    # Naming the unzoned substitute is ``substitute_data_types``' job; see the
+    # Naming the unzoned substitute is ``suggest_substitute_types``' job; see the
     # "timetz / timestamptz: deliberately absent" comment above
     # ``format_data_type_timestamp``.
 
@@ -1052,7 +1057,7 @@ class FirebirdTypeSupportMixin(DataTypeMixin, DataTypeSupport):
         return self.version_at_least((4, 0, 0))
 
     # ------------------------------------------------------------------
-    # substitute_data_types() — D9
+    # suggest_substitute_types() — D9
     #
     # Every concept the framework models must be either rendered here or named
     # here. Firebird renders the scalar types and its own ``firebird_*`` family;
@@ -1060,7 +1065,7 @@ class FirebirdTypeSupportMixin(DataTypeMixin, DataTypeSupport):
     # gap from a bare "unsupported".
     # ------------------------------------------------------------------
 
-    def substitute_data_types(self) -> Dict[str, type]:
+    def suggest_substitute_types(self) -> SubstituteTypeSuggestion:
         """Cross-backend type-consistency suggestions for Firebird.
 
         Values are the suggested replacement ``DataType`` **classes**, each one a
@@ -1149,8 +1154,9 @@ class FirebirdTypeSupportMixin(DataTypeMixin, DataTypeSupport):
             :class:`~...expression.types.FirebirdTimeTzType` and
             :class:`~...expression.types.FirebirdTimeStampTzType`, i.e.
             ``FirebirdTimeTzType()`` and ``FirebirdTimeStampTzType()``. That is
-            also what ``parse_type`` answers with for the words the catalog
-            reports (``RDB$FIELD_TYPE`` 28 and 29), which is why these two keys
+            also what the backend's introspection parser answers with for the
+            words the catalog reports (``RDB$FIELD_TYPE`` 28 and 29), which is
+            why these two keys
             are substitutes rather than renderers: a ``timestamptz`` renderer
             would emit words that parse straight back into a different class.
 
@@ -1178,7 +1184,7 @@ class FirebirdTypeSupportMixin(DataTypeMixin, DataTypeSupport):
         # contradictory answer.
         if _norm_version(getattr(self, "version", (3, 0, 0))) < (3, 0, 0):
             substitutes["boolean"] = SmallIntType
-        return substitutes
+        return SubstituteTypeSuggestion(mapping=substitutes)
 
     # Every substitution above loses something, and the caller is the only one
     # who can act on it — so each caveat goes into the error they are already
@@ -1215,7 +1221,7 @@ class FirebirdTypeSupportMixin(DataTypeMixin, DataTypeSupport):
                        "explicitly instead.",
     }
 
-    def substitute_advice(self, name: str) -> str:
+    def suggest_substitute_advice(self, name: str) -> SubstituteAdviceSuggestion:
         """State what this substitution gives up, in the caller's error.
 
         Firebird's two zoned concepts are the sharp case: the stand-in is a
@@ -1225,11 +1231,12 @@ class FirebirdTypeSupportMixin(DataTypeMixin, DataTypeSupport):
         instead" would create a column that silently lost an offset.
         """
         caveat = self._LOSSY_SUBSTITUTIONS.get(name)
-        return f"Note: {caveat}" if caveat else ""
+        return SubstituteAdviceSuggestion(advice=f"Note: {caveat}" if caveat else "")
 
     # ------------------------------------------------------------------
-    # type_parameter_defaults() — what this server supplies for a
-    # parameter a declaration left undeclared
+    # Widths a declaration may leave undeclared. The server supplies one of
+    # them; the other is this backend's own decision, stated once here so the
+    # formatters and the introspection parser cannot drift apart.
     # ------------------------------------------------------------------
 
     #: Firebird's documented size for a ``CHAR`` declared without one: *"If the
@@ -1267,424 +1274,11 @@ class FirebirdTypeSupportMixin(DataTypeMixin, DataTypeSupport):
     #:
     #: A bare ``VARCHAR`` is therefore a syntax error on every version this
     #: backend addresses (``-104 Token unknown``), which is the same answer
-    #: MariaDB gives for its bare ``VARCHAR`` and the reason
-    #: :meth:`type_parameter_defaults` declares no ``varchar`` entry: a server
-    #: that will not create the column supplies nothing to report back, and the
-    #: number this dialect writes has to be one it chose. 255 is that choice and
-    #: it is unchanged — it is what both renderers have always written, it is
-    #: Firebird's own future default rather than an arbitrary figure, and it is
-    #: named here so :meth:`parse_type` and the two ``VARCHAR`` formatters cannot
-    #: drift apart on it.
+    #: MariaDB gives for its bare ``VARCHAR``: a server that will not create the
+    #: column supplies nothing to report back, and the number this dialect
+    #: writes has to be one it chose. 255 is that choice and it is unchanged —
+    #: it is what both renderers have always written, it is Firebird's own
+    #: future default rather than an arbitrary figure, and it is named here so
+    #: the introspection parser and the two ``VARCHAR`` formatters cannot drift
+    #: apart on it.
     _FB_RENDERED_VARCHAR_LENGTH = 255
-
-    def type_parameter_defaults(self) -> Dict[str, Dict[str, object]]:
-        """The widths Firebird supplies for a declaration that named none.
-
-        **One entry, and the reason there is only one is the point.**
-        ``CharType.length`` resolves against this, so ``CharType(d)`` and the
-        ``CharType(length=1)`` that :meth:`parse_type` reads out of a ``CHAR``
-        column are the same column rather than two that render identically and
-        compare unequal.
-
-        ``char`` **and** ``firebird_char`` are declared side by side because
-        :class:`~...expression.types.FirebirdCharType` is the same concept
-        through this backend's own entry point — it adds ``CHARACTER SET UTF8``
-        to the written form and nothing to the storage — and it carries its own
-        ``name``, so it keys its own entry. Two names, one width; a dialect that
-        let them drift apart would be describing one column two ways.
-
-        **What is deliberately absent is the pair that used to be two literals
-        here**, and it is worth being exact about why:
-
-        ``varchar`` / ``firebird_varchar`` — **not declared, because Firebird has
-        no default to declare.** All four references this backend can address say
-        *"There is no default size: the n argument is mandatory"*, §3.12's
-        production puts the parentheses round ``length`` rather than in square
-        brackets, and FirebirdSQL/firebird#8909 is the open request that adds
-        255 — after 5.0. So a ``VarCharType`` bound to this dialect keeps
-        ``None``, which is the honest answer for a declaration the server
-        rejects, and the 255 both formatters write is
-        :attr:`_FB_RENDERED_VARCHAR_LENGTH`: a decision of *this* backend,
-        stated as one, with the vendor's own statement that contradicts any
-        default attached to it. The difference from ``char`` is not degree, it
-        is kind: a bare ``CHAR`` is accepted and stored, a bare ``VARCHAR`` is
-        not accepted at all, and only the first can be read back off a catalog
-        row.
-        https://firebirdsql.org/file/documentation/html/en/refdocs/fblangref50/firebird-50-language-reference.html
-        """
-        return {
-            "char": {"length": self._FB_CHAR_DEFAULT_LENGTH},
-            "firebird_char": {"length": self._FB_CHAR_DEFAULT_LENGTH},
-        }
-
-    # --- Parsing ---
-    #
-    # Canonical over the framework's spelling vocabulary: one concept in, one
-    # class out. A synonym never yields a different class, so ``character
-    # varying`` is a ``VarCharType`` and never a ``CharType``.
-    #
-    # The two long standard forms a Firebird DDL string may legitimately carry —
-    # ``CHARACTER`` and ``CHARACTER VARYING`` — are recorded as the spelling that
-    # was read, so the instance says which word it came from. Nothing else is:
-    # for every other concept Firebird has one word, and recording a synonym
-    # would make an introspected column compare unequal to the same column
-    # declared with that synonym, for no informational gain.
-    #
-    # A word Firebird does not spell — ``INT2``, ``BYTEA``, ``CLOB``, ``BOOL`` —
-    # is still recognised and still yields the concept's class, because a caller
-    # reading a schema may well be handed a type string produced elsewhere. The
-    # instance then carries the canonical spelling, which is the word Firebird
-    # writes, so a parsed value always renders back to a valid column.
-
-    _FB_TINYINT_TYPES = re.compile(r"^(?:TINYINT|INT1)\b", re.IGNORECASE)
-    # ``UNSIGNED`` as a whole word anywhere in a type string.  Every branch below
-    # matches on the word *in front of* the attribute, so this is what stops
-    # ``INTEGER UNSIGNED`` from parsing to a signed ``IntegerType``.  No Firebird
-    # server can have written such a string; see ``_refuse_unsigned_type_string``
-    # for why the branch exists anyway.
-    _UNSIGNED_ATTRIBUTE = re.compile(r"\bUNSIGNED\b", re.IGNORECASE)
-    _FB_INTEGER_TYPES = re.compile(
-        r"^(?:SMALLINT|INT2|INTEGER|INT|BIGINT|INT8)\b", re.IGNORECASE
-    )
-    _FB_FLOAT_TYPES = re.compile(
-        r"^(?:FLOAT|DOUBLE\s+PRECISION|DOUBLE|REAL)\b", re.IGNORECASE
-    )
-    _FB_DECIMAL_TYPES = re.compile(r"^(?:DECIMAL|NUMERIC|DEC)\b", re.IGNORECASE)
-    _FB_STRING_TYPES = re.compile(
-        r"^(?:CHARACTER\s+VARYING|CHAR\s+VARYING|VARCHAR|CHARACTER|CHAR)\b",
-        re.IGNORECASE,
-    )
-    _FB_BLOB_TEXT_TYPES = re.compile(r"^BLOB\s+SUB_TYPE\s+TEXT\b", re.IGNORECASE)
-    _FB_BLOB_TYPES = re.compile(r"^(?:BLOB|BYTEA)\b", re.IGNORECASE)
-    _FB_TEXT_TYPES = re.compile(r"^(?:TEXT|CLOB)\b", re.IGNORECASE)
-    _FB_DATE_TYPES = re.compile(r"^(?:DATE|TIMESTAMP|TIME)\b", re.IGNORECASE)
-    _FB_BOOLEAN_TYPES = re.compile(r"^(?:BOOLEAN|BOOL)\b", re.IGNORECASE)
-
-    # Firebird 4.0's zoned date-time types. These must be matched *before*
-    # ``_FB_DATE_TYPES``, whose pattern stops at the first word and so used to
-    # read a zoned column back as the unzoned concept — which the schema differ
-    # compares with ``!=``, so the zone was invisible to it rather than
-    # reported. The words are the ones Firebird writes: its grammar is
-    # ``TIME [{WITHOUT | WITH} TIME ZONE]`` (§3.4.2) /
-    # ``TIMESTAMP [{WITHOUT | WITH} TIME ZONE]`` (§3.4.3), the same two
-    # productions in the §3.12 Data Type Declaration Syntax, and
-    # RDB$FIELDS.RDB$FIELD_TYPE reports 28 and 29 for the two zoned columns
-    # (language reference, D.11). Firebird's 4.0 pre-release carried
-    # ``RDB$TYPES.RDB$TYPE_NAME`` as ``... WITH TIMEZONE`` without the space
-    # (FirebirdSQL/firebird#6805, fixed for 4.0.0); only the unspaced form is
-    # not recognised here, because the released server never writes it and
-    # RDB$FIELD_TYPE — which is what this dialect reads — is 28/29 either way.
-    #
-    # The optional precision group is matched **so it can be refused**, not so it
-    # can be read: no Firebird ``TIME``/``TIMESTAMP`` declaration carries one, so
-    # ``TIMESTAMP(4) WITH TIME ZONE`` is not a Firebird type name and turning it
-    # into a class whose renderer then raises would leave ``parse_type`` accepting
-    # an input it cannot render back. See
-    # :meth:`_check_firebird_temporal_precision` and
-    # :meth:`_parse_temporal_declaration`.
-    _FB_TIMESTAMP_TZ_TYPES = re.compile(
-        r"^TIMESTAMP(?:\s*\(\s*(\d+)\s*\))?\s+WITH\s+TIME\s+ZONE\b", re.IGNORECASE
-    )
-    _FB_TIME_TZ_TYPES = re.compile(
-        r"^TIME(?:\s*\(\s*(\d+)\s*\))?\s+WITH\s+TIME\s+ZONE\b", re.IGNORECASE
-    )
-    _FB_TIME_WITHOUT_TZ_TYPES = re.compile(
-        r"^TIME(?:\s*\(\s*(\d+)\s*\))?\s+WITHOUT\s+TIME\s+ZONE\b", re.IGNORECASE
-    )
-
-    #: A precision on a bare ``DATE``/``TIME``/``TIMESTAMP``, in the same
-    #: "recognised in order to be refused" spirit as the three zoned patterns
-    #: above. ``_FB_DATE_TYPES`` stops after the first word, so without this the
-    #: tail — ``(4)`` — was simply ignored and ``TIMESTAMP(4)`` parsed as a plain
-    #: ``TIMESTAMP``, i.e. a *different* column than the one that was read.
-    _FB_TEMPORAL_PRECISION = re.compile(
-        r"^(?:DATE|TIMESTAMP|TIME)\s*\(\s*\d+\s*\)", re.IGNORECASE
-    )
-
-    #: The Firebird 4.0 date-time spellings and the class each one renders to.
-    _FB_ZONED_TIME_TYPES = (
-        (_FB_TIMESTAMP_TZ_TYPES, FirebirdTimeStampTzType),
-        (_FB_TIME_TZ_TYPES, FirebirdTimeTzType),
-        (_FB_TIME_WITHOUT_TZ_TYPES, FirebirdTimeWithoutTimeZoneType),
-    )
-
-    #: Firebird 4.0's ``DECFLOAT`` and ``INT128`` — the other two codes the
-    #: introspector reads out of ``RDB$FIELDS.RDB$FIELD_TYPE`` that no pattern
-    #: above claimed. Unrecognised, a real ``DECFLOAT`` column arrived as
-    #: ``CustomType(raw="DECFLOAT")`` and a real ``INT128`` column as
-    #: ``CustomType(raw="INT128")``: opaque names that render themselves
-    #: straight back into DDL. For ``DECFLOAT`` that also lost the declared
-    #: precision, which is a silent identity loss rather than merely an
-    #: unmodelled type — ``FirebirdDecFloatType`` carries ``precision`` in
-    #: :attr:`PARAMETERS`, so a ``DECFLOAT(16)`` column compared equal to a
-    #: ``DECFLOAT(34)`` one and the differ had nothing to report.
-    #:
-    #: The precision is read *out of the name* rather than defaulted, because
-    #: Firebird encodes it there: ``RDB$FIELD_TYPE`` splits the two widths into
-    #: separate codes (24 for ``DECFLOAT(16)``, 25 for ``DECFLOAT(34)`` —
-    #: language reference, D.11) and the introspector writes the matching
-    #: ``DECFLOAT(16)``/``DECFLOAT(34)``. A bare ``DECFLOAT`` is legal Firebird
-    #: and its default is documented — ``dec_prec``, "either 16 or 34; Default is
-    #: 34" (§3.2.2.1) — so that is what a bare one resolves to. Nothing else is
-    #: guessed: ``DECFLOAT(20)`` is rejected by
-    #: :class:`FirebirdDecFloatType`'s constructor rather than rounded to a width
-    #: the declaration never named.
-    _FB_DECFLOAT_TYPES = re.compile(
-        r"^DECFLOAT(?:\s*\(\s*(\d+)\s*\))?(?![A-Za-z0-9_$])", re.IGNORECASE
-    )
-    _FB_INT128_TYPES = re.compile(r"^INT128(?![A-Za-z0-9_$])", re.IGNORECASE)
-
-    #: The documented default for a bare ``DECFLOAT`` — "either 16 or 34; Default
-    #: is 34" (language reference §3.2.2.1, *DECFLOAT*; the parameter is spelled
-    #: ``dec_prec`` there from 5.0 on and ``precision`` in 4.0, with the same
-    #: default in both). Named so the resolution below is one fact written once,
-    #: and so :class:`FirebirdDecFloatType`'s constructor default and this method
-    #: cannot drift apart on it.
-    _FB_DECFLOAT_DEFAULT_PRECISION = 34
-
-    def _reject_temporal_precision(self, raw: str, declared) -> None:
-        """Raise if a ``TIME``/``TIMESTAMP``/``DATE`` declaration names a precision.
-
-        Returns ``None`` — and so is a no-op — when *declared* is ``None``.
-        Kept next to the patterns it serves so the zoned branch and the bare
-        branch cannot disagree about whether a precision is a Firebird thing.
-
-        The message names the field and the two sections that say it is not
-        there, because the caller who wrote ``TIMESTAMP(4) WITH TIME ZONE`` has
-        plainly been told by some other engine that this is legal DDL and needs to
-        be told specifically why it is not. The same fact, from the rendering
-        side, is in :meth:`_check_firebird_temporal_precision`.
-        """
-        if declared is None:
-            return
-        raise ValueError(
-            f"{raw!r} is not a Firebird data type declaration: Firebird's TIME "
-            f"and TIMESTAMP take no precision argument (language reference, "
-            f"chapter 3, sections 3.4.2 and 3.4.3, and the section 3.12 Data "
-            f"Type Declaration Syntax: 'TIME [{{WITHOUT | WITH}} TIME ZONE]' and "
-            f"'TIMESTAMP [{{WITHOUT | WITH}} TIME ZONE]' — identical in the 4.0 "
-            f"and 5.0 references). Firebird stores fractional seconds to "
-            f"ten-thousandths of a second whatever the declaration says, so a "
-            f"lower granularity belongs in the value. Requested upstream as "
-            f"FirebirdSQL/firebird#4779 (CORE-4459)."
-        )
-
-    def _refuse_unsigned_type_string(self, raw: str) -> None:
-        """Refuse a type string that carries an ``UNSIGNED`` attribute.
-
-        :meth:`_check_firebird_signed` closes the door on the way *in* — a
-        declaration.  This closes it on the way *out*: a string.  The same field
-        and the same loss in the other direction, and the reason this file
-        already refuses a temporal ``precision`` string rather than reading one
-        out of a production that has no place for it (see
-        :meth:`_check_firebird_temporal_precision`) applies unchanged here: the
-        branches below match on the word *in front of* the attribute, so without
-        this ``parse_type("INTEGER UNSIGNED")`` would be a plain
-        :class:`IntegerType` — a signed value object for a declaration that says
-        otherwise, and ``==`` would call it equal to the signed column.
-
-        Nothing here claims a catalog row is at stake: Firebird's §3.1 says it
-        does not support an unsigned data type at all and §3.12's *Scalar Data
-        Types Syntax* gives no numeric type an attribute, so no server can have
-        written this string.  The branch guards the caller-supplied path —
-        ``parse_type`` is a documented reader of hand-written DDL — and says so.
-        Documentation-based, like the rest of this backend's signedness answer:
-        no Firebird client library is installed here, so no statement could be
-        sent to a server.
-        """
-        raise UnsupportedFeatureError(
-            self.name,
-            f"an UNSIGNED attribute in a type string ({raw!r}) "
-            f"(Firebird does not support an unsigned numeric data type: language "
-            f"reference chapter 3, section 3.1 says 'Firebird does not support "
-            f"an unsigned integer data type', and section 3.12's Scalar Data "
-            f"Types Syntax gives no numeric type an attribute after it. Reading "
-            f"the attribute off and returning a signed type would compare equal "
-            f"to the signed column, which is the silent loss this refuses. Read "
-            f"from the documentation: no Firebird client library is installed "
-            f"here, so no statement could be sent to a server.)",
-            suggestion=(
-                "Declare the column signed and state the range with a CHECK "
-                "constraint -- Firebird's own col_constraint grammar admits "
-                "'CHECK ( check_condition )'."
-            ),
-        )
-
-    def parse_type(self, raw: str) -> DataType:
-        """Parse a Firebird data-type declaration into the framework's concept.
-
-        One concept in, one class out: every member of a concept's ``SPELLINGS``
-        maps to that concept's class, so ``character varying`` is a
-        ``VarCharType`` and never a ``CharType``.
-
-        A string carrying an ``UNSIGNED`` attribute is **refused** rather than
-        read, for the reason :meth:`_check_firebird_temporal_precision` gives for
-        a temporal ``precision``: Firebird's grammar has nowhere to put either,
-        and quietly dropping one would return a value object the string does not
-        describe. See :meth:`_refuse_unsigned_type_string`.
-
-        Every constructor below passes ``dialect=self``: a parsed type that
-        cannot re-render is invisible to the schema differ's callers and to
-        the round-trip sweep — asking ``parsed.dialect`` raises, and
-        ``parsed.to_sql()`` raises with it — and every other backend binds
-        the dialect at exactly this place, so a dialect-less return here is
-        this backend's defect even when the parsed string happens to match.
-        """
-        stripped = raw.strip()
-        upper = stripped.upper()
-
-        if self._UNSIGNED_ATTRIBUTE.search(stripped):
-            self._refuse_unsigned_type_string(stripped)
-
-        if self._FB_TINYINT_TYPES.match(upper):
-            return TinyIntType(dialect=self)
-
-        # INT128 before the integer family. ``_FB_INTEGER_TYPES`` ends its
-        # alternatives in ``\b``, so ``INT128`` does not match it — after ``INT``
-        # comes ``1``, a word character, so there is no boundary — but the
-        # ordering is deliberate rather than incidental: ``INT128`` is a
-        # different column from ``INTEGER`` by 96 bits of range, and reading a
-        # 128-bit column as a 32-bit one is not a spelling difference.
-        int128 = self._FB_INT128_TYPES.match(upper)
-        if int128:
-            if not self._fb4_available():
-                # INT128 arrived in Firebird 4.0, so a dialect targeting 3.0 has
-                # no such type in its grammar and will not name one. The
-                # declaration is kept verbatim instead of being answered with a
-                # narrower integer, which would render a *different* column and
-                # say nothing about why.
-                return CustomType(dialect=self, raw=stripped)
-            return FirebirdInt128Type(dialect=self)
-
-        if self._FB_INTEGER_TYPES.match(upper):
-            if upper.startswith("BIGINT") or upper.startswith("INT8"):
-                return BigIntType(dialect=self)
-            if upper.startswith("SMALLINT") or upper.startswith("INT2"):
-                return SmallIntType(dialect=self)
-            return IntegerType(dialect=self)
-
-        # DECFLOAT before the decimal family. ``_FB_DECIMAL_TYPES`` also cannot
-        # match it — its shortest alternative is ``DEC`` and the ``\b`` after it
-        # fails on the ``F`` of ``FLOAT`` — so this is not a rescue for an
-        # ordering bug; it is here because ``DECFLOAT`` is an exact decimal and
-        # belongs with the decimals, and because ``DECFLOAT(16)`` must never be
-        # read as ``DecimalType(precision=16)``, which is a *different* column
-        # with a different scale rule.
-        decfloat = self._FB_DECFLOAT_TYPES.match(upper)
-        if decfloat:
-            if not self._fb4_available():
-                # DECFLOAT arrived in Firebird 4.0. Same reasoning as INT128
-                # above: an older dialect's grammar has no such type, so the
-                # declaration is kept verbatim rather than downgraded to
-                # NUMERIC, which is a different column.
-                return CustomType(dialect=self, raw=stripped)
-            declared = decfloat.group(1)
-            return FirebirdDecFloatType(
-                dialect=self,
-                precision=int(declared) if declared
-                else self._FB_DECFLOAT_DEFAULT_PRECISION
-            )
-
-        if self._FB_FLOAT_TYPES.match(upper):
-            if upper.startswith("DOUBLE"):
-                return DoubleType(dialect=self)
-            return FloatType(dialect=self)
-
-        if self._FB_DECIMAL_TYPES.match(upper):
-            nums = re.findall(r"\d+", stripped)
-            if len(nums) >= 2:
-                return DecimalType(dialect=self, precision=int(nums[0]), scale=int(nums[1]))
-            if len(nums) == 1:
-                return DecimalType(dialect=self, precision=int(nums[0]))
-            return DecimalType(dialect=self)
-
-        if self._FB_STRING_TYPES.match(upper):
-            length_match = re.search(r"\((\d+)", stripped)
-            length = int(length_match.group(1)) if length_match else None
-            # A completion for an unsized word comes from
-            # ``type_parameter_defaults`` where this dialect has one, and from
-            # the one named constant where it has not — so the number a bare
-            # word means is written down once and the parser and the formatters
-            # cannot disagree about it. ``or`` rather than ``is not None``
-            # deliberately, because that is the test the four branches below
-            # have always used and ``CHAR(0)`` is not a Firebird declaration
-            # anyway.
-            char_length = self.type_parameter_defaults()["char"]["length"]
-            varchar_length = self._FB_RENDERED_VARCHAR_LENGTH
-            # CHARACTER VARYING is SQL's long form of VARCHAR — variable length.
-            # Testing it before CHARACTER is what keeps the varying form from
-            # falling into the fixed-length branch on "CHARACTER".
-            if upper.startswith("CHARACTER VARYING") or upper.startswith("CHAR VARYING"):
-                return VarCharType(dialect=self, length=length or varchar_length,
-                                   spelling="character varying")
-            if upper.startswith("VARCHAR"):
-                return VarCharType(dialect=self, length=length or varchar_length)
-            if upper.startswith("CHARACTER"):
-                return CharType(dialect=self, length=length or char_length, spelling="character")
-            if upper.startswith("CHAR"):
-                return CharType(dialect=self, length=length or char_length)
-            # Unreachable with the patterns above; the safe answer for any
-            # character-family word added later.
-            return TextType(dialect=self)
-
-        if self._FB_BLOB_TEXT_TYPES.match(upper):
-            # Firebird's own word for unbounded character data. It is a BLOB
-            # carrying a sub-type, so it is text and not the BLOB concept.
-            return TextType(dialect=self)
-
-        if self._FB_BLOB_TYPES.match(upper):
-            return BlobType(dialect=self)
-
-        if self._FB_TEXT_TYPES.match(upper):
-            return TextType(dialect=self)
-
-        # Firebird 4.0's zoned date-time spellings, matched before the
-        # DATE/TIMESTAMP/TIME family below — whose pattern stops at the first
-        # word, and so used to read a zoned column back as the *unzoned*
-        # concept. That was not a cosmetic loss: the schema differ compares
-        # parsed types with ``!=``, so a column declared WITH TIME ZONE and a
-        # column declared without it parsed equal and the zone was invisible.
-        for pattern, zoned_class in self._FB_ZONED_TIME_TYPES:
-            zoned = pattern.match(upper)
-            if not zoned:
-                continue
-            # A precision is refused here, before anything else about the
-            # declaration, because no Firebird ``TIME``/``TIMESTAMP`` carries one
-            # — so ``TIMESTAMP(4) WITH TIME ZONE`` is not a Firebird type name at
-            # all and answering with a class whose renderer would raise would leave
-            # parsing and rendering disagreeing about the same string. Returning
-            # ``zoned_class(precision=4)``, as this used to, made ``parse_type``
-            # accept a declaration it could not render back.
-            self._reject_temporal_precision(stripped, zoned.group(1))
-            if not self._fb4_available():
-                # A dialect targeting Firebird 3 has no such type in its
-                # grammar, so it will not name one. The declaration is kept
-                # verbatim instead — CustomType admits these four names as
-                # multi-word built-ins — because returning the unzoned class
-                # would render a *different* column and say nothing about why.
-                return CustomType(dialect=self, raw=stripped)
-            return zoned_class(dialect=self)
-
-        # Same refusal for the bare spellings. ``_FB_DATE_TYPES`` stops at the
-        # first word, so ``TIMESTAMP(4)`` used to match and the ``(4)`` was
-        # discarded — a different column than the one that was named, read as if
-        # it were the same. Checked before that pattern so the tail is seen.
-        self._reject_temporal_precision(stripped, self._FB_TEMPORAL_PRECISION.match(upper))
-
-        if self._FB_DATE_TYPES.match(upper):
-            # TIMESTAMP must be tested before TIME: "TIMESTAMP".startswith("TIME")
-            # is True, so the reversed order mis-parsed TIMESTAMP as TimeType.
-            if upper.startswith("TIMESTAMP"):
-                return DateTimeType(dialect=self)
-            if upper.startswith("TIME"):
-                return TimeType(dialect=self)
-            if upper.startswith("DATE"):
-                if upper.strip() == "DATE":
-                    return DateType(dialect=self)
-                return DateTimeType(dialect=self)
-            return DateTimeType(dialect=self)
-
-        if self._FB_BOOLEAN_TYPES.match(upper):
-            return BooleanType(dialect=self)
-
-        return CustomType(dialect=self, raw=stripped)

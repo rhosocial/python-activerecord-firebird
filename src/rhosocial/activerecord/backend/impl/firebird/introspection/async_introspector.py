@@ -91,7 +91,7 @@ FB_FIELD_TYPES = {
     # Firebird 4.0 added the zoned date-time types. RDB$FIELDS.RDB$FIELD_TYPE
     # carries 28/29 for them, per the language reference, D.11 RDB$FIELDS. The
     # words are the ones Firebird's own grammar writes, so a name this table
-    # invents here is a name parse_type() could not recognise.
+    # invents here is a name the backend's type parser could not recognise.
     28: "TIME WITH TIME ZONE",
     29: "TIMESTAMP WITH TIME ZONE",
     35: "TIMESTAMP",
@@ -265,7 +265,7 @@ class FirebirdAsyncIntrospectorMixin(IntrospectorMixin):
     def parse_columns(self, rows: List[Dict[str, Any]],
                         table_name: str,
                         schema: str) -> List[IntrospectionColumnInfo]:
-        from rhosocial.activerecord.backend.expression.types._base import DataType
+        from .type_parser import FirebirdTypeParser
 
         columns = []
         for row in rows:
@@ -284,7 +284,7 @@ class FirebirdAsyncIntrospectorMixin(IntrospectorMixin):
 
             dialect = getattr(self._backend, "dialect", None)
             parsed_data_type = (
-                DataType.parse_data_type_str(dialect, type_name)
+                FirebirdTypeParser(dialect).parse(type_name)
                 if dialect
                 else None
             )

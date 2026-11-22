@@ -46,6 +46,8 @@ class TestGetTypeAdapters:
         second = backend.get_type_adapters()
         assert first is not second
 
-    def test_default_adapter_suggestions_still_available(self, backend):
-        assert callable(backend.get_default_adapter_suggestions)
-        assert backend.get_default_adapter_suggestions()
+    def test_data_adapter_suggestions_still_available(self, backend):
+        assert callable(backend.suggest_data_adapters)
+        suggestion = backend.suggest_data_adapters()
+        assert isinstance(suggestion.table, dict)
+        assert suggestion.table

@@ -1,7 +1,7 @@
 # src/rhosocial/activerecord/backend/impl/firebird/mixins/column_type.py
 """Firebird's answer to "what does this Python type mean *as a column* here".
 
-The sibling of :meth:`FirebirdTypeSupportMixin.substitute_data_types`, and a
+The sibling of :meth:`FirebirdTypeSupportMixin.suggest_substitute_types`, and a
 different question from it. That one names the ``DataType`` a column is
 **created** with; this one names the **column class** whose operations a field's
 value carries. The two are deliberately separate objects -- a model decides
@@ -110,7 +110,10 @@ from rhosocial.activerecord.backend.adapters import (
     Range,
     Vector,
 )
-from rhosocial.activerecord.backend.dialect.mixins import ColumnTypeMixin
+from rhosocial.activerecord.backend.suggestion.definitions import (
+    ColumnTypeSuggestion,
+    ExtraColumnTypeSuggestion,
+)
 from rhosocial.activerecord.backend.expression.column_types import (
     BinaryColumn,
     BitStringColumn,
@@ -213,7 +216,7 @@ FIREBIRD_COLUMN_TYPES: Dict[Any, Optional[Type[ColumnBase]]] = {
 }
 
 
-class FirebirdColumnTypeMixin(ColumnTypeMixin):
+class FirebirdColumnTypeMixin:
     """Firebird's full table, and the entries it refuses.
 
     Composed into :class:`~...impl.firebird.dialect.FirebirdDialect` next to
@@ -237,9 +240,8 @@ class FirebirdColumnTypeMixin(ColumnTypeMixin):
     different column class. A column class names an operation set, and Firebird's
     operations on a truth value, a whole number, a document or a timestamp do
     not change shape when the storage behind them widens. So
-    :meth:`suggested_column_types` inherits core's method rather than
-    overriding it with a branch that would have to invent a difference to look
-    version-aware.
+    :meth:`suggest_column_types` therefore has no version branch: inventing one
+    would state a difference that does not exist.
 
     The baseline cells carry the Firebird-specific notes inline below; the ones
     worth reading rather than scanning are ``str`` (charset decides
@@ -248,9 +250,13 @@ class FirebirdColumnTypeMixin(ColumnTypeMixin):
     ``datetime`` (``TIMESTAMP`` is Firebird's synonym for the *unzoned* type).
     """
 
-    def suggested_column_types(self) -> Dict[Any, Optional[Type[ColumnBase]]]:
+    def suggest_column_types(self) -> ColumnTypeSuggestion:
         """Firebird's table, as a fresh dict a caller may walk and mutate."""
-        return dict(FIREBIRD_COLUMN_TYPES)
+        return ColumnTypeSuggestion(table=dict(FIREBIRD_COLUMN_TYPES))
+
+    def suggest_extra_column_types(self) -> ExtraColumnTypeSuggestion:
+        """No backend-owned extra column types."""
+        return ExtraColumnTypeSuggestion(table={})
 
     @property
     def unsupported_column_entries(self) -> Set[Any]:
@@ -261,7 +267,7 @@ class FirebirdColumnTypeMixin(ColumnTypeMixin):
         """
         return {
             entry
-            for entry, column_class in self.suggested_column_types().items()
+            for entry, column_class in self.suggest_column_types().table.items()
             if column_class is None
         }
 

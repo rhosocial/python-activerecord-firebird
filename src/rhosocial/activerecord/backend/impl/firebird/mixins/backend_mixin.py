@@ -2,9 +2,13 @@
 """Firebird shared non-I/O backend mixin."""
 
 import threading
-from typing import Dict, List, Tuple, Type
+from typing import Dict, List, Tuple
 
 from rhosocial.activerecord.backend import errors as exc
+from rhosocial.activerecord.backend.suggestion.definitions import (
+    DataAdapterSuggestion,
+    ExtraDataAdapterSuggestion,
+)
 
 from .version_boundaries import _norm_version
 from rhosocial.activerecord.backend.type_adapter import SQLTypeAdapter
@@ -363,18 +367,16 @@ class FirebirdBackendMixin:
             except Exception:
                 pass
 
-    def get_default_adapter_suggestions(self) -> Dict[Type, Tuple[SQLTypeAdapter, Type]]:
-        """Provide default type adapter suggestions for Firebird.
+    def suggest_data_adapters(self) -> DataAdapterSuggestion:
+        """Provide type adapter suggestions for Firebird.
 
-        The framework defaults
-        (:meth:`TypeAdaptionMixin.get_default_adapter_suggestions`) are the
-        base; Firebird merges its own pairs on top (its driver accepts the
-        temporal and decimal values natively, so those targets stay
-        identity-shaped), including the neutral families it carries as
-        VARCHAR / BLOB text.
+        The portable baseline supplies the framework's common pairs; Firebird's
+        own pairs are merged on top (its driver accepts the temporal and decimal
+        values natively, so those targets stay identity-shaped), including the
+        neutral families it carries as VARCHAR / BLOB text.
         """
         if self._default_suggestions_cache is not None:
-            return self._default_suggestions_cache
+            return DataAdapterSuggestion(table=self._default_suggestions_cache)
 
         import datetime as dt
         from decimal import Decimal
@@ -387,11 +389,10 @@ class FirebirdBackendMixin:
             Range,
             Vector,
         )
+        from rhosocial.activerecord.backend.adapters.portable import PORTABLE_TYPE_MAPPINGS
         from rhosocial.activerecord.backend.base.type_adaption import (
             merge_adapter_suggestions,
         )
-
-        base = super().get_default_adapter_suggestions()
 
         type_mappings = [
             (int, int), (float, float), (str, str), (bytes, bytes),
@@ -402,10 +403,16 @@ class FirebirdBackendMixin:
             (Range, str), (Multirange, str), (MacAddress, str),
         ]
 
-        suggestions = merge_adapter_suggestions(base, type_mappings, self.adapter_registry)
+        suggestions = merge_adapter_suggestions(
+            {}, list(PORTABLE_TYPE_MAPPINGS) + type_mappings, self.adapter_registry
+        )
 
         self._default_suggestions_cache = suggestions
-        return suggestions
+        return DataAdapterSuggestion(table=suggestions)
+
+    def suggest_extra_data_adapters(self) -> ExtraDataAdapterSuggestion:
+        """No backend-owned extra adapter types."""
+        return ExtraDataAdapterSuggestion(table={})
 
     def get_type_adapters(self) -> List["SQLTypeAdapter"]:
         """Return the adapter instances this backend provides.

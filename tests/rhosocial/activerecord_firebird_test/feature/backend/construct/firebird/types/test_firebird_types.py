@@ -29,6 +29,14 @@ from rhosocial.activerecord.backend.impl.firebird.expression import (
     FirebirdTimeWithoutTimeZoneType,
     FirebirdTimeTzType,
 )
+from rhosocial.activerecord.backend.impl.firebird.introspection.type_parser import (
+    FirebirdTypeParser,
+)
+
+
+def parse(dialect, raw):
+    """Firebird's introspection-only type parser (``dialect.parse_type`` is gone)."""
+    return FirebirdTypeParser(dialect).parse(raw)
 
 
 class TestFirebirdTzTypes:
@@ -277,31 +285,31 @@ class TestFirebirdFourTypesParseToRealClasses:
         ("decfloat(34)", 34),
     ])
     def test_decfloat_reaches_its_class_with_its_precision(self, raw, precision):
-        parsed = FirebirdDialect((4, 0, 0)).parse_type(raw)
+        parsed = parse(FirebirdDialect((4, 0, 0)), raw)
         assert isinstance(parsed, FirebirdDecFloatType)
         assert parsed.precision == precision
 
     def test_bare_decfloat_uses_the_documented_default(self):
         """``dec_prec``: "either 16 or 34; Default is 34" (§3.2.2.1, DECFLOAT)."""
-        parsed = FirebirdDialect((4, 0, 0)).parse_type("DECFLOAT")
+        parsed = parse(FirebirdDialect((4, 0, 0)), "DECFLOAT")
         assert isinstance(parsed, FirebirdDecFloatType)
         assert parsed.precision == 34
 
     def test_decfloat_is_not_a_fixed_point_decimal(self):
         dialect = FirebirdDialect((4, 0, 0))
-        assert dialect.parse_type("DECFLOAT(16)") != DecimalType(precision=16)
-        assert dialect.parse_type("DECIMAL(16)") == DecimalType(precision=16)
+        assert parse(dialect, "DECFLOAT(16)") != DecimalType(precision=16)
+        assert parse(dialect, "DECIMAL(16)") == DecimalType(precision=16)
 
     def test_int128_reaches_its_class(self):
-        parsed = FirebirdDialect((4, 0, 0)).parse_type("INT128")
+        parsed = parse(FirebirdDialect((4, 0, 0)), "INT128")
         assert isinstance(parsed, FirebirdInt128Type)
         assert parsed.PARAMETERS == ()
 
     def test_int128_is_not_read_as_integer(self):
         """``INT128`` holds -2**127..2**127-1; ``INTEGER`` holds 32 bits."""
         dialect = FirebirdDialect((4, 0, 0))
-        assert dialect.parse_type("INT128") != dialect.parse_type("INTEGER")
-        assert dialect.parse_type("INT128") != dialect.parse_type("BIGINT")
+        assert parse(dialect, "INT128") != parse(dialect, "INTEGER")
+        assert parse(dialect, "INT128") != parse(dialect, "BIGINT")
 
     @pytest.mark.parametrize("raw", ["DECFLOAT(34)", "DECFLOAT", "INT128"])
     def test_kept_verbatim_on_firebird_3(self, raw):
@@ -311,5 +319,5 @@ class TestFirebirdFourTypesParseToRealClasses:
         say nothing about why.
         """
         assert isinstance(
-            FirebirdDialect((3, 0, 0)).parse_type(raw), CustomType
+            parse(FirebirdDialect((3, 0, 0)), raw), CustomType
         )

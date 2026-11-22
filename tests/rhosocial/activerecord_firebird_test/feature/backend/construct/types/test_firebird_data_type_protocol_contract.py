@@ -39,6 +39,24 @@ def _core_concepts():
     )
 
 
+def _rendered_names(dialect):
+    """Concepts this dialect renders, from the naming-convention dispatch.
+
+    Core no longer exposes a supported-types table: rendering *is*
+    the declaration, with an optional ``supports_data_type_<name>`` probe able
+    to opt a rendered name out (a version gate).
+    """
+    names = set()
+    for name in _core_concepts():
+        if not hasattr(dialect, f"format_data_type_{name}"):
+            continue
+        probe = getattr(dialect, f"supports_data_type_{name}", None)
+        if probe is not None and not probe():
+            continue
+        names.add(name)
+    return names
+
+
 def _renderable_substitute(dialect, klass):
     """Minimum valid construction for substitutes that carry parameters.
 
@@ -58,8 +76,8 @@ def _renderable_substitute(dialect, klass):
 def test_every_core_concept_is_declared(version):
     """D9: rendered or substituted -- silence is not an answer."""
     dialect = _dialect(version)
-    supported = set(dialect.supports_data_types())
-    substitutes = dialect.substitute_data_types()
+    supported = _rendered_names(dialect)
+    substitutes = dialect.suggest_substitute_types().mapping
     undeclared = [
         name for name in _core_concepts() if name not in supported and name not in substitutes
     ]
@@ -70,8 +88,8 @@ def test_every_core_concept_is_declared(version):
 def test_substitutes_are_disjoint_and_renderable(version):
     """A substitute must be a DataType class this dialect really writes."""
     dialect = _dialect(version)
-    supported = set(dialect.supports_data_types())
-    substitutes = dialect.substitute_data_types()
+    supported = _rendered_names(dialect)
+    substitutes = dialect.suggest_substitute_types().mapping
     assert not supported & set(substitutes)
 
     for key, klass in substitutes.items():

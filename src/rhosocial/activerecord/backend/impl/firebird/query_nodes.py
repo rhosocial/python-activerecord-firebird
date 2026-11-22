@@ -170,9 +170,9 @@ def all_columns(dialect: "SQLDialectBase"):
 
 def cast(dialect: "SQLDialectBase", node, type_name: str):
     """``CAST(node AS type_name)``."""
-    from rhosocial.activerecord.backend.expression.types._base import DataType
+    from .introspection.type_parser import FirebirdTypeParser
 
-    return node.cast(DataType.parse_data_type_str(dialect, type_name))
+    return node.cast(FirebirdTypeParser(dialect).parse(type_name))
 
 
 def multiply(dialect: "SQLDialectBase", left, right):

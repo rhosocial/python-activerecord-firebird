@@ -35,6 +35,9 @@ import warnings
 from typing import Any, Callable, Dict, Optional, Type
 
 from rhosocial.activerecord.backend.expression.bases import BaseExpression
+from rhosocial.activerecord.backend.impl.firebird.introspection.type_parser import (
+    FirebirdTypeParser,
+)
 
 # Annotation fragments that mean "this parameter names a relation object".
 # Word boundaries matter: ``TableConstraint`` and ``AddTableConstraint`` are
@@ -1207,16 +1210,16 @@ def parse_roundtrip_failures(
         except Exception:
             continue  # the matrix's pinned non-renders own this class
         try:
-            parsed = dialect.parse_type(rendered)
+            parsed = FirebirdTypeParser(dialect).parse(rendered)
         except Exception as exc:
             failures.append(
-                "%s renders %r but parse_type raises %s: %s"
+                "%s renders %r but the introspection parser raises %s: %s"
                 % (cls.__name__, rendered, type(exc).__name__, exc)
             )
             continue
         if isinstance(parsed, CustomType):
             failures.append(
-                "%s renders %r but parse_type answers CustomType -- a "
+                "%s renders %r but the introspection parser answers CustomType -- a "
                 "dialect must recognise its own renderings" % (cls.__name__, rendered)
             )
             continue
@@ -1224,7 +1227,7 @@ def parse_roundtrip_failures(
         if expected_entry is None:
             if parsed != instance:
                 failures.append(
-                    "%s renders %r but parse_type answers %r -- neither "
+                    "%s renders %r but the introspection parser answers %r -- neither "
                     "the declaration nor a documented widening"
                     % (cls.__name__, rendered, parsed)
                 )
@@ -1236,7 +1239,7 @@ def parse_roundtrip_failures(
         if type(parsed).__name__ != expected:
             failures.append(
                 "%s renders %r; the documented answer is %s but "
-                "parse_type answers %s"
+                "the introspection parser answers %s"
                 % (cls.__name__, rendered, expected, type(parsed).__name__)
             )
             continue

@@ -101,7 +101,7 @@ class FirebirdTimeStampTzType(TimestampTzType):
     synonymous to their respective WITHOUT TIME ZONE data types"*) and rendering
     the generic concept with it would declare a column that silently drops the
     zone. The dialect names the unzoned concept as ``timestamptz``'s substitute in
-    ``substitute_data_types`` and reaches this class by its Firebird name instead.
+    ``suggest_substitute_types`` and reaches this class by its Firebird name instead.
     """
 
     name = "firebird_timestamptz"
@@ -178,10 +178,11 @@ class FirebirdDecFloatType(DecimalType):
     — and §3.12's ``scalar_datatype`` production spells it
     ``DECFLOAT [(dec_prec)]``. This constructor used to default to 16, which meant
     a bare ``FirebirdDecFloatType()`` declared a *different column* from the one
-    ``FirebirdDialect.parse_type("DECFLOAT")`` resolved to (34, and correctly so).
-    Two answers to "what does a bare ``DECFLOAT`` mean" on one backend is the same
-    defect as two answers to "what does ``DECFLOAT(16)`` mean", so the default
-    follows the documentation and ``parse_type`` and the constructor agree.
+    the backend's introspection parser resolved bare ``DECFLOAT`` to (34, and
+    correctly so). Two answers to "what does a bare ``DECFLOAT`` mean" on one
+    backend is the same defect as two answers to "what does ``DECFLOAT(16)``
+    mean", so the default follows the documentation and the parser and the
+    constructor agree.
     """
 
     name = "firebird_decfloat"

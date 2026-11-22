@@ -31,7 +31,7 @@ class FirebirdArrayMixin:
         Being unable to *render* such a column from :class:`ArrayType` is a
         separate, honest gap: Firebird's grammar requires the bounds as part of
         the type and ``ArrayType`` carries only a dimension count. See
-        ``FirebirdTypeSupportMixin.substitute_data_types``.
+        ``FirebirdTypeSupportMixin.suggest_substitute_types``.
 
         Note what this does **not** say: ``supports_array_constructor()`` and
         ``supports_array_access()`` stay ``False`` because this backend's

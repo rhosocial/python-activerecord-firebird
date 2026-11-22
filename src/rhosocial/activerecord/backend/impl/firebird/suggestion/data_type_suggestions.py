@@ -64,6 +64,10 @@ from rhosocial.activerecord.backend.adapters import (
     Range,
     Vector,
 )
+from rhosocial.activerecord.backend.suggestion.definitions import (
+    DataTypeSuggestion,
+    ExtraDataTypeSuggestion,
+)
 from rhosocial.activerecord.backend.expression.types import (
     BlobType,
     DateType,
@@ -136,8 +140,12 @@ FIREBIRD_DATA_TYPE_SUGGESTIONS: Dict[Any, Optional[Any]] = {
 class FirebirdDataTypeSuggestionsMixin:
     """Firebird's answer to "what declaration does a bare field get here"."""
 
-    def suggested_data_types(self) -> Dict[Any, Optional[Any]]:
-        return dict(FIREBIRD_DATA_TYPE_SUGGESTIONS)
+    def suggest_data_types(self) -> DataTypeSuggestion:
+        return DataTypeSuggestion(table=dict(FIREBIRD_DATA_TYPE_SUGGESTIONS))
+
+    def suggest_extra_data_types(self) -> ExtraDataTypeSuggestion:
+        """No backend-owned extra data types."""
+        return ExtraDataTypeSuggestion(table={})
 
 
 __all__ = ["FIREBIRD_DATA_TYPE_SUGGESTIONS", "FirebirdDataTypeSuggestionsMixin"]

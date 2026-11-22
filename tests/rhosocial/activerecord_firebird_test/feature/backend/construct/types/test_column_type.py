@@ -32,7 +32,10 @@ from rhosocial.activerecord.backend.adapters import (
     Range,
     Vector,
 )
-from rhosocial.activerecord.backend.dialect.mixins import ColumnTypeMixin
+from rhosocial.activerecord.backend.suggestion.definitions import (
+    ColumnTypeSuggestion,
+    ExtraColumnTypeSuggestion,
+)
 from rhosocial.activerecord.backend.expression.column_types import (
     BinaryColumn,
     BitStringColumn,
@@ -132,7 +135,7 @@ class TestCompleteness:
     """Every protocol entry is answered, and every refusal is a decision."""
 
     def test_answers_every_entry_of_the_protocol_list(self, dialect):
-        assert set(dialect.suggested_column_types()) == set(COMMON_TYPES)
+        assert set(dialect.suggest_column_types().table) == set(COMMON_TYPES)
 
     @pytest.mark.parametrize("entry", COMMON_TYPES, ids=_ENTRY_IDS)
     def test_every_entry_is_answered_with_a_class_or_a_deliberate_none(
@@ -145,7 +148,7 @@ class TestCompleteness:
         key is here, so a hole would already have failed the test above; this one
         keeps the *value* honest as well.
         """
-        table = dialect.suggested_column_types()
+        table = dialect.suggest_column_types().table
         assert entry in table
         answer = table[entry]
         if answer is None:
@@ -159,7 +162,7 @@ class TestCompleteness:
         Enumerated rather than counted: an entry that drifts into a refusal is
         exactly the regression this assertion exists to name.
         """
-        table = dialect.suggested_column_types()
+        table = dialect.suggest_column_types().table
         assert {e for e, c in table.items() if c is None} == FIREBIRD_REFUSALS
         assert dialect.unsupported_column_entries == FIREBIRD_REFUSALS
 
@@ -182,14 +185,14 @@ class TestCompleteness:
         noticed and the branch written.
         """
         versions = ((2, 5, 0), (3, 0, 0), (4, 0, 0), (5, 0, 0), (6, 0, 0))
-        tables = [FirebirdDialect(version).suggested_column_types() for version in versions]
+        tables = [FirebirdDialect(version).suggest_column_types().table for version in versions]
         assert all(table == tables[0] for table in tables)
 
-    def test_suggested_column_types_returns_a_copy(self, dialect):
+    def test_suggest_column_types_returns_a_copy(self, dialect):
         """A caller walking the table cannot corrupt the next resolution."""
-        table = dialect.suggested_column_types()
+        table = dialect.suggest_column_types().table
         table.pop(str)
-        assert str in dialect.suggested_column_types()
+        assert str in dialect.suggest_column_types().table
 
     def test_the_extras_table_defaults_to_nothing(self, dialect):
         """Firebird models no Python type of its own beyond the common ones.
@@ -197,7 +200,7 @@ class TestCompleteness:
         The core default is ``{}``; overriding it to say the same thing would be
         a second place to keep in step.
         """
-        assert dialect.suggested_extra_column_types() == {}
+        assert dialect.suggest_extra_column_types().table == {}
 
 
 class TestComposition:
@@ -208,33 +211,32 @@ class TestComposition:
         assert isinstance(dialect, FirebirdColumnTypeMixin)
 
     def test_the_answer_is_the_firebird_one_not_an_inherited_stub(self):
-        """``ColumnTypeMixin`` supplies no table, so a mix-up would be loud.
+        """Core now declares only the protocol, so this mixin stands alone.
 
         The consequence of the composition is asserted through the method
         identity: were ``FirebirdColumnTypeMixin`` dropped from the base list,
-        ``suggested_column_types`` would resolve to core's raising default
-        instead of Firebird's table.
+        ``suggest_column_types`` would be missing from the dialect altogether
+        instead of resolving to Firebird's table.
         """
-        assert FirebirdColumnTypeMixin.__bases__ == (ColumnTypeMixin,)
+        assert FirebirdColumnTypeMixin.__bases__ == (object,)
         assert (
-            FirebirdDialect.suggested_column_types
-            is FirebirdColumnTypeMixin.suggested_column_types
+            FirebirdDialect.suggest_column_types
+            is FirebirdColumnTypeMixin.suggest_column_types
         )
 
-    def test_core_withholds_any_inherited_table(self):
-        """The rebuild's own ruling, restated against this backend's base.
+    def test_the_answer_is_a_suggestion_value_not_a_bare_dict(self):
+        """The rebuilt protocol returns value objects with a ``table`` field.
 
-        ``ColumnTypeMixin`` has no default table: an entry a dialect does not
-        answer is reported against the dialect's name, never filled in from a
-        core-side guess about a server core has never seen.
+        A consumer reads ``.table``; a bare dict would make every such consumer
+        fail at attribute access rather than at the missing answer.
         """
-
-        class Bare(ColumnTypeMixin):
-            pass
-
-        with pytest.raises(NotImplementedError):
-            Bare().suggested_column_types()
-        assert Bare().suggested_extra_column_types() == {}
+        bare = FirebirdColumnTypeMixin()
+        suggestion = bare.suggest_column_types()
+        assert isinstance(suggestion, ColumnTypeSuggestion)
+        assert isinstance(suggestion.table, dict)
+        extras = bare.suggest_extra_column_types()
+        assert isinstance(extras, ExtraColumnTypeSuggestion)
+        assert extras.table == {}
 
 
 class TestBaseline:
@@ -309,7 +311,7 @@ class TestRefusedEntries:
 
     @pytest.mark.parametrize("annotation", sorted(FIREBIRD_REFUSALS, key=lambda c: c.__name__))
     def test_the_table_answers_none(self, dialect, annotation):
-        assert dialect.suggested_column_types()[annotation] is None
+        assert dialect.suggest_column_types().table[annotation] is None
 
     def test_dict_fails_at_definition_time_naming_UseColumnType(self, dialect):
         """The consequence, asserted rather than documented.
@@ -369,6 +371,6 @@ class TestEscapeHatch:
         renderable. That is recorded in ``mixins/column_type.py`` rather than
         papered over by answering a column class the server cannot serve.
         """
-        assert dialect.suggested_column_types()[dict] is None
+        assert dialect.suggest_column_types().table[dict] is None
         assert hasattr(JSONColumn, "json_path")
         assert hasattr(JSONColumn, "json_value")

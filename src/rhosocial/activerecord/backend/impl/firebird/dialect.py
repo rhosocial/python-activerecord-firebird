@@ -128,6 +128,7 @@ from rhosocial.activerecord.backend.dialect.mixins import (
     DateTimeMixin,
     DQLMixin,
     DMLMixin,
+    ColumnAttributeMixin,
     DDLColumnMixin,
     UserDefinedTypeMixin,
     TransactionControlMixin,
@@ -309,6 +310,7 @@ class FirebirdDialect(
     FirebirdDMLOperationMixin,  # Must be before DMLMixin
     FirebirdTableMixin,         # Before DDLColumnMixin and before TableMixin
     FirebirdCommentMixin,       # Must be before TableMixin (supports_comment_on/format_comment_on_statement)
+    ColumnAttributeMixin,       # Supplies format_column_attribute, which DDLColumnMixin calls
     DDLColumnMixin,
     UserDefinedTypeMixin,
     TransactionControlMixin,
@@ -522,7 +524,7 @@ class FirebirdDialect(
     # (dict, the container family) are the reason the split matters here.
     FirebirdColumnTypeMixin,
     # The suggested storage declarations -- the DDL half of the same answer. It
-    # has to precede FirebirdTypeSupportMixin: `suggested_data_types` is also
+    # has to precede FirebirdTypeSupportMixin: `suggest_data_types` is also
     # defined by the core DataTypeMixin that mixin inherits, and a base listed
     # later never wins over one listed earlier.
     FirebirdDataTypeSuggestionsMixin,

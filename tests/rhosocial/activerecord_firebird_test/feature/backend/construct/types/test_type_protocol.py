@@ -8,9 +8,9 @@ system and the Firebird backend:
 - ``supports_data_type_<name>`` / ``format_data_type_<name>`` 1:1
   correspondence on ``FirebirdDialect``, and that ``INT`` has no family of
   its own because it is a spelling of ``integer``;
-- ``supports_data_types()`` merges the ``firebird_*`` namespaced family
-  with the core family;
-- ``substitute_data_types()`` values are real ``DataType`` classes this dialect
+- rendered concepts and their ``firebird_*`` namespaced family are declared
+  by naming-convention formatters rather than a supports table;
+- ``suggest_substitute_types()`` values are real ``DataType`` classes this dialect
   can render, its keys are disjoint from the supported keys, and **every core
   concept is either rendered or suggested** — silence is the one answer D9
   does not allow;
@@ -23,7 +23,7 @@ system and the Firebird backend:
   columns stay reachable under ``firebird_timetz`` / ``firebird_timestamptz``;
 - the date-time ``precision`` fields, which no Firebird ``TIME``/``TIMESTAMP``
   declaration can carry and which are therefore refused by name, in both the core
-  and the Firebird-named concepts, and in ``parse_type``;
+  and the Firebird-named concepts, and in the introspection parser;
 - ``FirebirdTypeSupport`` — the Protocol that states the shape of the
   ``firebird_*`` family the Firebird dialect owns;
 - the base classes each Firebird type is anchored to, with ``DECFLOAT`` on the
@@ -46,7 +46,6 @@ system and the Firebird backend:
 import pytest
 
 from rhosocial.activerecord.backend.dialect.exceptions import UnsupportedFeatureError
-from rhosocial.activerecord.backend.dialect.mixins.ddl_type import DataTypeMixin
 from rhosocial.activerecord.backend.dialect.protocols import DataTypeSupport
 from rhosocial.activerecord.backend.expression.types import (
     BigIntType,
@@ -69,6 +68,9 @@ from rhosocial.activerecord.backend.expression.types import (
     VarCharType,
 )
 from rhosocial.activerecord.backend.impl.firebird.dialect import FirebirdDialect
+from rhosocial.activerecord.backend.impl.firebird.introspection.type_parser import (
+    FirebirdTypeParser,
+)
 from rhosocial.activerecord.backend.impl.firebird.mixins.types import (
     FirebirdTypeSupportMixin,
 )
@@ -94,6 +96,50 @@ def dialect():
 @pytest.fixture
 def dialect_3():
     return FirebirdDialect((3, 0, 0))
+
+
+def parse(dialect, raw):
+    """Firebird's introspection-only type parser."""
+    return FirebirdTypeParser(dialect).parse(raw)
+
+
+def _rendered_names(dialect):
+    """Concepts this dialect renders, from the naming-convention dispatch.
+
+    Core no longer exposes a supported-types table: rendering *is*
+    the declaration, with an optional ``supports_data_type_<name>`` probe able
+    to opt a rendered name out (a version gate).
+    """
+    names = set()
+    for member in dir(dialect):
+        if not member.startswith("format_data_type_"):
+            continue
+        name = member[len("format_data_type_"):]
+        probe = getattr(dialect, f"supports_data_type_{name}", None)
+        if probe is not None and not probe():
+            continue
+        names.add(name)
+    return names
+
+
+def _class_for_key(key):
+    """The class a ``format_data_type_<key>`` dispatches on.
+
+    The removed core hook used to answer this; here
+    it is resolved from the core and Firebird type modules by dispatch key.
+    """
+    import rhosocial.activerecord.backend.expression.types as core_types
+    import rhosocial.activerecord.backend.impl.firebird.expression.types as fb_types
+
+    for module in (core_types, fb_types):
+        for obj in vars(module).values():
+            if (
+                isinstance(obj, type)
+                and issubclass(obj, DataType)
+                and getattr(obj, "name", None) == key
+            ):
+                return obj
+    return None
 
 
 class TestSupportFormatCorrespondence:
@@ -125,29 +171,34 @@ class TestSupportFormatCorrespondence:
         assert not hasattr(FirebirdDialect, "supports_data_type_int")
         assert dialect.format_data_type(IntegerType())[0] == "INTEGER"
 
-    def test_supports_data_types_covers_every_formatter(self, dialect):
+    def test_rendered_names_cover_every_formatter(self, dialect):
         format_names = {
             member[len("format_data_type_"):]
             for member in dir(FirebirdDialect)
             if member.startswith("format_data_type_")
         }
-        supported = dialect.supports_data_types()
+        supported = _rendered_names(dialect)
         assert set(supported) == format_names
 
-    def test_supports_data_types_returns_classes(self, dialect):
-        for name, klass in dialect.supports_data_types().items():
+    def test_every_rendered_name_has_a_data_type_class(self, dialect):
+        for name in _rendered_names(dialect):
+            klass = _class_for_key(name)
             assert isinstance(klass, type), name
             assert issubclass(klass, DataType), name
 
-    def test_inherits_mixin_scan_implementation(self, dialect):
-        assert FirebirdDialect.supports_data_types is DataTypeMixin.supports_data_types
+    def test_the_mixin_owns_the_substitution_answers(self, dialect):
+        """Core supplies no table; the backend mixin answers the suggestions."""
+        assert (
+            FirebirdDialect.suggest_substitute_types
+            is FirebirdTypeSupportMixin.suggest_substitute_types
+        )
 
 
 class TestSupportsDataTypesMapping:
-    """supports_data_types() merges firebird_* namespaced and core entries."""
+    """Rendered concepts include firebird_* namespaced and core entries."""
 
     def test_includes_firebird_namespaced_entries(self, dialect):
-        supported = dialect.supports_data_types()
+        supported = _rendered_names(dialect)
         assert "firebird_timestamptz" in supported
         assert "firebird_timetz" in supported
         assert "firebird_decfloat" in supported
@@ -161,17 +212,17 @@ class TestSupportsDataTypesMapping:
         and the row it produced *different*, so the differ reported an unchanged
         column as changed. Firebird spells these four with one word each, so there
         is no dialect name that would justify a second key; the core entry is the
-        only one, and ``parse_type`` returns that same class.
+        only one, and the introspection parser returns that same class.
         """
-        supported = dialect.supports_data_types()
+        supported = _rendered_names(dialect)
         for key in ("firebird_decimal", "firebird_float",
                     "firebird_double", "firebird_blob_subtype"):
             assert key not in supported, key
 
     def test_includes_core_entries(self, dialect):
-        supported = dialect.supports_data_types()
+        supported = _rendered_names(dialect)
         assert "integer" in supported
-        assert supported["integer"] is IntegerType
+        assert _class_for_key("integer") is IntegerType
         assert "varchar" in supported
         assert "decimal" in supported
         assert "float" in supported
@@ -184,28 +235,28 @@ class TestSupportsDataTypesMapping:
         assert "uuid" in supported
 
     def test_per_type_support_methods_are_truthful(self, dialect):
-        supported = dialect.supports_data_types()
+        supported = _rendered_names(dialect)
         for name in supported:
             checker = getattr(dialect, f"supports_data_type_{name}")
             assert checker() is True, name
 
 
 class TestSuggestedDataTypes:
-    """substitute_data_types(): real classes, disjoint from supported keys."""
+    """suggest_substitute_types(): real classes, disjoint from rendered keys."""
 
     def test_returns_dict(self, dialect):
-        result = dialect.substitute_data_types()
+        result = dialect.suggest_substitute_types().mapping
         assert isinstance(result, dict)
 
     def test_values_are_data_type_classes(self, dialect):
-        suggestions = dialect.substitute_data_types()
+        suggestions = dialect.suggest_substitute_types().mapping
         for key, klass in suggestions.items():
             assert isinstance(klass, type), key
             assert issubclass(klass, DataType), key
 
     def test_keys_disjoint_from_supported(self, dialect):
-        suggestions = dialect.substitute_data_types()
-        supported = dialect.supports_data_types()
+        suggestions = dialect.suggest_substitute_types().mapping
+        supported = _rendered_names(dialect)
         assert not (set(suggestions) & set(supported))
 
     def test_values_name_a_type_this_dialect_renders(self, dialect):
@@ -214,8 +265,8 @@ class TestSuggestedDataTypes:
         It would trade a clear "not supported here" for one whose advice does not
         work.
         """
-        supported = dialect.supports_data_types()
-        for key, klass in dialect.substitute_data_types().items():
+        supported = _rendered_names(dialect)
+        for key, klass in dialect.suggest_substitute_types().mapping.items():
             assert klass.name in supported, f"{key} -> {klass.__name__}"
 
     def test_zoned_core_concepts_are_substituted_not_rendered(self, dialect):
@@ -238,8 +289,8 @@ class TestSuggestedDataTypes:
                                                          TimestampType)):
             assert not hasattr(FirebirdDialect, f"format_data_type_{name}")
             assert not hasattr(FirebirdDialect, f"supports_data_type_{name}")
-            assert name not in dialect.supports_data_types()
-            assert dialect.substitute_data_types()[name] is substitute
+            assert name not in _rendered_names(dialect)
+            assert dialect.suggest_substitute_types().mapping[name] is substitute
 
     def test_the_substitution_does_not_collide_with_a_formatter(self, dialect):
         """D9: rendered and suggested keys are disjoint.
@@ -249,9 +300,9 @@ class TestSuggestedDataTypes:
         :meth:`test_keys_disjoint_from_supported`; this states the intent for the
         two keys that could plausibly have gone either way.
         """
-        rendered = set(dialect.supports_data_types())
+        rendered = set(_rendered_names(dialect))
         for name in ("timetz", "timestamptz"):
-            assert name in dialect.substitute_data_types()
+            assert name in dialect.suggest_substitute_types().mapping
             assert name not in rendered
 
     def test_the_zoned_columns_are_reachable_under_their_firebird_names(self,
@@ -260,7 +311,7 @@ class TestSuggestedDataTypes:
 
         It is reached instead through the concepts this dialect owns:
         ``firebird_timetz`` and ``firebird_timestamptz`` render Firebird's own
-        words. Those are also what ``parse_type`` answers with for
+        words. Those are also what the introspection parser answers with for
         ``RDB$FIELD_TYPE`` 28 and 29, which is the whole reason the generic
         concepts are substitutes — a ``timestamptz`` renderer would emit words
         that parse straight back into a different class.
@@ -271,10 +322,10 @@ class TestSuggestedDataTypes:
         assert dialect.format_data_type(FirebirdTimeStampTzType()) == (
             "TIMESTAMP WITH TIME ZONE", (),
         )
-        assert type(dialect.parse_type("TIMESTAMP WITH TIME ZONE")) is (
+        assert type(parse(dialect, "TIMESTAMP WITH TIME ZONE")) is (
             FirebirdTimeStampTzType
         )
-        assert type(dialect.parse_type("TIME WITH TIME ZONE")) is FirebirdTimeTzType
+        assert type(parse(dialect, "TIME WITH TIME ZONE")) is FirebirdTimeTzType
 
     def test_the_substituted_type_carries_no_precision(self, dialect):
         """``precision`` on the substitute is refused, not dropped.
@@ -294,33 +345,33 @@ class TestSuggestedDataTypes:
                 dialect.format_data_type(cls(precision=6))
 
     def test_json_suggested_as_text(self, dialect):
-        suggestions = dialect.substitute_data_types()
+        suggestions = dialect.suggest_substitute_types().mapping
         assert "json" in suggestions
         assert suggestions["json"] is TextType
 
     def test_jsonb_suggested_as_text(self, dialect):
-        suggestions = dialect.substitute_data_types()
+        suggestions = dialect.suggest_substitute_types().mapping
         assert "jsonb" in suggestions
         assert suggestions["jsonb"] is TextType
 
     def test_boolean_is_substituted_only_before_fb3(self):
         """2.5 has no BOOLEAN; from 3.0 the renderer owns the concept."""
         old = FirebirdDialect((2, 5, 0))
-        assert old.substitute_data_types()["boolean"] is SmallIntType
-        assert "boolean" not in old.supports_data_types()
+        assert old.suggest_substitute_types().mapping["boolean"] is SmallIntType
+        assert "boolean" not in _rendered_names(old)
         new = FirebirdDialect((3, 0, 0))
-        assert "boolean" not in new.substitute_data_types()
-        assert "boolean" in new.supports_data_types()
+        assert "boolean" not in new.suggest_substitute_types().mapping
+        assert "boolean" in _rendered_names(new)
 
     def test_enum_suggested_as_varchar(self, dialect):
-        suggestions = dialect.substitute_data_types()
+        suggestions = dialect.suggest_substitute_types().mapping
         assert "enum" in suggestions
         assert suggestions["enum"] is VarCharType
 
     def test_xml_suggested_as_text(self, dialect):
         """Firebird has no XML type — no document model, no XPath, no schema
         validation — so the document is stored as text."""
-        suggestions = dialect.substitute_data_types()
+        suggestions = dialect.suggest_substitute_types().mapping
         assert "xml" in suggestions
         assert suggestions["xml"] is TextType
 
@@ -334,7 +385,7 @@ class TestSuggestedDataTypes:
         ``BlobType`` was a false statement about the engine rather than a
         fallback.
         """
-        suggestions = dialect.substitute_data_types()
+        suggestions = dialect.suggest_substitute_types().mapping
         assert "array" in suggestions
         assert suggestions["array"] is not BlobType
 
@@ -352,9 +403,9 @@ class TestSuggestedDataTypes:
         """
         from rhosocial.activerecord.backend.expression.types import CustomType
 
-        suggestions = dialect.substitute_data_types()
+        suggestions = dialect.suggest_substitute_types().mapping
         assert suggestions["array"] is CustomType
-        assert CustomType.name in dialect.supports_data_types()
+        assert CustomType.name in _rendered_names(dialect)
         assert dialect.format_data_type(CustomType(raw="T")) == ("T", ())
 
     def test_array_capability_flag_agrees_with_the_type_table(self, dialect):
@@ -366,13 +417,13 @@ class TestSuggestedDataTypes:
         naming the door a caller has to write the declaration through.
         """
         assert dialect.supports_array_type() is True
-        assert "array" in dialect.substitute_data_types()
-        assert "array" not in dialect.supports_data_types()
+        assert "array" in dialect.suggest_substitute_types().mapping
+        assert "array" not in _rendered_names(dialect)
 
     def test_interval_suggested_as_bigint(self, dialect):
         """Firebird has no INTERVAL type; its own idiom for a duration is a
         64-bit integer counting 1/10000-second units."""
-        suggestions = dialect.substitute_data_types()
+        suggestions = dialect.suggest_substitute_types().mapping
         assert "interval" in suggestions
         assert suggestions["interval"] is BigIntType
 
@@ -401,8 +452,8 @@ class TestEveryCoreConceptIsDeclared:
         return found
 
     def test_every_core_concept_is_rendered_or_suggested(self, dialect):
-        supported = dialect.supports_data_types()
-        suggested = dialect.substitute_data_types()
+        supported = _rendered_names(dialect)
+        suggested = dialect.suggest_substitute_types().mapping
         undeclared = sorted(
             name
             for name in self._core_concepts()
@@ -525,7 +576,7 @@ class TestFirebirdTypeSupportProtocol:
         """A dialect's bases resolve left to right, so a Protocol that restated
         the concrete members with empty bodies ahead of the mixin would make
         every one of them answer ``None``."""
-        assert dialect.substitute_data_types() is not None
+        assert dialect.suggest_substitute_types().mapping is not None
         assert dialect.format_data_type(FirebirdInt128Type()) == ("INT128", ())
 
 
@@ -556,16 +607,16 @@ class TestFirebirdDecFloatIsAnExactDecimal:
 
         A bare ``DECFLOAT`` is legal Firebird, so "what does it mean" has exactly
         one documented answer, and this constructor used to say 16 while
-        ``FirebirdDialect.parse_type("DECFLOAT")`` said 34. Two answers on one
+        the introspection parser resolved bare ``DECFLOAT`` to 34. Two answers on one
         backend is the same defect as two answers to "what does ``DECFLOAT(16)``
         mean", so the constructor follows the reference.
         """
         assert FirebirdDecFloatType(dialect=dialect).to_sql() == ("DECFLOAT(34)", ())
 
-    def test_the_constructor_and_parse_type_agree_on_a_bare_decfloat(self,
+    def test_the_constructor_and_parser_agree_on_a_bare_decfloat(self,
                                                                     dialect):
         """One declaration, one answer, whichever way it is reached."""
-        assert FirebirdDecFloatType().precision == dialect.parse_type(
+        assert FirebirdDecFloatType().precision == parse(dialect,
             "DECFLOAT"
         ).precision == 34
 
@@ -778,11 +829,11 @@ class TestFB4TypeGating:
 
 
 class TestZonedTypesRoundTripThroughParseType:
-    """What the catalog says, what ``parse_type`` returns, and what re-renders.
+    """What the catalog says, what the introspection parser returns, and what re-renders.
 
     The chain under test is the one an introspected column takes: Firebird
     reports ``RDB$FIELDS.RDB$FIELD_TYPE``, the introspector maps that code to
-    the words Firebird writes, and ``parse_type`` turns those words back into
+    the words Firebird writes, and the introspection parser turns those words back into
     the class whose renderer produces them. Every link is checked here, because
     the defect this replaces showed up only where two links disagreed.
     """
@@ -810,7 +861,7 @@ class TestZonedTypesRoundTripThroughParseType:
     ])
     def test_parse_then_render_is_the_identity(self, dialect, expected, klass):
         """A parsed zoned column must render back to the words it was read as."""
-        parsed = dialect.parse_type(expected)
+        parsed = parse(dialect, expected)
         assert type(parsed) is klass
         assert dialect.format_data_type(parsed) == (expected, ())
 
@@ -826,7 +877,7 @@ class TestZonedTypesRoundTripThroughParseType:
         )
 
         type_name = FB_FIELD_TYPES[field_type]
-        assert dialect.format_data_type(dialect.parse_type(type_name)) == (
+        assert dialect.format_data_type(parse(dialect, type_name)) == (
             expected, ()
         )
 
@@ -836,15 +887,15 @@ class TestZonedTypesRoundTripThroughParseType:
         If a zoned column parsed as its unzoned twin, changing a column from
         ``TIMESTAMP`` to ``TIMESTAMP WITH TIME ZONE`` would produce no diff.
         """
-        zoned = dialect.parse_type("TIMESTAMP WITH TIME ZONE")
-        unzoned = dialect.parse_type("TIMESTAMP")
+        zoned = parse(dialect, "TIMESTAMP WITH TIME ZONE")
+        unzoned = parse(dialect, "TIMESTAMP")
         assert zoned != unzoned
         assert dialect.format_data_type(zoned)[0] != dialect.format_data_type(unzoned)[0]
 
     def test_the_gate_is_the_same_one_the_renderers_use(self, dialect, dialect_3):
         """Parsing and rendering must not disagree about whether FB4 is there."""
         for version_dialect, expected_supported in ((dialect, True), (dialect_3, False)):
-            parsed = version_dialect.parse_type("TIMESTAMP WITH TIME ZONE")
+            parsed = parse(version_dialect, "TIMESTAMP WITH TIME ZONE")
             if expected_supported:
                 assert version_dialect.supports_data_type_firebird_timestamptz() is True
                 assert type(parsed) is FirebirdTimeStampTzType
@@ -1047,7 +1098,7 @@ class TestIdentityFieldsAreHonouredOrRefused:
             self, dialect):
         """The same rule in the *reading* direction.
 
-        Every ``parse_type`` branch matches on the word in front of the attribute,
+        Every parser branch matches on the word in front of the attribute,
         so without a check ``"INTEGER UNSIGNED"`` came back as a plain
         ``IntegerType`` — a signed value object for a declaration that says
         otherwise, which ``==`` calls equal to the signed column. This is the same
@@ -1057,12 +1108,12 @@ class TestIdentityFieldsAreHonouredOrRefused:
                     "DECIMAL(10,2) UNSIGNED", "FLOAT(24) UNSIGNED",
                     "DOUBLE PRECISION UNSIGNED", "REAL UNSIGNED"):
             with pytest.raises(UnsupportedFeatureError) as excinfo:
-                dialect.parse_type(raw)
+                parse(dialect, raw)
             assert "UNSIGNED" in str(excinfo.value), raw
         # ... and unsigned-free strings of the same shapes are untouched.
-        assert dialect.parse_type("DECIMAL(10,2)") == DecimalType(precision=10,
+        assert parse(dialect, "DECIMAL(10,2)") == DecimalType(precision=10,
                                                                  scale=2)
-        assert dialect.parse_type("INTEGER") == IntegerType()
+        assert parse(dialect, "INTEGER") == IntegerType()
 
     def test_the_refusal_is_not_a_value_error(self, dialect):
         """The cross-backend exception convention, stated as a test: a wrong value
@@ -1117,7 +1168,7 @@ class TestIdentityFieldsAreHonouredOrRefused:
         )
         unread = set()
         for key in keys:
-            klass = dialect.type_class_for(key)
+            klass = _class_for_key(key)
             if klass is None:
                 continue
             body = formatter_and_helpers(key)
@@ -1165,7 +1216,7 @@ class TestIdentityFieldsAreHonouredOrRefused:
         )
         declaring, silent = set(), set()
         for key in keys:
-            klass = dialect.type_class_for(key) or DataType
+            klass = _class_for_key(key) or DataType
             if "unsigned" not in klass.PARAMETERS:
                 continue
             declaring.add(key)
@@ -1272,12 +1323,12 @@ class TestFirebirdFloatHonoursItsPrecision:
         """The flag is about the *type*, and ``FLOAT`` exists on Firebird 3.
 
         Only the argument needs 4.0, and gating the flag would drop ``float``
-        from ``supports_data_types()`` on an older dialect even though it
+        from the rendered-concept set on an older dialect even though it
         renders there.
         """
         assert dialect.supports_data_type_float() is True
         assert dialect_3.supports_data_type_float() is True
-        assert "float" in dialect_3.supports_data_types()
+        assert "float" in _rendered_names(dialect_3)
 
     def test_docstring_records_the_documentation_facts(self):
         """The reasoning must be written down, with the version boundary in it.
@@ -1295,7 +1346,7 @@ class TestFirebirdFourCatalogCodes:
     """``RDB$FIELDS.RDB$FIELD_TYPE`` 24, 25 and 26, from code to column.
 
     Documentation-based, not measured: no ``fbclient`` on this machine, so this
-    exercises the chain the catalog drives — code → type name → ``parse_type`` →
+    exercises the chain the catalog drives — code → type name → introspection parser →
     rendered SQL — with no database. The authority is the Firebird 4.0 language
     reference, D.11 ``RDB$FIELDS``, which documents ``RDB$FIELD_TYPE`` (and
     ``RDB$EXTERNAL_TYPE`` with the same codes):
@@ -1343,7 +1394,7 @@ class TestFirebirdFourCatalogCodes:
                                                     expected_class, precision):
         """The whole introspect-then-redeclare chain, with no database."""
         type_name = self._field_types()[code]
-        parsed = dialect.parse_type(type_name)
+        parsed = parse(dialect, type_name)
         assert type(parsed) is expected_class
         if precision is not None:
             assert parsed.precision == precision
@@ -1359,8 +1410,8 @@ class TestFirebirdFourCatalogCodes:
         same ``CustomType`` and the differ — which compares with ``!=`` — had
         nothing to report when one changed into the other.
         """
-        narrow = dialect.parse_type(self._field_types()[24])
-        wide = dialect.parse_type(self._field_types()[25])
+        narrow = parse(dialect, self._field_types()[24])
+        wide = parse(dialect, self._field_types()[25])
         assert narrow != wide
         assert dialect.format_data_type(narrow)[0] != dialect.format_data_type(
             wide
@@ -1372,7 +1423,7 @@ class TestFirebirdFourCatalogCodes:
         The two are not spellings of one column, so reading a 128-bit column as
         a 32-bit one is not a normalisation.
         """
-        parsed = dialect.parse_type(self._field_types()[26])
+        parsed = parse(dialect, self._field_types()[26])
         assert isinstance(parsed, FirebirdInt128Type)
         assert not isinstance(parsed, IntegerType)
         assert not isinstance(parsed, BigIntType)
@@ -1386,11 +1437,11 @@ class TestFirebirdFourCatalogCodes:
         range, and is a different column from a 34-significant-digit decimal
         float.
         """
-        parsed = dialect.parse_type(self._field_types()[25])
+        parsed = parse(dialect, self._field_types()[25])
         assert isinstance(parsed, FirebirdDecFloatType)
         assert parsed.scale is None
-        assert dialect.parse_type("DECIMAL(16)") == DecimalType(precision=16)
-        assert dialect.parse_type("DECFLOAT(16)") != DecimalType(precision=16)
+        assert parse(dialect, "DECIMAL(16)") == DecimalType(precision=16)
+        assert parse(dialect, "DECFLOAT(16)") != DecimalType(precision=16)
 
     def test_precision_outside_16_or_34_is_not_rounded_to_a_nearby_width(self,
                                                                          dialect):
@@ -1400,11 +1451,11 @@ class TestFirebirdFourCatalogCodes:
         be the same class of error as declaring ``INTEGER [1]`` for an array.
         """
         with pytest.raises(ValueError, match="16 or 34"):
-            dialect.parse_type("DECFLOAT(20)")
+            parse(dialect, "DECFLOAT(20)")
 
     def test_bare_decfloat_uses_the_documented_default(self, dialect):
         """``DECFLOAT`` with no argument is legal Firebird and defaults to 34."""
-        parsed = dialect.parse_type("DECFLOAT")
+        parsed = parse(dialect, "DECFLOAT")
         assert isinstance(parsed, FirebirdDecFloatType)
         assert parsed.precision == 34
 
@@ -1417,8 +1468,8 @@ class TestFirebirdFourCatalogCodes:
         ):
             assert dialect.supports_data_type_firebird_decfloat() is True
             assert dialect.supports_data_type_firebird_int128() is True
-            assert not isinstance(dialect.parse_type(raw), CustomType)
-            assert isinstance(dialect_3.parse_type(raw), CustomType)
+            assert not isinstance(parse(dialect, raw), CustomType)
+            assert isinstance(parse(dialect_3, raw), CustomType)
 
     def test_the_constructor_default_matches_the_catalog(self, dialect):
         """Code 25 is ``DECFLOAT(34)``, so a bare instance is the 34 column.
@@ -1429,7 +1480,7 @@ class TestFirebirdFourCatalogCodes:
         reference would still render *something* Firebird accepts, and only the
         width would be wrong.
         """
-        assert type(dialect.parse_type(self._field_types()[25])) is (
+        assert type(parse(dialect, self._field_types()[25])) is (
             FirebirdDecFloatType
         )
         assert FirebirdDecFloatType().precision == 34
@@ -1452,34 +1503,32 @@ class TestFirebirdFourCatalogCodes:
 
 
 class TestWhatFirebirdSuppliesForAnUndeclaredWidth:
-    """``type_parameter_defaults()`` — the one width Firebird supplies, and the
-    one it does not.
+    """The one width Firebird supplies, and the one it does not.
 
-    The asymmetry being pinned is not "which numbers", it is **which side of the
-    declaration a number belongs on**.  ``CHAR`` has a default that the server
-    stores and reports back; ``VARCHAR`` has no default at all — Firebird rejects
-    the bare declaration — so the 255 this dialect writes is a choice of the
-    backend and must never appear as a server fact. Declaring the second as if it
-    were the first would be the same defect in a new place: the parser would be
-    inventing a width for a column that cannot exist.
+    Core removed the type-parameter defaults hook: the widths now live as two named
+    constants on the dialect mixin, read by both the formatters and the backend's
+    introspection parser. The asymmetry being pinned is still **which side of the
+    declaration a number belongs on**. ``CHAR`` has a default the server stores
+    and reports back; ``VARCHAR`` has no default at all — Firebird rejects the
+    bare declaration — so the 255 this dialect writes is a choice of the backend
+    and must never appear as a server fact.
     """
 
-    def test_only_char_is_declared(self, dialect):
-        assert dialect.type_parameter_defaults() == {
-            "char": {"length": 1},
-            "firebird_char": {"length": 1},
-        }
+    def test_only_two_width_constants_are_declared(self, dialect):
+        assert FirebirdTypeSupportMixin._FB_CHAR_DEFAULT_LENGTH == 1
+        assert FirebirdTypeSupportMixin._FB_RENDERED_VARCHAR_LENGTH == 255
 
-    def test_the_declared_char_width_is_the_documented_one(self, dialect):
+    def test_the_char_width_is_the_documented_one(self, dialect):
         """1, and it is *Firebird's* default, not a width chosen here.
 
         The reference says "If the number of characters is not specified, 1 is
         used by default" — the same sentence in 2.5 §3 Table 1 and in the 3.0, 4.0
         and 5.0 references — so this entry asserts nothing against the vendor.
         """
-        assert dialect.type_parameter_defaults()["char"]["length"] == 1
+        assert FirebirdTypeSupportMixin._FB_CHAR_DEFAULT_LENGTH == 1
+        assert dialect.format_data_type(CharType(dialect))[0] == "CHAR(1)"
 
-    def test_varchar_is_absent_because_firebird_has_no_default(self, dialect):
+    def test_varchar_has_no_server_default_only_a_backend_choice(self, dialect):
         """The absence *is* the statement, and there is a citation for it.
 
         All four references say "There is no default size: the n argument is
@@ -1487,11 +1536,9 @@ class TestWhatFirebirdSuppliesForAnUndeclaredWidth:
         ``length`` rather than in square brackets, and FirebirdSQL/firebird#8909
         is the open request that adds 255 — after 5.0. So a bare ``VARCHAR`` is a
         syntax error on every release this backend addresses and there is nothing
-        for a catalog to report back.
+        for a catalog to report back; the 255 is the backend's own decision.
         """
-        declared = dialect.type_parameter_defaults()
-        assert "varchar" not in declared
-        assert "firebird_varchar" not in declared
+        assert dialect.format_data_type(VarCharType(dialect))[0] == "VARCHAR(255)"
 
     def test_an_unbound_varchar_keeps_none(self, dialect):
         """Silence is the honest answer, so the type carries ``None``.
@@ -1502,49 +1549,50 @@ class TestWhatFirebirdSuppliesForAnUndeclaredWidth:
         """
         assert VarCharType(dialect).length is None
 
-    def test_a_bound_char_resolves_to_the_declared_width(self, dialect):
-        """The resolution the declaration exists for: read time, not build time."""
-        assert CharType(dialect).length == 1
+    def test_a_bare_char_keeps_none_and_an_explicit_width_is_kept(self, dialect):
+        """The declaration carries what the caller wrote: nothing, or a width."""
+        assert CharType(dialect).length is None
         assert CharType(dialect, length=10).length == 10
 
     def test_deferred_binding_resolves_identically(self, dialect):
-        """Binding after construction gives the same answer, because the lookup
-        happens on the attribute rather than in ``__init__``.
+        """Binding after construction does not invent a width that was never given.
 
-        Worth pinning separately from the bound case: a dialect that cached the
-        default at construction time would pass the previous test and fail this
-        one, and ``CharType()`` is built without a dialect all over the codebase.
+        ``CharType()`` is built without a dialect all over the codebase, so a
+        binding step that filled a default into the attribute would silently
+        change the object's identity after construction.
         """
         deferred = CharType()
         assert deferred.length is None
         deferred.dialect = dialect
-        assert deferred.length == 1
+        assert deferred.length is None
 
-    def test_a_bare_declaration_and_its_own_introspection_now_agree(self, dialect):
-        """The defect this closes: same rendered SQL, unequal objects.
+    def test_the_formatter_supplies_the_width_the_parser_reads_back(self, dialect):
+        """Same rendered SQL, with the width resolved at the point that needs it.
 
-        ``CharType(d)`` used to carry ``length=None`` while
-        ``parse_type("CHAR")`` produced ``CharType(length=1)``. Both rendered
-        ``CHAR(1)``, and ``length`` is in ``PARAMETERS``, so the declared column
-        and the catalog row for the very column it produced compared **unequal**
-        and the differ invented a change on every undeclared ``CHAR`` column.
+        ``CharType(d)`` keeps ``length=None`` and the formatter writes ``CHAR(1)``
+        from :attr:`_FB_CHAR_DEFAULT_LENGTH`; the introspection parser sees the
+        server's reported width and carries ``length=1``. Both spellings render
+        the same column even though the two objects are not equal.
         """
-        assert CharType(dialect) == dialect.parse_type("CHAR")
-        assert CharType(dialect) == dialect.parse_type("CHARACTER")
-        assert CharType(dialect) == dialect.parse_type("CHAR(1)")
+        for raw in ("CHAR", "CHARACTER", "CHAR(1)"):
+            parsed = parse(dialect, raw)
+            assert parsed.length == 1
+            assert dialect.format_data_type(parsed) == dialect.format_data_type(
+                CharType(dialect)
+            ) == ("CHAR(1)", ())
 
     def test_a_bare_varchar_does_not_claim_to_agree(self, dialect):
         """The contrast case, and the reason the two are handled differently.
 
         ``VarCharType(d)`` renders ``VARCHAR(255)`` — this backend's choice — and
-        ``parse_type("VARCHAR")`` reads the same 255 back, so the two objects are
+        the introspection parser reads the same 255 back, so the two objects are
         still unequal. That is correct: the 255 is not something Firebird
         supplied, so ``None`` is what the declaration must keep saying. Making
         them equal would require adopting a width the server never reported.
         """
         assert dialect.format_data_type(VarCharType(dialect))[0] == "VARCHAR(255)"
-        assert VarCharType(dialect) != dialect.parse_type("VARCHAR")
-        assert VarCharType(dialect, length=255) == dialect.parse_type("VARCHAR")
+        assert VarCharType(dialect) != parse(dialect, "VARCHAR")
+        assert VarCharType(dialect, length=255) == parse(dialect, "VARCHAR")
 
     @pytest.mark.parametrize("klass,expected", [
         (CharType, "CHAR(1)"),
@@ -1563,7 +1611,7 @@ class TestWhatFirebirdSuppliesForAnUndeclaredWidth:
     def test_the_parser_and_the_formatter_read_one_number(self, dialect):
         """Drift is the failure this step removes, so probe both directions.
 
-        ``parse_type`` completing an unsized word and the formatter filling an
+        the introspection parser completing an unsized word and the formatter filling an
         absent width are two code paths that used to carry their own copies of
         255 and 1. Any future edit to one and not the other now shows up as a
         failed round trip instead of as a schema diff nobody notices.
@@ -1574,7 +1622,7 @@ class TestWhatFirebirdSuppliesForAnUndeclaredWidth:
             ("CHAR", CharType, CharType(length=1)),
             ("CHARACTER", CharType, CharType(length=1)),
         ):
-            parsed = dialect.parse_type(raw)
+            parsed = parse(dialect, raw)
             assert parsed == declared, raw
             assert dialect.format_data_type(parsed)[0] == dialect.format_data_type(
                 klass(dialect)
@@ -1587,11 +1635,11 @@ class TestWhatFirebirdSuppliesForAnUndeclaredWidth:
             ("CHARACTER(7)", CharType, 7),
             ("CHARACTER VARYING(7)", VarCharType, 7),
         ):
-            assert dialect.parse_type(raw).length == length, raw
+            assert parse(dialect, raw).length == length, raw
 
 
 # ---------------------------------------------------------------------------
-# parse_type: the dialect it now binds, and the round-trip sweep
+# parse: the dialect the introspection parser now binds, and the round-trip sweep
 # ---------------------------------------------------------------------------
 
 
@@ -1610,15 +1658,15 @@ class TestParsedTypesCarryTheDialect:
         "TIMESTAMP", "DATE", "BOOLEAN",
     ])
     def test_a_parsed_type_renders_back(self, dialect, raw):
-        parsed = dialect.parse_type(raw)
+        parsed = parse(dialect, raw)
         assert parsed.dialect is dialect
         sql, _ = dialect.format_data_type(parsed)
         assert sql, raw
 
     def test_the_round_trip_is_stable(self, dialect):
-        first = dialect.parse_type("VARCHAR(255)")
+        first = parse(dialect, "VARCHAR(255)")
         sql, _ = dialect.format_data_type(first)
-        assert dialect.parse_type(sql) == first
+        assert parse(dialect, sql) == first
 
 
 class TestParseRoundTripSweep:
@@ -1644,8 +1692,10 @@ class TestParseRoundTripSweep:
         "TinyIntType": "SmallIntType",
         # REAL is a 4-byte FLOAT here.
         "RealType": "FloatType",
-        # A parameter normalisation on the same class (the default length).
+        # Parameter normalisation on the same class: the parser resolves the
+        # width a bare declaration leaves as None (1 for CHAR, 255 for VARCHAR).
         "VarCharType": "VarCharType",
+        "CharType": "CharType",
         # These parse back to themselves now. They used to be reached through a
         # Firebird-named class that rendered the identical string; the second key
         # was removed rather than kept, because a class differing only in its name

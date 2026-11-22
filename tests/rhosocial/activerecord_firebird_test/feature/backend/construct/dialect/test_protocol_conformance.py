@@ -9,9 +9,10 @@ This test ensures:
 3. Every generic protocol is classified into exactly one of the two lists
    (positive / negative), so no protocol silently escapes coverage.
 
-Only protocols defined in ``rhosocial.activerecord.backend.dialect.protocols``
-(the generic, backend-agnostic contract) are considered here. Firebird-specific
-protocols are covered elsewhere.
+Protocols defined in ``rhosocial.activerecord.backend.dialect.protocols``
+(the generic capability contract) and in
+``rhosocial.activerecord.backend.suggestion.protocols`` (the suggestion
+contract) are considered here. Firebird-specific protocols are covered elsewhere.
 """
 
 import inspect
@@ -24,6 +25,7 @@ elif sys.version_info >= (3, 12):
 
 import pytest
 from rhosocial.activerecord.backend.dialect import protocols as dialect_protocols
+from rhosocial.activerecord.backend.suggestion import protocols as suggestion_protocols
 from rhosocial.activerecord.backend.impl.firebird import dialect as firebird_dialect
 
 
@@ -72,14 +74,14 @@ def get_all_generic_protocols() -> dict:
 # dialect can render that object's name, not that it can create one -- the
 # capability switches answer that.
 FIREBIRD_PROTOCOLS = [
-    dialect_protocols.PartitionBuildSuggestionSupport,
-    dialect_protocols.PartitionTableDropSuggestionSupport,
-    dialect_protocols.PartitionTableAlterSuggestionSupport,
-    dialect_protocols.PartitionAddSuggestionSupport,
-    dialect_protocols.PartitionDropSuggestionSupport,
-    dialect_protocols.PartitionSplitSuggestionSupport,
-    dialect_protocols.PartitionMergeSuggestionSupport,
-    dialect_protocols.PartitionRetentionSuggestionSupport,
+    suggestion_protocols.PartitionBuildSuggestionSupport,
+    suggestion_protocols.PartitionTableDropSuggestionSupport,
+    suggestion_protocols.PartitionTableAlterSuggestionSupport,
+    suggestion_protocols.PartitionAddSuggestionSupport,
+    suggestion_protocols.PartitionDropSuggestionSupport,
+    suggestion_protocols.PartitionSplitSuggestionSupport,
+    suggestion_protocols.PartitionMergeSuggestionSupport,
+    suggestion_protocols.PartitionRetentionSuggestionSupport,
     dialect_protocols.AdvancedGroupingSupport,
     dialect_protocols.AlterDomainSupport,
     dialect_protocols.AlterSequenceSupport,
@@ -89,17 +91,31 @@ FIREBIRD_PROTOCOLS = [
     dialect_protocols.ArraySupport,
     dialect_protocols.AutoIncrementColumnSupport,
     dialect_protocols.DatabaseAssignedColumnSupport,
+    dialect_protocols.AsyncIntrospectionSupport,
+    dialect_protocols.DDLColumnSupport,
+    dialect_protocols.DMLSupport,
+    dialect_protocols.DQLSupport,
+    dialect_protocols.DatabaseNameSupport,
+    dialect_protocols.DateTimeSupport,
+    dialect_protocols.ExpressionSupport,
+    dialect_protocols.FunctionCallSupport,
+    dialect_protocols.LpadSupport,
+    dialect_protocols.PredicateSupport,
+    dialect_protocols.RelationSourceSupport,
+    dialect_protocols.RpadSupport,
+    dialect_protocols.SchemaNameSupport,
+    dialect_protocols.TrimSupport,
     dialect_protocols.CTESupport,
     dialect_protocols.CollationSupport,
     dialect_protocols.ColumnAttributeSupport,
     # The column-type table: `FirebirdColumnTypeMixin` answers
-    # `suggested_column_types()` for all twenty-four Python types -- five
+    # `suggest_column_types().table` for all twenty-four Python types -- five
     # of them deliberately `None`, a decision the partition of the protocol
-    # still classifies as "implemented" -- and `suggested_extra_column_types()`
+    # still classifies as "implemented" -- and `suggest_extra_column_types().table`
     # with nothing of Firebird's own. The dialect composes the mixin, so the
     # table the model layer reads for a field's annotation is declared here
     # rather than left for another dialect to answer.
-    dialect_protocols.ColumnTypeSupport,
+    suggestion_protocols.ColumnTypeSuggestionSupport,
     dialect_protocols.CommentSupport,
     dialect_protocols.ConstraintSupport,
     dialect_protocols.CreateDomainSupport,
@@ -140,7 +156,7 @@ FIREBIRD_PROTOCOLS = [
     # with its switch False, so a caller learns the answer by name and the
     # formatter refuses rather than emitting a token the server rejects.
     dialect_protocols.IdentityColumnSupport,
-    dialect_protocols.IntegerAutoIncrementColumnSuggestionSupport,
+    suggestion_protocols.IntegerAutoIncrementColumnSuggestionSupport,
     dialect_protocols.GraphSupport,
     dialect_protocols.ILIKESupport,
     dialect_protocols.IntrospectionSupport,
@@ -208,6 +224,9 @@ FIREBIRD_NOT_IMPLEMENTED = [
     dialect_protocols.GraphTableSupport,
     # No PIVOT / UNPIVOT.
     dialect_protocols.PivotSupport,
+    # No SQL/PGQ property-graph table naming, and no REPEAT function.
+    dialect_protocols.PropertyGraphNameSupport,
+    dialect_protocols.RepeatSupport,
     # Naming for object kinds Firebird does not persist: no materialized views,
     # no foreign tables, no synonyms. Each of these protocols requires a
     # format_<kind>_object Firebird has no use for, and leaving it unimplemented

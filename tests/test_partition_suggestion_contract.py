@@ -10,7 +10,7 @@ dialect, so it runs with ``--noconftest`` if the root conftest lacks config.
 
 import pytest
 
-from rhosocial.activerecord.backend.dialect.protocols import (
+from rhosocial.activerecord.backend.suggestion.protocols import (
     PartitionAddSuggestionSupport,
     PartitionBuildSuggestionSupport,
     PartitionDropSuggestionSupport,
