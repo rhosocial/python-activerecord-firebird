@@ -305,9 +305,15 @@ class TestDeclarationMatchesReality:
         # The body lives in one core mixin; the *ObjectSupport protocol below it
         # only declares that the method exists. If the protocol's `...` ever won
         # the MRO, every object would render as None -- so this is asserted, not
-        # assumed.
+        # assumed. Core renamed these per-kind classes from ``*NameMixin`` to
+        # ``*ObjectMixin``; what matters is that the first owner is a concrete
+        # core mixin, not a protocol stub.
         owners = [k for k in type(dialect).__mro__ if formatter in vars(k)]
-        assert owners[0].__name__.endswith("NameMixin")
+        first_owner = owners[0]
+        assert first_owner.__module__.startswith(
+            "rhosocial.activerecord.backend.dialect.mixins"
+        )
+        assert first_owner.__name__.endswith("Mixin")
         assert getattr(dialect, formatter)(kind(dialect, "x"))[0].startswith('"')
 
 
