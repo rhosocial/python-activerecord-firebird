@@ -386,6 +386,7 @@ class FirebirdBackendMixin:
         from rhosocial.activerecord.backend.adapters import (
             BitString,
             Geometry,
+            IPAddress,
             MacAddress,
             Multirange,
             Range,
@@ -404,7 +405,7 @@ class FirebirdBackendMixin:
             (dt.time, dt.time), (Decimal, Decimal), (dict, str), (list, str),
             # Neutral families: Firebird carries them as VARCHAR / BLOB text.
             (Geometry, str), (Vector, str), (BitString, str),
-            (Range, str), (Multirange, str), (MacAddress, str),
+            (Range, str), (Multirange, str), (MacAddress, str), (IPAddress, str),
         ]
 
         suggestions = merge_adapter_suggestions(
