@@ -74,6 +74,9 @@ Documentation = "https://docs.python-activerecord.dev.rho.social"
 Repository = "https://github.com/rhosocial/python-activerecord-firebird.git"
 Issues = "https://github.com/rhosocial/python-activerecord-firebird/issues"
 
+[project.scripts]
+rhosocial-activerecord-firebird = "rhosocial.activerecord.backend.impl.firebird.__main__:main"
+
 [tool.setuptools.packages.find]
 where = ["src"]
 namespaces = true
