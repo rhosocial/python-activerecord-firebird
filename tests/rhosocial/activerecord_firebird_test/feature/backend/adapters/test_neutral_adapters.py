@@ -14,6 +14,7 @@ import pytest
 from rhosocial.activerecord.backend.adapters import (
     BitString,
     Geometry,
+    IPAddress,
     LineString,
     MacAddress,
     Multirange,
@@ -26,6 +27,7 @@ from rhosocial.activerecord.backend.errors import TypeConversionError
 from rhosocial.activerecord.backend.impl.firebird.adapters import (
     FirebirdBitStringAdapter,
     FirebirdGeometryAdapter,
+    FirebirdIPAddressAdapter,
     FirebirdMacAddressAdapter,
     FirebirdRangeAdapter,
     FirebirdVectorAdapter,
@@ -55,6 +57,11 @@ def range_adapter():
 @pytest.fixture
 def mac_adapter():
     return FirebirdMacAddressAdapter()
+
+
+@pytest.fixture
+def ip_adapter():
+    return FirebirdIPAddressAdapter()
 
 
 class TestGeometryAdapter:
@@ -250,6 +257,33 @@ class TestMacAddressAdapter:
             mac_adapter.from_database(b"\x01\x02\x03\x04", MacAddress)
 
 
+class TestIPAddressAdapter:
+    @pytest.mark.parametrize(
+        "text",
+        ["192.0.2.1", "2001:db8::1", "::1"],
+    )
+    def test_encode_is_canonical_text(self, ip_adapter, text):
+        assert ip_adapter.to_database(IPAddress.parse(text), str) == text
+
+    @pytest.mark.parametrize(
+        "text",
+        ["192.0.2.1", "2001:db8::1"],
+    )
+    def test_round_trip(self, ip_adapter, text):
+        original = IPAddress.parse(text)
+        stored = ip_adapter.to_database(original, str)
+        assert ip_adapter.from_database(stored, IPAddress) == original
+
+    def test_decode_accepts_packed_bytes(self, ip_adapter):
+        assert ip_adapter.from_database(b"\xc0\x00\x02\x01", IPAddress) == IPAddress.parse(
+            "192.0.2.1"
+        )
+
+    def test_invalid_text_wrapped(self, ip_adapter):
+        with pytest.raises(TypeConversionError):
+            ip_adapter.from_database("not-an-ip", IPAddress)
+
+
 @pytest.fixture(scope="module")
 def backend():
     from rhosocial.activerecord.backend.impl.firebird.backend import FirebirdBackend
@@ -268,6 +302,7 @@ class TestAdapterInventory:
             FirebirdBitStringAdapter,
             FirebirdRangeAdapter,
             FirebirdMacAddressAdapter,
+            FirebirdIPAddressAdapter,
         ],
     )
     def test_neutral_adapter_is_registered(self, backend, adapter_class):

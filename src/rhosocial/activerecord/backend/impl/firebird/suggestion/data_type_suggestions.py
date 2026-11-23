@@ -10,12 +10,13 @@ storage is answered here, as text.
 
 What Firebird has and what it does not decide the table:
 
-* **No interval, JSON, XML, range, bit-string or MAC-address type.** Those
-  concepts are carried as text. The text tier is ``BLOB SUB_TYPE TEXT``
+* **No interval, JSON, XML, range, bit-string, MAC-address or IP-address type.**
+  Those concepts are carried as text. The text tier is ``BLOB SUB_TYPE TEXT``
   (:class:`~...expression.types.TextType`), which is Firebird's unbounded
   character string, except where a bounded width is the point (a MAC address is
-  its canonical 17 characters, a UUID its 36-character text form, an enum its
-  label width) and a ``VARCHAR(n)`` records that width in the schema.
+  its canonical 17 characters, an IP address up to 45, a UUID its 36-character
+  text form, an enum its label width) and a ``VARCHAR(n)`` records that width in
+  the schema.
 * **No UUID type.** The framework's ``uuid.UUID`` is stored as its 36-character
   text form. This dialect *can* declare a ``UUID`` concept as
   ``CHAR(16) CHARACTER SET OCTETS`` -- :meth:`format_data_type_uuid` does --
@@ -24,7 +25,8 @@ What Firebird has and what it does not decide the table:
 * **``VARCHAR`` requires a width.** Firebird has no default size ("the n
   argument is mandatory" in every reference this backend addresses), so the
   text suggestions that use it state one: 255 for ``str`` and for an enum's
-  labels, 36 for a UUID, 17 for a MAC address.
+  labels, 36 for a UUID, 17 for a MAC address, 45 for an IP address (the
+  longest IPv6 text form, with a possible zone id).
 * **Bare ``DECIMAL`` has scale 0.** Firebird stores a declaration that names
   no scale as ``DECIMAL(9, 0)``, which would drop the fractional digits of a
   bare ``Decimal`` field. The suggestion states a precision and scale instead
@@ -34,6 +36,14 @@ What Firebird has and what it does not decide the table:
   and a precision of 4 is what this backend accepts; 3 would understate the
   column, 6 is refused. The declaration still renders the bare word
   ``TIMESTAMP``.
+* **An instant gets the zoned column, not a bare ``TIMESTAMP``.** Firebird's
+  bare ``TIMESTAMP`` is the *unzoned* type (§3.4), so it cannot carry an
+  ``AwareDatetime``'s offset. The suggestion names
+  :class:`FirebirdTimeStampTzType`, which renders ``TIMESTAMP WITH TIME ZONE``
+  (4.0+) and refuses a declared precision. The generic ``TimestampTzType`` is
+  substituted to the unzoned type on this dialect and would silently drop the
+  very zone the annotation declares; "precision follows the backend" means the
+  zoned column takes no precision argument here at all.
 * **``dict``/``list``/``tuple``/``set``/``frozenset`` become text.** The
   adapters write them as strings, so the column is ``BLOB SUB_TYPE TEXT``;
   Firebird has no JSON column for that text to live in.
@@ -57,8 +67,10 @@ import uuid
 from typing import Any, Dict, Optional
 
 from rhosocial.activerecord.backend.adapters import (
+    AwareDatetime,
     BitString,
     Geometry,
+    IPAddress,
     MacAddress,
     Multirange,
     Range,
@@ -82,6 +94,7 @@ from rhosocial.activerecord.backend.expression.types import (
 )
 
 from rhosocial.activerecord.backend.impl.firebird.expression.types import (
+    FirebirdTimeStampTzType,
     FirebirdVarCharType,
 )
 
@@ -107,6 +120,11 @@ FIREBIRD_DATA_TYPE_SUGGESTIONS: Dict[Any, Optional[Any]] = {
     bytearray: BlobType(),
     datetime.date: DateType(),
     datetime.time: TimeType(),
+    # An instant needs the zoned column: the bare ``TIMESTAMP`` below is the
+    # unzoned type and would discard the offset that makes this annotation
+    # distinct. Firebird's zoned concept is Firebird-named and takes no
+    # precision argument (the module docstring explains both decisions).
+    AwareDatetime: FirebirdTimeStampTzType(),
     # 1/10000 second: the fractional-digits ceiling this backend accepts and the
     # resolution a ``TIMESTAMP`` column stores.
     datetime.datetime: TimestampType(precision=4),
@@ -134,6 +152,8 @@ FIREBIRD_DATA_TYPE_SUGGESTIONS: Dict[Any, Optional[Any]] = {
     Range: TextType(),
     Multirange: TextType(),
     MacAddress: VarCharType(length=17),
+    # No native IP type; 45 covers the longest IPv6 text form, zone id included.
+    IPAddress: VarCharType(length=45),
 }
 
 

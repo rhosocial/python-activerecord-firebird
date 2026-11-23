@@ -9,6 +9,8 @@ from rhosocial.activerecord.backend.adapters import (
     BitStringAdapterBase,
     Geometry,
     GeometryAdapterBase,
+    IPAddress,
+    IPAddressAdapterBase,
     MacAddress,
     MacAddressAdapterBase,
     Multirange,
@@ -512,6 +514,30 @@ class FirebirdMacAddressAdapter(MacAddressAdapterBase):
         return MacAddress.parse(value)
 
 
+class FirebirdIPAddressAdapter(IPAddressAdapterBase):
+    """Canonical-text adapter for IP addresses.
+
+    Firebird has no IP address type; the value is stored as its canonical text
+    form (``192.0.2.1`` / ``2001:db8::1``) in a ``VARCHAR(45)`` column. The base
+    class supplies None handling, input coercion and conversion-error wrapping;
+    only the encode/decode hooks are Firebird-specific.
+    """
+
+    def __init__(self):
+        super().__init__()
+        self.register_type(IPAddress, str)
+
+    def _encode(
+        self, ip_addr: IPAddress, target_type: Type, options: Optional[Dict] = None
+    ) -> str:
+        return str(ip_addr)
+
+    def _decode(self, value: Any, options: Optional[Dict] = None) -> IPAddress:
+        if isinstance(value, bytearray):
+            value = bytes(value)
+        return IPAddress.parse(value)
+
+
 firebird_adapters = [
     (FirebirdBlobAdapter, bytes, bytes),
     (FirebirdTextBlobAdapter, str, str),
@@ -527,6 +553,7 @@ firebird_adapters = [
     (FirebirdBitStringAdapter, BitString, (bytes, str)),
     (FirebirdRangeAdapter, (Range, Multirange), str),
     (FirebirdMacAddressAdapter, MacAddress, str),
+    (FirebirdIPAddressAdapter, IPAddress, str),
 ]
 
 __all__ = [
@@ -535,5 +562,6 @@ __all__ = [
     "FirebirdDecimalAdapter", "FirebirdUUIDAdapter", "FirebirdJsonAdapter",
     "FirebirdGeometryAdapter", "FirebirdVectorAdapter", "FirebirdBitStringAdapter",
     "FirebirdRangeAdapter", "FirebirdMacAddressAdapter",
+    "FirebirdIPAddressAdapter",
     "firebird_adapters",
 ]

@@ -19,6 +19,7 @@ from rhosocial.activerecord.backend.impl.firebird.adapters import (
     FirebirdDatetimeAdapter,
     FirebirdDecimalAdapter,
     FirebirdGeometryAdapter,
+    FirebirdIPAddressAdapter,
     FirebirdJsonAdapter,
     FirebirdMacAddressAdapter,
     FirebirdRangeAdapter,
@@ -313,4 +314,5 @@ class TestAdapterRegistry:
             FirebirdBitStringAdapter,
             FirebirdRangeAdapter,
             FirebirdMacAddressAdapter,
+            FirebirdIPAddressAdapter,
         }

@@ -103,8 +103,10 @@ import uuid
 from typing import Any, Dict, Optional, Set, Type
 
 from rhosocial.activerecord.backend.adapters import (
+    AwareDatetime,
     BitString,
     Geometry,
+    IPAddress,
     MacAddress,
     Multirange,
     Range,
@@ -122,6 +124,7 @@ from rhosocial.activerecord.backend.expression.column_types import (
     GeometryColumn,
     IntegerColumn,
     IntervalColumn,
+    IPAddressColumn,
     MacAddressColumn,
     MultirangeColumn,
     NumericColumn,
@@ -134,8 +137,8 @@ from rhosocial.activerecord.backend.expression.column_types import (
 
 #: Firebird's full table: ``{common Python type: ColumnBase subclass or None}``.
 #:
-#: Every one of the framework's twenty-four entries is answered, so a caller
-#: reading this table is told a decision rather than finding a hole. The five
+#: Every framework-committed entry is answered, so a caller reading this table
+#: is told a decision rather than finding a hole. The five
 #: ``None`` answers are the two groups documented in the module docstring, and
 #: :attr:`FirebirdColumnTypeMixin.unsupported_column_entries` reads them back out
 #: of the table so the report cannot drift from the data.
@@ -162,16 +165,20 @@ FIREBIRD_COLUMN_TYPES: Dict[Any, Optional[Type[ColumnBase]]] = {
     bytes: BinaryColumn,
     bytearray: BinaryColumn,
     # Firebird's DATE carries a time component, and TIME / TIMESTAMP are
-    # exact temporal types; all four entries (date, time, datetime, and the
-    # same datetime with a tzinfo) answer the one temporal column class,
-    # whose operations -- comparison, EXTRACT, DATEADD/DATEDIFF -- are the
-    # same across the three. The zone is the one thing that differs and it
-    # is a storage fact: `TIMESTAMP` is Firebird's synonym for the WITHOUT
-    # TIME ZONE type (see FirebirdTypeSupportMixin._LOSSY_SUBSTITUTIONS),
-    # so a tz-aware field on this backend stores a local time unless the
-    # author declares FirebirdTimeStampTzType, which is 4.0+ anyway.
+    # exact temporal types; all five entries (date, time, datetime, the same
+    # datetime with a tzinfo, and the declared AwareDatetime) answer the one
+    # temporal column class, whose operations -- comparison, EXTRACT,
+    # DATEADD/DATEDIFF -- are the same across them. The zone is the one thing
+    # that differs and it is a storage fact: `TIMESTAMP` is Firebird's synonym
+    # for the WITHOUT TIME ZONE type (see the ``_LOSSY_SUBSTITUTIONS`` mapping
+    # in FirebirdTypeSupportMixin), so a tz-aware field on this backend stores
+    # a local time unless the author declares FirebirdTimeStampTzType, which is
+    # 4.0+ anyway.
     datetime.date: TimestampColumn,
     datetime.time: TimestampColumn,
+    # AwareDatetime precedes datetime.datetime so the exact-match step picks
+    # this entry before the subclass walk lands on the base type's entry.
+    AwareDatetime: TimestampColumn,
     datetime.datetime: TimestampColumn,
     # Firebird has no INTERVAL type; its own idiom for a duration is a
     # 64-bit count of 1/10000-second units, which is what the server's date
@@ -213,6 +220,7 @@ FIREBIRD_COLUMN_TYPES: Dict[Any, Optional[Type[ColumnBase]]] = {
     Range: RangeColumn,
     Multirange: MultirangeColumn,
     MacAddress: MacAddressColumn,
+    IPAddress: IPAddressColumn,
 }
 
 
@@ -224,8 +232,8 @@ class FirebirdColumnTypeMixin:
     side by side: that mixin answers *what the column is declared as*, this one
     answers *what the field's value can do*.
 
-    **Every one of the protocol's twenty-four entries is answered**, and an entry
-    this backend cannot express answers ``None`` rather than going missing: the
+    **Every framework-committed entry is answered**, and an entry this backend
+    cannot express answers ``None`` rather than going missing: the
     difference between "Firebird has nothing for a ``dict``" and "nobody filled
     that cell in" is the difference between a decision a caller can act on and a
     hole, and only the first survives a rewrite of this file.

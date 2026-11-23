@@ -109,7 +109,7 @@ FIREBIRD_PROTOCOLS = [
     dialect_protocols.CollationSupport,
     dialect_protocols.ColumnAttributeSupport,
     # The column-type table: `FirebirdColumnTypeMixin` answers
-    # `suggest_column_types().table` for all twenty-four Python types -- five
+    # `suggest_column_types().table` for every framework-committed type -- five
     # of them deliberately `None`, a decision the partition of the protocol
     # still classifies as "implemented" -- and `suggest_extra_column_types().table`
     # with nothing of Firebird's own. The dialect composes the mixin, so the

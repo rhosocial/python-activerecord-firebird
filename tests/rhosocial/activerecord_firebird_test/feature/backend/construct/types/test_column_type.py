@@ -25,8 +25,10 @@ from typing import Any, Tuple
 import pytest
 
 from rhosocial.activerecord.backend.adapters import (
+    AwareDatetime,
     BitString,
     Geometry,
+    IPAddress,
     MacAddress,
     Multirange,
     Range,
@@ -44,6 +46,7 @@ from rhosocial.activerecord.backend.expression.column_types import (
     GeometryColumn,
     IntegerColumn,
     IntervalColumn,
+    IPAddressColumn,
     JSONColumn,
     MacAddressColumn,
     MultirangeColumn,
@@ -77,6 +80,7 @@ COMMON_TYPES: Tuple[Any, ...] = (
     bytearray,
     datetime.date,
     datetime.time,
+    AwareDatetime,
     datetime.datetime,
     datetime.timedelta,
     uuid.UUID,
@@ -92,6 +96,7 @@ COMMON_TYPES: Tuple[Any, ...] = (
     Range,
     Multirange,
     MacAddress,
+    IPAddress,
 )
 
 #: The entries Firebird answers ``None`` for. Five, and every one of them is
@@ -100,8 +105,8 @@ FIREBIRD_REFUSALS = frozenset({dict, list, tuple, set, frozenset})
 
 _ENTRY_IDS = [getattr(entry, "__name__", str(entry)) for entry in COMMON_TYPES]
 
-#: The nineteen entries Firebird answers with a real column class -- the
-#: twenty-four, minus the five deliberate refusals.
+#: The entries Firebird answers with a real column class -- the framework
+#: list, minus the five deliberate refusals.
 _ANSWERED_TYPES = tuple(e for e in COMMON_TYPES if e not in FIREBIRD_REFUSALS)
 _ANSWERED_IDS = [getattr(entry, "__name__", str(entry)) for entry in _ANSWERED_TYPES]
 
@@ -254,6 +259,7 @@ class TestBaseline:
             (bytearray, BinaryColumn),
             (datetime.date, TimestampColumn),
             (datetime.time, TimestampColumn),
+            (AwareDatetime, TimestampColumn),
             (datetime.datetime, TimestampColumn),
             (datetime.timedelta, IntervalColumn),
             (uuid.UUID, UUIDColumn),
@@ -264,6 +270,7 @@ class TestBaseline:
             (Range, RangeColumn),
             (Multirange, MultirangeColumn),
             (MacAddress, MacAddressColumn),
+            (IPAddress, IPAddressColumn),
         ],
     )
     def test_entry_resolves_to_its_column_class(self, dialect, annotation, expected):
@@ -291,6 +298,16 @@ class TestBaseline:
         """
         assert COMMON_TYPES.index(bool) < COMMON_TYPES.index(int)
         assert resolve(dialect, bool) is not resolve(dialect, int)
+
+    def test_aware_datetime_precedes_datetime_in_the_declared_order(self):
+        """The exact-match step must see the subclass before the base entry.
+
+        ``AwareDatetime`` is a ``datetime`` subclass; if the base came first,
+        the subclass walk would land there and the declared entry would never
+        be reached. The order is part of the framework's contract, not a
+        local convenience of this table.
+        """
+        assert COMMON_TYPES.index(AwareDatetime) < COMMON_TYPES.index(datetime.datetime)
 
     def test_tz_aware_datetime_uses_the_temporal_class(self, dialect):
         """A ``datetime`` with a ``tzinfo`` normalises to the same entry.
