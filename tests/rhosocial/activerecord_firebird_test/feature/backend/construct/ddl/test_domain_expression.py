@@ -11,6 +11,7 @@ from rhosocial.activerecord.backend.dialect.protocols import (
 )
 from rhosocial.activerecord.backend.expression import Literal
 from rhosocial.activerecord.backend.expression.objects import Domain
+from rhosocial.activerecord.backend.expression.operators import RawSQLPredicate
 from rhosocial.activerecord.backend.expression.registry import ExpressionRegistry
 from rhosocial.activerecord.backend.expression.serialization import (
     default_registry,
@@ -96,6 +97,13 @@ for _firebird_class in _FIREBIRD_ARTIFACT_CLASSES:
 # with ``__str__ = str.__str__``, so a member travels as its own bare word and
 # the constructor normalizes it back -- there is nothing left to whitelist.
 del _firebird_class
+
+# ``RawSQLPredicate`` is carried by this backend's DOMAIN payload: the CHECK
+# condition is caller-vouched text, so the class opts out of the default
+# registry (an artifact must not choose its own SQL). The artifacts here are
+# trusted -- this test wrote them -- so the reader registers it explicitly,
+# which is the documented opt-in rather than a relaxation of the default.
+default_registry().register_node(RawSQLPredicate)
 
 
 def _check(dialect, condition, *, name=None):
