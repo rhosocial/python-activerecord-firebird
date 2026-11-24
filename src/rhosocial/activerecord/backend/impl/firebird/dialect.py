@@ -18,6 +18,9 @@ Firebird SQL dialect features and version support:
 from typing import Any, Optional, Tuple
 
 from rhosocial.activerecord.backend.dialect.base import SQLDialectBase
+from rhosocial.activerecord.backend.suggestion.protocols import (
+    CreateTableLayoutSuggestionSupport,
+)
 from rhosocial.activerecord.backend.dialect.protocols import (
     CollationSupport,
     CTESupport,
@@ -192,6 +195,7 @@ from .mixins import (
     FirebirdUnsupportedFeaturesMixin,
 )
 from .suggestion import (
+    FirebirdCreateTableLayoutSuggestionMixin,
     FirebirdDataTypeSuggestionsMixin,
     FirebirdStringConcatenationSuggestionMixin,
     FirebirdIntegerAutoIncrementColumnSuggestionMixin,
@@ -416,6 +420,14 @@ class FirebirdDialect(
     # Last of the implementation mixins, first of the declarations: see the
     # class comment for why SQLDialectBase cannot lead the list.
     SQLDialectBase,
+    # The create-table layout answer is assembled from this dialect's own
+    # inline-index / table-comment probes, so it must see their real
+    # implementations. Like the concatenation mixin below it inherits a
+    # runtime-checkable Protocol and therefore sits AFTER SQLDialectBase: listed
+    # first, the Protocol's ``__init__`` would intercept ``super().__init__()``
+    # and skip the base initialiser (losing ``strict_validation`` and
+    # ``_version``).
+    FirebirdCreateTableLayoutSuggestionMixin,
     # Concatenation is spelled with ``||`` on Firebird; the core formatter asks
     # this suggestion before choosing between the operator and a function name.
     # It must sit AFTER SQLDialectBase: it inherits a runtime-checkable Protocol,
@@ -541,6 +553,10 @@ class FirebirdDialect(
     # with empty bodies. Listed first it would shadow every one of the real
     # implementations and the dialect would answer None for all of them.
     FirebirdTypeSupport,
+    # Suggestion protocols are declared last: the backend mixin above already
+    # implements this one, and listing the Protocol after it keeps its empty
+    # stub from shadowing the real answer.
+    CreateTableLayoutSuggestionSupport,
 ):
     """Firebird dialect implementation that adapts to Firebird version.
 

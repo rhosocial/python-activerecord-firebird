@@ -3,10 +3,31 @@
 
 from rhosocial.activerecord.backend.suggestion.definitions import (
     ConcatenationFunctionSuggestion,
+    CreateTableLayoutSuggestion,
 )
 from rhosocial.activerecord.backend.suggestion.protocols import (
+    CreateTableLayoutSuggestionSupport,
     StringConcatenationSuggestionSupport,
 )
+
+
+class FirebirdCreateTableLayoutSuggestionMixin(CreateTableLayoutSuggestionSupport):
+    """Firebird renders neither inline indexes nor inline comments in CREATE TABLE.
+
+    The answer is assembled from the dialect's own capability probes so it cannot
+    drift from what the renderer actually accepts: both probes default to False
+    on Firebird, which yields a split layout with separate statements.
+    """
+
+    def suggest_create_table_layout(self) -> CreateTableLayoutSuggestion:
+        inline_index = self.supports_inline_index()
+        inline_comment = self.supports_table_comment()
+        return CreateTableLayoutSuggestion(
+            strategy="single" if inline_index and inline_comment else "split",
+            inline_index=inline_index,
+            inline_comment=inline_comment,
+            state="actions",
+        )
 
 
 class FirebirdStringConcatenationSuggestionMixin(StringConcatenationSuggestionSupport):
@@ -20,4 +41,7 @@ class FirebirdStringConcatenationSuggestionMixin(StringConcatenationSuggestionSu
         return ConcatenationFunctionSuggestion(function=None)
 
 
-__all__ = ["FirebirdStringConcatenationSuggestionMixin"]
+__all__ = [
+    "FirebirdCreateTableLayoutSuggestionMixin",
+    "FirebirdStringConcatenationSuggestionMixin",
+]
