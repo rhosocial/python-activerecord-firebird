@@ -13,8 +13,8 @@ from .general_suggestions import (
     FirebirdCreateTableLayoutSuggestionMixin,
     FirebirdStringConcatenationSuggestionMixin,
 )
-from .integer_auto_increment_column_suggestion import (
-    FirebirdIntegerAutoIncrementColumnSuggestionMixin,
+from .generated_value_suggestion import (
+    FirebirdGeneratedValueSuggestionMixin,
 )
 from .partition_add_suggestion import FirebirdPartitionAddSuggestionMixin
 from .partition_build_suggestion import FirebirdPartitionBuildSuggestionMixin
@@ -29,7 +29,7 @@ __all__ = [
     "FirebirdDataTypeSuggestionsMixin",
     "FirebirdCreateTableLayoutSuggestionMixin",
     "FirebirdStringConcatenationSuggestionMixin",
-    "FirebirdIntegerAutoIncrementColumnSuggestionMixin",
+    "FirebirdGeneratedValueSuggestionMixin",
     "FirebirdPartitionAddSuggestionMixin",
     "FirebirdPartitionBuildSuggestionMixin",
     "FirebirdPartitionDropSuggestionMixin",
