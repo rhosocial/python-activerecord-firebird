@@ -859,6 +859,14 @@ class FirebirdDialect(
     def supports_drop_column(self) -> bool:
         return True
 
+    def supports_alter_column_default(self) -> bool:
+        """Firebird spells defaults ``ALTER COLUMN c SET/DROP DEFAULT``."""
+        return True
+
+    def supports_alter_column_nullability(self) -> bool:
+        """Firebird spells nullability ``ALTER COLUMN c SET/DROP NOT NULL``."""
+        return True
+
 
     def supports_table_tablespace(self) -> bool:
         return False

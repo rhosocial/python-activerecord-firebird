@@ -10,7 +10,6 @@ Pure-construction tests: no database connection is required.
 
 import pytest
 
-from rhosocial.activerecord.backend.dialect.exceptions import UnsupportedFeatureError
 from rhosocial.activerecord.backend.expression.objects import Table
 from rhosocial.activerecord.backend.expression.statements import AlterTableStatement
 from rhosocial.activerecord.backend.expression.statements.ddl_alter import (
@@ -58,11 +57,17 @@ class TestAlterColumnTypeRendering:
         )
         assert action.to_sql()[0] == 'ALTER COLUMN "C" TYPE INTEGER'
 
-    def test_non_type_properties_keep_the_core_gate(self, dialect):
-        # SET/DROP DEFAULT and SET/DROP NOT NULL are not offered through this
-        # action on Firebird; the delegated core formatter still refuses them.
-        action = AlterColumnAction(
-            dialect, "c", ColumnAlterOperation.SET_DEFAULT, new_value="'x'"
-        )
-        with pytest.raises(UnsupportedFeatureError):
-            action.to_sql()
+    def test_column_default_and_nullability_render(self, dialect):
+        # Firebird spells these as ALTER COLUMN ... SET/DROP DEFAULT / NOT NULL.
+        assert AlterColumnAction(
+            dialect, "c", ColumnAlterOperation.SET_DEFAULT, new_value="x"
+        ).to_sql()[0] == 'ALTER COLUMN "C" SET DEFAULT \'x\''
+        assert AlterColumnAction(
+            dialect, "c", ColumnAlterOperation.DROP_DEFAULT
+        ).to_sql()[0] == 'ALTER COLUMN "C" DROP DEFAULT'
+        assert AlterColumnAction(
+            dialect, "c", ColumnAlterOperation.SET_NOT_NULL
+        ).to_sql()[0] == 'ALTER COLUMN "C" SET NOT NULL'
+        assert AlterColumnAction(
+            dialect, "c", ColumnAlterOperation.DROP_NOT_NULL
+        ).to_sql()[0] == 'ALTER COLUMN "C" DROP NOT NULL'
