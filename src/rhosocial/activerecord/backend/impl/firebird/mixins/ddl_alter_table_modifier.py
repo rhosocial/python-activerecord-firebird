@@ -112,6 +112,40 @@ class FirebirdAlterTableModifierMixin:
             )
         return super().format_drop_table_constraint_action(expr)
 
+    def format_alter_column_action(self, expr: Any) -> Tuple[str, tuple]:
+        """Format ``ALTER COLUMN`` for Firebird.
+
+        Firebird spells a type change ``ALTER COLUMN col TYPE datatype``, never
+        the SQL-standard ``SET DATA TYPE``. The other column-property
+        operations are not offered by this backend; delegating them to the core
+        formatter keeps their existing ``UnsupportedFeatureError`` gate.
+
+        Args:
+            expr: The ALTER COLUMN action carrying the column name and the
+                requested operation.
+
+        Returns:
+            A ``(sql, params)`` tuple.
+
+        Raises:
+            UnsupportedFeatureError: If the dialect refuses a data-type change.
+        """
+        from rhosocial.activerecord.backend.expression.statements.ddl_alter import (
+            operation_spelling,
+        )
+
+        if operation_spelling(expr.operation) == "SET DATA TYPE":
+            if not self.supports_alter_column_type():
+                raise UnsupportedFeatureError(
+                    self.name,
+                    "ALTER COLUMN SET DATA TYPE",
+                    f"{self.name} does not support changing a column data type.",
+                )
+            type_sql, _ = expr.new_value.to_sql()
+            col = self.format_identifier(expr.column_name)
+            return f"ALTER COLUMN {col} TYPE {type_sql}", ()
+        return super().format_alter_column_action(expr)
+
     def format_set_generated_action(self, expr: Any) -> Tuple[str, tuple]:
         """Format ALTER COLUMN ... SET GENERATED {ALWAYS | BY DEFAULT}.
 
