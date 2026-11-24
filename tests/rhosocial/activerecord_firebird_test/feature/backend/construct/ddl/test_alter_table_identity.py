@@ -2,7 +2,7 @@
 """Tests for the Firebird-specific ALTER TABLE identity / column clauses.
 
 Covers ``SET GENERATED``, ``RESTART``, ``SET INCREMENT``, ``DROP
-IDENTITY`` (Firebird 3.0+) and ``POSITION`` (Firebird 4.0+) rendered
+IDENTITY`` (Firebird 3.0+) and ``POSITION`` (Firebird 3.0+) rendered
 through the core ``AlterTableStatement`` dispatch. All tests are pure
 construction — no database connection.
 """
@@ -111,13 +111,13 @@ class TestAlterTableIdentityVersionGating:
         ):
             action.to_sql()
 
-    def test_position_fb3_raises(self):
-        dialect = FirebirdDialect((3, 0, 0))
+    def test_position_below_fb3_raises(self):
+        dialect = FirebirdDialect((2, 5, 0))
         with pytest.raises(UnsupportedFeatureError):
             SetPositionAction(dialect, "email", position=3).to_sql()
 
-    def test_position_fb4_ok(self):
-        dialect = FirebirdDialect((4, 0, 0))
+    def test_position_fb3_ok(self):
+        dialect = FirebirdDialect((3, 0, 0))
         sql, params = SetPositionAction(dialect, "email", position=3).to_sql()
         assert sql == 'ALTER COLUMN "EMAIL" POSITION 3'
         assert params == ()

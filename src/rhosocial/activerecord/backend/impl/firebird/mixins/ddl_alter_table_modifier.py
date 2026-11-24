@@ -11,7 +11,7 @@ raises ``UnsupportedFeatureError``; applications should pre-check
 Also renders the Firebird-only ``ALTER COLUMN`` identity / ordering
 clauses that the core ``DDLColumnMixin`` does not know about:
 ``SET GENERATED``, ``RESTART [WITH]``, ``SET INCREMENT``, ``DROP
-IDENTITY`` (Firebird 3.0+) and ``POSITION`` (Firebird 4.0+).
+IDENTITY`` (Firebird 3.0+) and ``POSITION`` (Firebird 3.0+).
 """
 
 from typing import Any, Tuple
@@ -194,14 +194,15 @@ class FirebirdAlterTableModifierMixin:
     def format_set_position_action(self, expr: Any) -> Tuple[str, tuple]:
         """Format ALTER COLUMN ... POSITION n.
 
-        Reorders a column within the table; Firebird 4.0+.
+        Reorders a column within the table; Firebird 3.0+ (the 3.0 Language
+        Reference already lists ``POSITION newpos``).
         """
-        version = getattr(self, 'version', (4, 0, 0))
-        if _norm_version(version) < (4, 0, 0):
+        version = getattr(self, 'version', (3, 0, 0))
+        if _norm_version(version) < (3, 0, 0):
             raise UnsupportedFeatureError(
                 self.name,
                 "ALTER COLUMN ... POSITION",
-                "Firebird 4.0 or later is required for column POSITION reordering.",
+                "Firebird 3.0 or later is required for column POSITION reordering.",
             )
         return (
             f"ALTER COLUMN {self.format_identifier(expr.column_name)} POSITION {expr.position}",
