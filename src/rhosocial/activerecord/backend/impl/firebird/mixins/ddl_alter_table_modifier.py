@@ -11,7 +11,9 @@ raises ``UnsupportedFeatureError``; applications should pre-check
 Also renders the Firebird-only ``ALTER COLUMN`` identity / ordering
 clauses that the core ``DDLColumnMixin`` does not know about:
 ``SET GENERATED``, ``RESTART [WITH]``, ``SET INCREMENT``, ``DROP
-IDENTITY`` (Firebird 3.0+) and ``POSITION`` (Firebird 3.0+).
+IDENTITY`` (Firebird 3.0+) and ``POSITION`` (Firebird 3.0+), plus the
+vendor column-rename spelling ``ALTER COLUMN oldname TO newname`` (Firebird
+has no ``RENAME COLUMN`` clause).
 """
 
 from typing import Any, Tuple
@@ -55,6 +57,27 @@ class FirebirdAlterTableModifierMixin:
         asserted to agree in ``test_firebird_constraint_switches.py``.
         """
         return False
+
+    def format_rename_column_action(self, expr: Any) -> Tuple[str, tuple]:
+        """Format a column rename for Firebird.
+
+        Firebird has no ``RENAME COLUMN`` clause. Inside ``ALTER TABLE`` the
+        spelling is ``ALTER [COLUMN] oldname TO newname`` (the same form the
+        Firebird Language Reference uses for column renames), so the standard
+        clause the core formatter emits would be rejected by the server and
+        is replaced here.
+        """
+        if not self.supports_rename_column():
+            raise UnsupportedFeatureError(
+                self.name,
+                "ALTER TABLE RENAME COLUMN",
+                f"{self.name} does not support renaming a column.",
+            )
+        return (
+            f"ALTER COLUMN {self.format_identifier(expr.old_name)} "
+            f"TO {self.format_identifier(expr.new_name)}",
+            (),
+        )
 
     def format_add_column_action(self, expr: Any) -> Tuple[str, tuple]:
         """Format ALTER TABLE ADD COLUMN for Firebird.
