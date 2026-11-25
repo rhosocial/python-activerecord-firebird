@@ -8,8 +8,6 @@ therefore a backend-local, introspection-only concern: it lives here, used only
 when reading a column's declared type off the catalog (and by the public
 ``query_nodes.cast`` helper, which takes the same raw spelling).
 """
-import re
-
 from rhosocial.activerecord.backend.dialect.exceptions import UnsupportedFeatureError
 from rhosocial.activerecord.backend.expression.types import (
     BigIntType,
@@ -31,6 +29,17 @@ from rhosocial.activerecord.backend.expression.types import (
     VarCharType,
 )
 
+from .._scan import (
+    contains_word,
+    find_digit_runs,
+    find_parenthesised_number,
+    is_word_boundary,
+    match_word_sequence,
+    read_head_with_precision,
+    starts_with_any_word,
+    starts_with_phrase,
+    starts_with_word,
+)
 from ..expression.types import (
     FirebirdDecFloatType,
     FirebirdInt128Type,
@@ -38,6 +47,24 @@ from ..expression.types import (
     FirebirdTimeTzType,
     FirebirdTimeWithoutTimeZoneType,
 )
+
+
+def _match_decfloat(upper: str) -> tuple[bool, str | None]:
+    """``^DECFLOAT(?:\\s*\\(\\s*(\\d+)\\s*\\))?(?![A-Za-z0-9_$])``.
+
+    Returns ``(matched, precision)``. A precision of ``None`` means the bare
+    word matched. The optional group is abandoned when its own lookahead fails,
+    which is where the pattern's backtracking would leave the scan.
+    """
+    head = read_head_with_precision(upper, "DECFLOAT")
+    if head is None:
+        return False, None
+    precision, word_end, end = head
+    if precision is not None and is_word_boundary(upper, end, excludes="$"):
+        return True, precision
+    if is_word_boundary(upper, word_end, excludes="$"):
+        return True, None
+    return False, None
 
 
 class FirebirdTypeParser:
@@ -52,30 +79,27 @@ class FirebirdTypeParser:
     def __init__(self, dialect):
         self.dialect = dialect
 
-    _TINYINT_TYPES = re.compile(r"^(?:TINYINT|INT1)\b", re.IGNORECASE)
+    #: Spellings of one concept, written upper-case because *upper* is what
+    #: every scan below sees. Each tuple is matched as a leading word with a
+    #: word boundary after it; a multi-word spelling always begins with its
+    #: first word, so the one-word member covers it for matching purposes.
+    _TINYINT_TYPES = ("TINYINT", "INT1")
     # ``UNSIGNED`` as a whole word anywhere in a type string. Every branch
     # below matches on the word *in front of* the attribute, so this is what
     # stops ``INTEGER UNSIGNED`` from parsing to a signed ``IntegerType``.
-    _UNSIGNED_ATTRIBUTE = re.compile(r"\bUNSIGNED\b", re.IGNORECASE)
-    _INTEGER_TYPES = re.compile(
-        r"^(?:SMALLINT|INT2|INTEGER|INT|BIGINT|INT8)\b", re.IGNORECASE
-    )
-    _FLOAT_TYPES = re.compile(
-        r"^(?:FLOAT|DOUBLE\s+PRECISION|DOUBLE|REAL)\b", re.IGNORECASE
-    )
-    _DECIMAL_TYPES = re.compile(r"^(?:DECIMAL|NUMERIC|DEC)\b", re.IGNORECASE)
-    _STRING_TYPES = re.compile(
-        r"^(?:CHARACTER\s+VARYING|CHAR\s+VARYING|VARCHAR|CHARACTER|CHAR)\b",
-        re.IGNORECASE,
-    )
-    _BLOB_TEXT_TYPES = re.compile(r"^BLOB\s+SUB_TYPE\s+TEXT\b", re.IGNORECASE)
-    _BLOB_TYPES = re.compile(r"^(?:BLOB|BYTEA)\b", re.IGNORECASE)
-    _TEXT_TYPES = re.compile(r"^(?:TEXT|CLOB)\b", re.IGNORECASE)
-    _DATE_TYPES = re.compile(r"^(?:DATE|TIMESTAMP|TIME)\b", re.IGNORECASE)
-    _BOOLEAN_TYPES = re.compile(r"^(?:BOOLEAN|BOOL)\b", re.IGNORECASE)
+    _UNSIGNED_ATTRIBUTE = "UNSIGNED"
+    _INTEGER_TYPES = ("SMALLINT", "INT2", "INTEGER", "INT", "BIGINT", "INT8")
+    _FLOAT_TYPES = ("FLOAT", "DOUBLE", "REAL")
+    _DECIMAL_TYPES = ("DECIMAL", "NUMERIC", "DEC")
+    _STRING_TYPES = ("VARCHAR", "CHARACTER", "CHAR")
+    _BLOB_TEXT_TYPES = ("BLOB", "SUB_TYPE", "TEXT")
+    _BLOB_TYPES = ("BLOB", "BYTEA")
+    _TEXT_TYPES = ("TEXT", "CLOB")
+    _DATE_TYPES = ("DATE", "TIMESTAMP", "TIME")
+    _BOOLEAN_TYPES = ("BOOLEAN", "BOOL")
 
     # Firebird 4.0's zoned date-time types. These must be matched *before*
-    # ``_DATE_TYPES``, whose pattern stops at the first word and so would read
+    # ``_DATE_TYPES``, whose scan stops at the first word and so would read
     # a zoned column back as the unzoned concept -- which the schema differ
     # compares with ``!=``, making the zone invisible to it. The words are the
     # ones Firebird writes: ``TIME [{WITHOUT | WITH} TIME ZONE]`` /
@@ -86,40 +110,24 @@ class FirebirdTypeParser:
     # one, so ``TIMESTAMP(4) WITH TIME ZONE`` is not a Firebird type name and
     # turning it into a class whose renderer then raises would leave the
     # parser accepting a declaration it cannot render back.
-    _TIMESTAMP_TZ_TYPES = re.compile(
-        r"^TIMESTAMP(?:\s*\(\s*(\d+)\s*\))?\s+WITH\s+TIME\s+ZONE\b", re.IGNORECASE
-    )
-    _TIME_TZ_TYPES = re.compile(
-        r"^TIME(?:\s*\(\s*(\d+)\s*\))?\s+WITH\s+TIME\s+ZONE\b", re.IGNORECASE
-    )
-    _TIME_WITHOUT_TZ_TYPES = re.compile(
-        r"^TIME(?:\s*\(\s*(\d+)\s*\))?\s+WITHOUT\s+TIME\s+ZONE\b", re.IGNORECASE
+    _ZONED_TIME_TYPES = (
+        ("TIMESTAMP", ("WITH", "TIME", "ZONE"), FirebirdTimeStampTzType),
+        ("TIME", ("WITH", "TIME", "ZONE"), FirebirdTimeTzType),
+        ("TIME", ("WITHOUT", "TIME", "ZONE"), FirebirdTimeWithoutTimeZoneType),
     )
 
     #: A precision on a bare ``DATE``/``TIME``/``TIMESTAMP``, recognised in
     #: order to be refused. ``_DATE_TYPES`` stops after the first word, so
     #: without this the tail -- ``(4)`` -- was simply ignored and
     #: ``TIMESTAMP(4)`` parsed as a plain ``TIMESTAMP``, a different column.
-    _TEMPORAL_PRECISION = re.compile(
-        r"^(?:DATE|TIMESTAMP|TIME)\s*\(\s*\d+\s*\)", re.IGNORECASE
-    )
-
-    _ZONED_TIME_TYPES = (
-        (_TIMESTAMP_TZ_TYPES, FirebirdTimeStampTzType),
-        (_TIME_TZ_TYPES, FirebirdTimeTzType),
-        (_TIME_WITHOUT_TZ_TYPES, FirebirdTimeWithoutTimeZoneType),
-    )
+    _TEMPORAL_TYPES = ("DATE", "TIMESTAMP", "TIME")
 
     # Firebird 4.0's DECFLOAT and INT128 -- codes the introspector reads out of
-    # RDB$FIELDS.RDB$FIELD_TYPE that the patterns above do not claim. Reading
+    # RDB$FIELDS.RDB$FIELD_TYPE that the scans above do not claim. Reading
     # a DECFLOAT as CustomType used to lose its precision, a silent identity
     # loss because FirebirdDecFloatType carries precision in PARAMETERS. The
     # precision is read out of the name, never defaulted except for the bare
     # word, whose documented default is 34 (language reference 3.2.2.1).
-    _DECFLOAT_TYPES = re.compile(
-        r"^DECFLOAT(?:\s*\(\s*(\d+)\s*\))?(?![A-Za-z0-9_$])", re.IGNORECASE
-    )
-    _INT128_TYPES = re.compile(r"^INT128(?![A-Za-z0-9_$])", re.IGNORECASE)
     _DECFLOAT_DEFAULT_PRECISION = 34
 
     def _reject_temporal_precision(self, raw: str, declared) -> None:
@@ -168,20 +176,20 @@ class FirebirdTypeParser:
         stripped = raw.strip()
         upper = stripped.upper()
 
-        if self._UNSIGNED_ATTRIBUTE.search(stripped):
+        if contains_word(stripped, self._UNSIGNED_ATTRIBUTE):
             self._refuse_unsigned_type_string(stripped)
 
-        if self._TINYINT_TYPES.match(upper):
+        if starts_with_any_word(upper, *self._TINYINT_TYPES):
             return TinyIntType(dialect=self.dialect)
 
         # INT128 before the integer family: ``INT128`` is a different column
         # from ``INTEGER`` by 96 bits of range, not a spelling difference.
-        if self._INT128_TYPES.match(upper):
+        if starts_with_word(upper, "INT128", lookahead_excludes="$"):
             if not self.dialect._fb4_available():
                 return CustomType(dialect=self.dialect, raw=stripped)
             return FirebirdInt128Type(dialect=self.dialect)
 
-        if self._INTEGER_TYPES.match(upper):
+        if starts_with_any_word(upper, *self._INTEGER_TYPES):
             if upper.startswith("BIGINT") or upper.startswith("INT8"):
                 return BigIntType(dialect=self.dialect)
             if upper.startswith("SMALLINT") or upper.startswith("INT2"):
@@ -190,32 +198,31 @@ class FirebirdTypeParser:
 
         # DECFLOAT before the decimal family: DECFLOAT(16) must never be read
         # as DecimalType(precision=16), a different column with a scale rule.
-        decfloat = self._DECFLOAT_TYPES.match(upper)
+        decfloat, declared = _match_decfloat(upper)
         if decfloat:
             if not self.dialect._fb4_available():
                 return CustomType(dialect=self.dialect, raw=stripped)
-            declared = decfloat.group(1)
             return FirebirdDecFloatType(
                 dialect=self.dialect,
                 precision=int(declared) if declared else self._DECFLOAT_DEFAULT_PRECISION,
             )
 
-        if self._FLOAT_TYPES.match(upper):
+        if starts_with_any_word(upper, *self._FLOAT_TYPES):
             if upper.startswith("DOUBLE"):
                 return DoubleType(dialect=self.dialect)
             return FloatType(dialect=self.dialect)
 
-        if self._DECIMAL_TYPES.match(upper):
-            nums = re.findall(r"\d+", stripped)
+        if starts_with_any_word(upper, *self._DECIMAL_TYPES):
+            nums = find_digit_runs(stripped)
             if len(nums) >= 2:
                 return DecimalType(dialect=self.dialect, precision=int(nums[0]), scale=int(nums[1]))
             if len(nums) == 1:
                 return DecimalType(dialect=self.dialect, precision=int(nums[0]))
             return DecimalType(dialect=self.dialect)
 
-        if self._STRING_TYPES.match(upper):
-            length_match = re.search(r"\((\d+)", stripped)
-            length = int(length_match.group(1)) if length_match else None
+        if starts_with_any_word(upper, *self._STRING_TYPES):
+            found = find_parenthesised_number(stripped)
+            length = int(found) if found is not None else None
             char_length = self.dialect._FB_CHAR_DEFAULT_LENGTH
             varchar_length = self.dialect._FB_RENDERED_VARCHAR_LENGTH
             # CHARACTER VARYING is SQL's long form of VARCHAR -- variable length.
@@ -232,32 +239,39 @@ class FirebirdTypeParser:
                 return CharType(dialect=self.dialect, length=length or char_length)
             return TextType(dialect=self.dialect)
 
-        if self._BLOB_TEXT_TYPES.match(upper):
+        if starts_with_phrase(upper, self._BLOB_TEXT_TYPES):
             return TextType(dialect=self.dialect)
 
-        if self._BLOB_TYPES.match(upper):
+        if starts_with_any_word(upper, *self._BLOB_TYPES):
             return BlobType(dialect=self.dialect)
 
-        if self._TEXT_TYPES.match(upper):
+        if starts_with_any_word(upper, *self._TEXT_TYPES):
             return TextType(dialect=self.dialect)
 
         # Zoned date-times, matched before the DATE/TIMESTAMP/TIME family below.
-        for pattern, zoned_class in self._ZONED_TIME_TYPES:
-            zoned = pattern.match(upper)
-            if not zoned:
+        for head, clause, zoned_class in self._ZONED_TIME_TYPES:
+            found = read_head_with_precision(upper, head)
+            if found is None:
                 continue
-            self._reject_temporal_precision(stripped, zoned.group(1))
+            precision, _word_end, end = found
+            if match_word_sequence(upper, end, clause, leading_space=True) is None:
+                continue
+            self._reject_temporal_precision(stripped, precision)
             if not self.dialect._fb4_available():
                 return CustomType(dialect=self.dialect, raw=stripped)
             return zoned_class(dialect=self.dialect)
 
         # Same refusal for the bare spellings, checked before _DATE_TYPES so
         # the ``(4)`` tail is seen rather than discarded.
-        self._reject_temporal_precision(
-            stripped, self._TEMPORAL_PRECISION.match(upper)
-        )
+        declared = None
+        for head in self._TEMPORAL_TYPES:
+            found = read_head_with_precision(upper, head)
+            if found is not None and found[0] is not None:
+                declared = found[0]
+                break
+        self._reject_temporal_precision(stripped, declared)
 
-        if self._DATE_TYPES.match(upper):
+        if starts_with_any_word(upper, *self._DATE_TYPES):
             # TIMESTAMP before TIME: "TIMESTAMP".startswith("TIME") is True.
             if upper.startswith("TIMESTAMP"):
                 return DateTimeType(dialect=self.dialect)
@@ -269,7 +283,7 @@ class FirebirdTypeParser:
                 return DateTimeType(dialect=self.dialect)
             return DateTimeType(dialect=self.dialect)
 
-        if self._BOOLEAN_TYPES.match(upper):
+        if starts_with_any_word(upper, *self._BOOLEAN_TYPES):
             return BooleanType(dialect=self.dialect)
 
         return CustomType(dialect=self.dialect, raw=stripped)

@@ -31,6 +31,7 @@ from ..query_nodes import (
     health_check_sql,
     mon_version_sql,
 )
+from .._scan import find_version_triplet
 
 
 class FirebirdBackend(
@@ -320,10 +321,9 @@ class FirebirdBackend(
                 version_str = str(cursor.description[0][0]) if cursor.description else "2.5.0"
             except Exception:
                 return (2, 5, 0)
-        import re
-        match = re.search(r'(\d+)\.(\d+)\.(\d+)', version_str)
-        if match:
-            return (int(match.group(1)), int(match.group(2)), int(match.group(3)))
+        version = find_version_triplet(version_str)
+        if version is not None:
+            return version
         return (2, 5, 0)
 
     def introspect_and_adapt(self) -> None:

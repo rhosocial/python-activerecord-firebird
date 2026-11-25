@@ -47,6 +47,7 @@ from rhosocial.activerecord.backend.result import QueryResult
 from rhosocial.activerecord.backend.schema import StatementType
 
 from ..config import FirebirdConnectionConfig
+from .._scan import find_version_triplet
 from ..mixins import (
     FirebirdBackendMixin,
     track_firebird_backend,
@@ -282,10 +283,9 @@ class AsyncFirebirdBackend(
                     await loop.run_in_executor(self._executor, cursor.close)
                 except Exception:
                     pass
-        import re
-        match = re.search(r'(\d+)\.(\d+)\.(\d+)', version_str)
-        if match:
-            return (int(match.group(1)), int(match.group(2)), int(match.group(3)))
+        version = find_version_triplet(version_str)
+        if version is not None:
+            return version
         return (2, 5, 0)
 
     async def introspect_and_adapt(self) -> None:

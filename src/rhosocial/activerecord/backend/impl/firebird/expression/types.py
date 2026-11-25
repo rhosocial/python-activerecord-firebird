@@ -1,8 +1,6 @@
 # src/rhosocial/activerecord/backend/impl/firebird/expression/types.py
 """Firebird-specific DDL DataType subclasses."""
 
-import re
-
 from rhosocial.activerecord.backend.expression.types import (
     BigIntType,
     BinaryType,
@@ -24,6 +22,13 @@ from rhosocial.activerecord.backend.expression.types import (
     TimestampTzType,
     VarBinaryType,
     VarCharType,
+)
+
+from .._scan import (
+    Spelling,
+    is_declaration_text,
+    is_qualified_identifier,
+    parse_spelling,
 )
 
 
@@ -214,88 +219,69 @@ class FirebirdInt128Type(DataType):
     name = "firebird_int128"
 
 
-_DATA_TYPE_TEXT_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_$.,() \t]*")
-_QUALIFIED_IDENTIFIER_RE = re.compile(
-    r"[A-Za-z_][A-Za-z0-9_$]*(?:\.[A-Za-z_][A-Za-z0-9_$]*)?"
+#: Head words of the string families. A spelling either names a length in
+#: parentheses or stands bare; ``VARYING`` is part of the head, not a tail.
+_VARCHAR_HEADS = (("VARCHAR",), ("CHARACTER", "VARYING"), ("CHAR", "VARYING"))
+_CHAR_HEADS = (("CHAR",), ("CHARACTER",))
+_DECIMAL_HEADS = (("DECIMAL",), ("NUMERIC",))
+_INTEGER_HEADS = (("INTEGER",), ("INT",), ("BIGINT",), ("SMALLINT",))
+#: ``BLOB`` with no subtype is binary; its two explicit binary spellings carry
+#: the same meaning. ``BLOB SUB_TYPE TEXT`` is the text form, read before this.
+_BINARY_BLOB_WORDS = (
+    ("BLOB",),
+    ("BLOB", "SUB_TYPE", "BINARY"),
+    ("BLOB", "CHARACTER", "SET", "OCTETS"),
 )
-_INTEGER_RE = re.compile(r"INTEGER|INT|BIGINT|SMALLINT", re.IGNORECASE)
-_FLOAT_RE = re.compile(r"FLOAT(?:\s*\(\s*(\d+)\s*\))?", re.IGNORECASE)
-_REAL_RE = re.compile(r"REAL", re.IGNORECASE)
-_DOUBLE_RE = re.compile(r"DOUBLE\s+PRECISION", re.IGNORECASE)
-_DECIMAL_RE = re.compile(
-    r"(?:DECIMAL|NUMERIC)(?:\s*\(\s*(\d+)\s*(?:,\s*(\d+)\s*)?\))?",
-    re.IGNORECASE,
+#: Firebird's zoned date-time declarations, as the grammar writes them: no
+#: precision argument anywhere (language reference §3.4.2, §3.4.3 and §3.12,
+#: "TIMESTAMP [{WITHOUT | WITH} TIME ZONE]" / "TIME [{WITHOUT | WITH} TIME
+#: ZONE]"). The optional precision group is matched so that a declaration naming
+#: one can be *refused by name* instead of parsed into a class whose renderer
+#: raises — the same decision FirebirdTypeSupportMixin._check_firebird_temporal_
+#: precision reaches from the other direction, and the same reason
+#: FirebirdSQL/firebird#4779 (CORE-4459) is not treated as a capability.
+_ZONED_HEADS = (
+    ("TIMESTAMP", ("WITH", "TIME", "ZONE"), FirebirdTimeStampTzType),
+    ("TIME", ("WITH", "TIME", "ZONE"), FirebirdTimeTzType),
+    ("TIME", ("WITHOUT", "TIME", "ZONE"), FirebirdTimeWithoutTimeZoneType),
 )
-_VARCHAR_RE = re.compile(
-    r"(?:VARCHAR|CHARACTER\s+VARYING|CHAR\s+VARYING)"
-    r"(?:\s*\(\s*(\d+)\s*\))?",
-    re.IGNORECASE,
-)
-_CHAR_RE = re.compile(
-    r"(?:CHAR|CHARACTER)(?:\s*\(\s*(\d+)\s*\))?",
-    re.IGNORECASE,
-)
-_BINARY_VARCHAR_RE = re.compile(
-    r"(?:VARCHAR|CHARACTER\s+VARYING|CHAR\s+VARYING)"
-    r"\s*\(\s*(\d+)\s*\)\s+CHARACTER\s+SET\s+OCTETS",
-    re.IGNORECASE,
-)
-_BINARY_CHAR_RE = re.compile(
-    r"(?:CHAR|CHARACTER)\s*\(\s*(\d+)\s*\)\s+CHARACTER\s+SET\s+OCTETS",
-    re.IGNORECASE,
-)
-_UTF8_VARCHAR_RE = re.compile(
-    r"(?:VARCHAR|CHARACTER\s+VARYING|CHAR\s+VARYING)"
-    r"\s*\(\s*(\d+)\s*\)\s+CHARACTER\s+SET\s+UTF8",
-    re.IGNORECASE,
-)
-_UTF8_CHAR_RE = re.compile(
-    r"(?:CHAR|CHARACTER)\s*\(\s*(\d+)\s*\)\s+CHARACTER\s+SET\s+UTF8",
-    re.IGNORECASE,
-)
-_BLOB_TEXT_RE = re.compile(r"BLOB\s+SUB_TYPE\s+TEXT", re.IGNORECASE)
-_BLOB_BINARY_RE = re.compile(
-    r"BLOB(?:\s+SUB_TYPE\s+BINARY|\s+CHARACTER\s+SET\s+OCTETS)?",
-    re.IGNORECASE,
-)
-_DATE_RE = re.compile(r"DATE", re.IGNORECASE)
-_TIME_RE = re.compile(r"TIME", re.IGNORECASE)
-_TIMESTAMP_RE = re.compile(r"TIMESTAMP", re.IGNORECASE)
-_BOOLEAN_RE = re.compile(r"BOOLEAN", re.IGNORECASE)
-_DECFLOAT_RE = re.compile(
-    r"DECFLOAT(?:\s*\(\s*(16|34)\s*\))?",
-    re.IGNORECASE,
-)
-_INT128_RE = re.compile(r"INT128", re.IGNORECASE)
-# Firebird's zoned date-time declarations, as the grammar writes them: no
-# precision argument anywhere (language reference §3.4.2, §3.4.3 and §3.12,
-# "TIMESTAMP [{WITHOUT | WITH} TIME ZONE]" / "TIME [{WITHOUT | WITH} TIME
-# ZONE]"). The optional precision group is matched so that a declaration naming
-# one can be *refused by name* instead of parsed into a class whose renderer
-# raises — the same decision FirebirdTypeSupportMixin._check_firebird_temporal_
-# precision reaches from the other direction, and the same reason
-# FirebirdSQL/firebird#4779 (CORE-4459) is not treated as a capability.
-_TIMESTAMP_WITH_TIME_ZONE_RE = re.compile(
-    r"TIMESTAMP(?:\s*\(\s*(\d+)\s*\))?\s+WITH\s+TIME\s+ZONE",
-    re.IGNORECASE,
-)
-_TIME_WITH_TIME_ZONE_RE = re.compile(
-    r"TIME(?:\s*\(\s*(\d+)\s*\))?\s+WITH\s+TIME\s+ZONE",
-    re.IGNORECASE,
-)
-_TIME_WITHOUT_TIME_ZONE_RE = re.compile(
-    r"TIME(?:\s*\(\s*(\d+)\s*\))?\s+WITHOUT\s+TIME\s+ZONE",
-    re.IGNORECASE,
-)
-
 #: A precision on a bare ``TIME``/``TIMESTAMP``/``DATE``, matched for the same
-#: reason: ``_TIME_RE`` / ``_TIMESTAMP_RE`` / ``_DATE_RE`` use ``fullmatch`` and
-#: would otherwise simply not match, leaving ``TIMESTAMP(4)`` to fall through to
-#: the qualified-identifier branch as ``CustomType(raw="TIMESTAMP(4)")`` — an
-#: opaque name that renders itself straight back into the invalid DDL.
-_TEMPORAL_PRECISION_RE = re.compile(
-    r"(?:DATE|TIMESTAMP|TIME)\s*\(\s*\d+\s*\)", re.IGNORECASE
-)
+#: reason: the bare words would otherwise simply not match, leaving
+#: ``TIMESTAMP(4)`` to fall through to the qualified-identifier branch as
+#: ``CustomType(raw="TIMESTAMP(4)")`` — an opaque name that renders itself
+#: straight back into the invalid DDL.
+_TEMPORAL_HEADS = ("DATE", "TIMESTAMP", "TIME")
+
+
+def _binary_string_length(
+    spelling: Spelling, heads: tuple[tuple[str, ...], ...], charset: str
+) -> int | None:
+    """The length of a ``<head>(n) CHARACTER SET <charset>`` spelling."""
+    if spelling.words not in heads:
+        return None
+    if spelling.tail != ("CHARACTER", "SET", charset):
+        return None
+    digits = spelling.digits(1)
+    return None if digits is None else digits[0]
+
+
+def _zoned_precision(
+    spelling: Spelling, head: str, zone: tuple[str, ...]
+) -> tuple[bool, int | None]:
+    """Match a zoned date-time spelling, returning ``(matched, precision)``.
+
+    Both shapes are accepted: the words in one run when there is no argument
+    list, and the head plus ``zone`` as the tail when a precision was written.
+    """
+    if spelling.arguments is None:
+        return spelling.words == (head,) + zone, None
+    digits = spelling.digits(1)
+    if digits is None:
+        return False, None
+    return (
+        spelling.words == (head,) and spelling.tail == zone,
+        digits[0],
+    )
 
 
 def _reject_temporal_precision(name: str) -> None:
@@ -340,7 +326,7 @@ def _normalize_firebird_data_type_name(value: str) -> str:
     if not isinstance(value, str):
         raise TypeError(f"data_type_name must be a string, got {type(value).__name__}")
     normalized = " ".join(value.strip().split())
-    if not normalized or _DATA_TYPE_TEXT_RE.fullmatch(normalized) is None:
+    if not normalized or not is_declaration_text(normalized):
         raise ValueError("data_type_name must be a valid Firebird data type declaration")
     return normalized
 
@@ -348,86 +334,105 @@ def _normalize_firebird_data_type_name(value: str) -> str:
 def _parse_firebird_data_type_name(value: str) -> DataType:
     normalized = _normalize_firebird_data_type_name(value)
     upper = normalized.upper()
-    match = _BINARY_VARCHAR_RE.fullmatch(upper)
-    if match:
-        return VarBinaryType(length=int(match.group(1)))
-    match = _BINARY_CHAR_RE.fullmatch(upper)
-    if match:
-        return BinaryType(length=int(match.group(1)))
-    match = _UTF8_VARCHAR_RE.fullmatch(upper)
-    if match:
-        return FirebirdVarCharType(length=int(match.group(1)))
-    match = _UTF8_CHAR_RE.fullmatch(upper)
-    if match:
-        return FirebirdCharType(length=int(match.group(1)))
-    if _BLOB_TEXT_RE.fullmatch(upper):
-        return TextType()
-    if _BLOB_BINARY_RE.fullmatch(upper):
-        return BinaryType()
-    match = _TIMESTAMP_WITH_TIME_ZONE_RE.fullmatch(upper)
-    if match:
-        if match.group(1):
+    spelling = parse_spelling(upper)
+
+    if spelling is not None:
+        words = spelling.words
+
+        length = _binary_string_length(spelling, _VARCHAR_HEADS, "OCTETS")
+        if length is not None:
+            return VarBinaryType(length=length)
+        length = _binary_string_length(spelling, _CHAR_HEADS, "OCTETS")
+        if length is not None:
+            return BinaryType(length=length)
+        length = _binary_string_length(spelling, _VARCHAR_HEADS, "UTF8")
+        if length is not None:
+            return FirebirdVarCharType(length=length)
+        length = _binary_string_length(spelling, _CHAR_HEADS, "UTF8")
+        if length is not None:
+            return FirebirdCharType(length=length)
+
+        if spelling.arguments is None and words == ("BLOB", "SUB_TYPE", "TEXT"):
+            return TextType()
+        if spelling.arguments is None and words in _BINARY_BLOB_WORDS:
+            return BinaryType()
+
+        for head, zone, zoned_class in _ZONED_HEADS:
+            matched, precision = _zoned_precision(spelling, head, zone)
+            if not matched:
+                continue
+            if precision is not None:
+                _reject_temporal_precision(normalized)
+            return zoned_class()
+
+        if words == ("DECFLOAT",) and not spelling.tail:
+            if spelling.arguments is None:
+                # No argument means the documented default: "either 16 or 34;
+                # Default is 34" (language reference §3.2.2.1, DECFLOAT). The
+                # same default the FirebirdDecFloatType constructor now uses, so
+                # a bare DECFLOAT names one column whichever way it is reached.
+                return FirebirdDecFloatType(precision=34)
+            if spelling.arguments in (("16",), ("34",)):
+                return FirebirdDecFloatType(precision=int(spelling.arguments[0]))
+        if upper.startswith("DECFLOAT"):
+            raise ValueError("DECFLOAT precision must be 16 or 34")
+
+        if spelling.arguments is None and words == ("INT128",):
+            return FirebirdInt128Type()
+
+        if (
+            len(words) == 1
+            and words[0] in _TEMPORAL_HEADS
+            and spelling.arguments is not None
+            and not spelling.tail
+            and spelling.digits(1) is not None
+        ):
             _reject_temporal_precision(normalized)
-        return FirebirdTimeStampTzType()
-    match = _TIME_WITH_TIME_ZONE_RE.fullmatch(upper)
-    if match:
-        if match.group(1):
-            _reject_temporal_precision(normalized)
-        return FirebirdTimeTzType()
-    match = _TIME_WITHOUT_TIME_ZONE_RE.fullmatch(upper)
-    if match:
-        if match.group(1):
-            _reject_temporal_precision(normalized)
-        return FirebirdTimeWithoutTimeZoneType()
-    match = _DECFLOAT_RE.fullmatch(upper)
-    if match:
-        # No argument means the documented default: "either 16 or 34; Default is
-        # 34" (language reference §3.2.2.1, DECFLOAT). The same default the
-        # FirebirdDecFloatType constructor now uses, so a bare DECFLOAT names one
-        # column whichever way it is reached.
-        precision = int(match.group(1)) if match.group(1) else 34
-        return FirebirdDecFloatType(precision=precision)
-    if upper.startswith("DECFLOAT"):
-        raise ValueError("DECFLOAT precision must be 16 or 34")
-    if _INT128_RE.fullmatch(upper):
-        return FirebirdInt128Type()
-    if _TEMPORAL_PRECISION_RE.fullmatch(upper):
-        _reject_temporal_precision(normalized)
-    if _TIMESTAMP_RE.fullmatch(upper):
-        return TimestampType()
-    if _TIME_RE.fullmatch(upper):
-        return TimeType()
-    if _DATE_RE.fullmatch(upper):
-        return DateType()
-    if _BOOLEAN_RE.fullmatch(upper):
-        return BooleanType()
-    if _DOUBLE_RE.fullmatch(upper):
-        return DoubleType()
-    if _REAL_RE.fullmatch(upper):
-        return FloatType()
-    match = _FLOAT_RE.fullmatch(upper)
-    if match:
-        return FloatType(precision=int(match.group(1)) if match.group(1) else None)
-    match = _DECIMAL_RE.fullmatch(upper)
-    if match:
-        return DecimalType(
-            precision=int(match.group(1)) if match.group(1) else None,
-            scale=int(match.group(2)) if match.group(2) else None,
-        )
-    match = _VARCHAR_RE.fullmatch(upper)
-    if match:
-        return VarCharType(length=int(match.group(1)) if match.group(1) else None)
-    match = _CHAR_RE.fullmatch(upper)
-    if match:
-        return CharType(length=int(match.group(1)) if match.group(1) else None)
-    if _INTEGER_RE.fullmatch(upper):
-        if upper == "BIGINT":
-            return BigIntType()
-        if upper == "SMALLINT":
-            return SmallIntType()
-        return IntegerType()
-    if _QUALIFIED_IDENTIFIER_RE.fullmatch(normalized):
-        if normalized.upper() in _ACTION_WORDS:
+
+        if spelling.arguments is None and not spelling.tail:
+            if words == ("TIMESTAMP",):
+                return TimestampType()
+            if words == ("TIME",):
+                return TimeType()
+            if words == ("DATE",):
+                return DateType()
+            if words == ("BOOLEAN",):
+                return BooleanType()
+            if words == ("DOUBLE", "PRECISION"):
+                return DoubleType()
+            if words == ("REAL",):
+                return FloatType()
+            if words == ("FLOAT",):
+                return FloatType(precision=None)
+            if words in _DECIMAL_HEADS:
+                return DecimalType(precision=None, scale=None)
+            if words in _VARCHAR_HEADS:
+                return VarCharType(length=None)
+            if words in _CHAR_HEADS:
+                return CharType(length=None)
+            if words in _INTEGER_HEADS:
+                if words == ("BIGINT",):
+                    return BigIntType()
+                if words == ("SMALLINT",):
+                    return SmallIntType()
+                return IntegerType()
+
+        digits = spelling.digits()
+        if spelling.arguments is not None and not spelling.tail:
+            if words == ("FLOAT",) and digits is not None and len(digits) == 1:
+                return FloatType(precision=digits[0])
+            if words in _DECIMAL_HEADS and digits is not None and len(digits) in (1, 2):
+                return DecimalType(
+                    precision=digits[0],
+                    scale=digits[1] if len(digits) == 2 else None,
+                )
+            if words in _VARCHAR_HEADS and digits is not None and len(digits) == 1:
+                return VarCharType(length=digits[0])
+            if words in _CHAR_HEADS and digits is not None and len(digits) == 1:
+                return CharType(length=digits[0])
+
+    if is_qualified_identifier(normalized):
+        if upper in _ACTION_WORDS:
             raise ValueError("data_type_name contains an unsupported action word")
         return CustomType(raw=normalized)
     raise ValueError("data_type_name contains unsupported Firebird type syntax")
