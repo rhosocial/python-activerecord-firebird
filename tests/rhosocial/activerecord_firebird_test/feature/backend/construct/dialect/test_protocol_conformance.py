@@ -74,6 +74,13 @@ def get_all_generic_protocols() -> dict:
 # dialect can render that object's name, not that it can create one -- the
 # capability switches answer that.
 FIREBIRD_PROTOCOLS = [
+    # The four migration change points: Firebird has native POSITION for one,
+    # real ALTER TABLE constraint actions and standalone index statements for
+    # two, and no partitioning at all for the last (an explicit False answer).
+    suggestion_protocols.ColumnReorderSuggestionSupport,
+    suggestion_protocols.TableConstraintChangeSuggestionSupport,
+    suggestion_protocols.TableIndexChangeSuggestionSupport,
+    suggestion_protocols.PartitionSchemeChangeSuggestionSupport,
     suggestion_protocols.PartitionBuildSuggestionSupport,
     suggestion_protocols.PartitionTableDropSuggestionSupport,
     suggestion_protocols.PartitionTableAlterSuggestionSupport,

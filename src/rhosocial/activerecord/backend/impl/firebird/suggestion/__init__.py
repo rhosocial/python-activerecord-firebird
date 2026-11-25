@@ -8,6 +8,7 @@ and not general dialect mixins; the value objects they return come from
 :mod:`rhosocial.activerecord.backend.suggestion`.
 """
 
+from .column_reorder_suggestion import FirebirdColumnReorderSuggestionMixin
 from .data_type_suggestions import FirebirdDataTypeSuggestionsMixin
 from .general_suggestions import (
     FirebirdCreateTableLayoutSuggestionMixin,
@@ -21,11 +22,15 @@ from .partition_build_suggestion import FirebirdPartitionBuildSuggestionMixin
 from .partition_drop_suggestion import FirebirdPartitionDropSuggestionMixin
 from .partition_merge_suggestion import FirebirdPartitionMergeSuggestionMixin
 from .partition_retention_suggestion import FirebirdPartitionRetentionSuggestionMixin
+from .partition_scheme_change_suggestion import FirebirdPartitionSchemeChangeSuggestionMixin
 from .partition_split_suggestion import FirebirdPartitionSplitSuggestionMixin
 from .partition_table_alter_suggestion import FirebirdPartitionTableAlterSuggestionMixin
 from .partition_table_drop_suggestion import FirebirdPartitionTableDropSuggestionMixin
+from .table_constraint_change_suggestion import FirebirdTableConstraintChangeSuggestionMixin
+from .table_index_change_suggestion import FirebirdTableIndexChangeSuggestionMixin
 
 __all__ = [
+    "FirebirdColumnReorderSuggestionMixin",
     "FirebirdDataTypeSuggestionsMixin",
     "FirebirdCreateTableLayoutSuggestionMixin",
     "FirebirdStringConcatenationSuggestionMixin",
@@ -35,7 +40,10 @@ __all__ = [
     "FirebirdPartitionDropSuggestionMixin",
     "FirebirdPartitionMergeSuggestionMixin",
     "FirebirdPartitionRetentionSuggestionMixin",
+    "FirebirdPartitionSchemeChangeSuggestionMixin",
     "FirebirdPartitionSplitSuggestionMixin",
     "FirebirdPartitionTableAlterSuggestionMixin",
     "FirebirdPartitionTableDropSuggestionMixin",
+    "FirebirdTableConstraintChangeSuggestionMixin",
+    "FirebirdTableIndexChangeSuggestionMixin",
 ]

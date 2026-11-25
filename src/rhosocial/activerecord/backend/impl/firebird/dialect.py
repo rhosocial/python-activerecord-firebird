@@ -19,7 +19,11 @@ from typing import Any, Optional, Tuple
 
 from rhosocial.activerecord.backend.dialect.base import SQLDialectBase
 from rhosocial.activerecord.backend.suggestion.protocols import (
+    ColumnReorderSuggestionSupport,
     CreateTableLayoutSuggestionSupport,
+    PartitionSchemeChangeSuggestionSupport,
+    TableConstraintChangeSuggestionSupport,
+    TableIndexChangeSuggestionSupport,
 )
 from rhosocial.activerecord.backend.dialect.protocols import (
     CollationSupport,
@@ -195,6 +199,7 @@ from .mixins import (
     FirebirdUnsupportedFeaturesMixin,
 )
 from .suggestion import (
+    FirebirdColumnReorderSuggestionMixin,
     FirebirdCreateTableLayoutSuggestionMixin,
     FirebirdDataTypeSuggestionsMixin,
     FirebirdStringConcatenationSuggestionMixin,
@@ -204,9 +209,12 @@ from .suggestion import (
     FirebirdPartitionDropSuggestionMixin,
     FirebirdPartitionMergeSuggestionMixin,
     FirebirdPartitionRetentionSuggestionMixin,
+    FirebirdPartitionSchemeChangeSuggestionMixin,
     FirebirdPartitionSplitSuggestionMixin,
     FirebirdPartitionTableAlterSuggestionMixin,
     FirebirdPartitionTableDropSuggestionMixin,
+    FirebirdTableConstraintChangeSuggestionMixin,
+    FirebirdTableIndexChangeSuggestionMixin,
 )
 from .protocols import (
     FirebirdDMLOperationSupport,
@@ -246,10 +254,17 @@ class FirebirdDialect(
     # Backend suggestions first: no core mixin may shadow their answers. Both
     # answer "how" questions the core leaves unanswered; the eight partition
     # ones are unconditional because Firebird has no partitioning at all (every
-    # support probe is False, see FirebirdPartitionMixin below). Each lifecycle
-    # point is its own mixin, so the dialect lists all eight explicitly; the
-    # common base they share (FirebirdPartitionSuggestionBase) enters the MRO
-    # once, through them, and is deliberately not named here.
+    # support probe is False, see FirebirdPartitionMixin below), and the scheme
+    # change point follows the same evidence. Each lifecycle point is its own
+    # mixin, so the dialect lists all eight explicitly; the common base they
+    # share (FirebirdPartitionSuggestionBase) enters the MRO once, through them,
+    # and is deliberately not named here. The column-reorder answer is the
+    # exception: Firebird 3.0+ has a native POSITION clause, so it returns a
+    # real chain. Constraint and index changes reuse the core DDL nodes.
+    FirebirdColumnReorderSuggestionMixin,
+    FirebirdTableConstraintChangeSuggestionMixin,
+    FirebirdTableIndexChangeSuggestionMixin,
+    FirebirdPartitionSchemeChangeSuggestionMixin,
     FirebirdPartitionBuildSuggestionMixin,
     FirebirdPartitionTableDropSuggestionMixin,
     FirebirdPartitionTableAlterSuggestionMixin,
@@ -553,10 +568,14 @@ class FirebirdDialect(
     # with empty bodies. Listed first it would shadow every one of the real
     # implementations and the dialect would answer None for all of them.
     FirebirdTypeSupport,
-    # Suggestion protocols are declared last: the backend mixin above already
-    # implements this one, and listing the Protocol after it keeps its empty
+    # Suggestion protocols are declared last: the backend mixins above already
+    # implement these, and listing each Protocol after its mixin keeps its empty
     # stub from shadowing the real answer.
     CreateTableLayoutSuggestionSupport,
+    ColumnReorderSuggestionSupport,
+    TableConstraintChangeSuggestionSupport,
+    TableIndexChangeSuggestionSupport,
+    PartitionSchemeChangeSuggestionSupport,
 ):
     """Firebird dialect implementation that adapts to Firebird version.
 
