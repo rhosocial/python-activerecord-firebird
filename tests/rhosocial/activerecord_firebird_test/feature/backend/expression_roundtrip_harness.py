@@ -986,22 +986,72 @@ def collect_expression_classes(package_path: str) -> Dict[str, Type[BaseExpressi
     return classes
 
 
-def register_all(classes: Dict[str, Type[BaseExpression]]) -> None:
-    """Hand the collected classes to the deserialization kind whitelist.
+def codec_registry(
+    published: Any, classes: Dict[str, Type[BaseExpression]]
+) -> Any:
+    """The table this matrix reads its own artifacts through.
 
-    Core split the class index out of the serialization module into a
-    registry: deserialization resolves a node to its class through the
-    framework's default registry, not through the ``(dialect, kind)`` render
-    registry -- the two are separate mechanisms and only the former names
-    expression classes. Core and the built-in backends populate that registry
-    on first use; registering one of those classes again is a no-op, and the
-    backend classes collected by the matrix are what this call adds.
+    Each owner publishes its own registry now: core owns core's kinds and a
+    backend composes its own package on top of them. That published table is
+    frozen, and decoding resolves kinds through ``dialect.artifact_registry()``
+    -- never through a process-global alias that whoever registered last could
+    change. This helper therefore works on a *twin* of the published table and
+    leaves it untouched.
+
+    The matrix wrote every artifact it reads, so the kinds that opt out of a
+    published table are trusted here: ``RawSQL`` / ``RawSQLPredicate`` carry
+    caller-vouched text (an artifact must not choose its own SQL), which is the
+    same deliberate opt-in the DOMAIN tests make for their CHECK condition.
+    The collected set is admitted too, so a node the package walk finds but the
+    default table skips (a class naming no formatter) is still exercised on its
+    own terms rather than refused as an unknown kind.
+
+    One more opt-in is needed because of *how* the matrix builds its
+    instances: where core requires a definition it has no core class for (a
+    ``CREATE TYPE`` needs a ``TypeDefinition``), the harness's special
+    constructors use the dummy backend's placeholder nodes. Those artifacts are
+    written here, so the dummy package's kinds are read here as well -- a test
+    view, not a merge of two backends' published tables.
+
+    Args:
+        published: The backend's frozen registry, normally ``backend_registry()``
+            or a ``dialect.artifact_registry()``.
+        classes: The classes the matrix collected, keyed by FQN.
+
+    Returns:
+        A mutable registry carrying *published*'s kinds plus the opt-ins. It is
+        this matrix's read table and is not published anywhere.
     """
-    from rhosocial.activerecord.backend.expression.serialization import default_registry
+    from rhosocial.activerecord.backend.expression.operators import (
+        RawSQL,
+        RawSQLPredicate,
+    )
 
-    registry = default_registry()
+    view = published.twin()
+    for cls in (RawSQL, RawSQLPredicate):
+        view.register_node(cls)
     for cls in classes.values():
-        registry.register_node(cls)
+        view.register_node(cls)
+    # The dummy backend's nodes are the placeholders the matrix's special
+    # constructors use where core has no concrete class to pass. Its
+    # ``expression`` is a single module rather than a package, so collect its
+    # leaf classes directly.
+    import importlib
+
+    dummy = importlib.import_module(
+        "rhosocial.activerecord.backend.impl.dummy.expression"
+    )
+    for name in dir(dummy):
+        obj = getattr(dummy, name, None)
+        if (
+            isinstance(obj, type)
+            and obj.__module__ == dummy.__name__
+            and issubclass(obj, BaseExpression)
+            and obj is not BaseExpression
+            and not inspect.isabstract(obj)
+        ):
+            view.register_node(obj)
+    return view
 
 
 def assert_params_equal(a: Any, b: Any, path: str = "params") -> None:
@@ -1091,6 +1141,7 @@ def roundtrip_expression(
     instance: BaseExpression,
     dialect: Any,
     channel_refusals: Dict[str, Any] = None,
+    registry: Any = None,
 ) -> None:
     """Assert an instance round-trips losslessly through dict / JSON / XML.
 
@@ -1101,9 +1152,15 @@ def roundtrip_expression(
     message fragment, while the channels the mapping does not name must
     round-trip clean.  The pin keeps a known refusal named and asserted instead
     of failing as a bare exception.
+
+    ``registry`` is the table the read resolves kinds through. It defaults to
+    the dialect's own published table (``dialect.artifact_registry()``), which
+    is what ``deserialize`` would select anyway; a caller whose artifacts are
+    trusted passes its own opt-in view instead.
     """
     original = instance.get_params()
     refusals = channel_refusals or {}
+    read_registry = registry if registry is not None else dialect.artifact_registry()
     for channel, build in (
         ("dict", _rt_dict),
         ("json", _rt_json),
@@ -1113,7 +1170,7 @@ def roundtrip_expression(
         if pin is not None:
             expected_type, fragment = pin
             try:
-                restored = build(instance, dialect)
+                restored = build(instance, dialect, read_registry)
                 assert_params_equal(restored.get_params(), original, f"{fqn}/{channel}")
                 assert_render_survives(instance, restored, fqn, channel)
             except expected_type as exc:
@@ -1128,36 +1185,41 @@ def roundtrip_expression(
                     f"round-tripped -- the pin is stale and must go"
                 )
             continue
-        restored = build(instance, dialect)
+        restored = build(instance, dialect, read_registry)
         assert_params_equal(restored.get_params(), original, f"{fqn}/{channel}")
         assert_render_survives(instance, restored, fqn, channel)
 
 
-def _rt_dict(instance, dialect):
+def _rt_dict(instance, dialect, registry):
     from rhosocial.activerecord.backend.expression.serialization import deserialize, serialize
 
-    return deserialize(serialize(instance), dialect)
+    return deserialize(serialize(instance), dialect, registry=registry)
 
 
-def _rt_json(instance, dialect):
+def _rt_json(instance, dialect, registry):
     from rhosocial.activerecord.backend.expression.serialization import deserialize_json, serialize_json
 
-    return deserialize_json(serialize_json(instance), dialect)
+    return deserialize_json(serialize_json(instance), dialect, registry=registry)
 
 
-def _rt_xml(instance, dialect):
+def _rt_xml(instance, dialect, registry):
     from rhosocial.activerecord.backend.expression.serialization import deserialize_xml, serialize_xml
 
-    return deserialize_xml(serialize_xml(instance), dialect)
+    return deserialize_xml(serialize_xml(instance), dialect, registry=registry)
 
 
-def sql_consistent(fqn: str, instance: BaseExpression, dialect: Any) -> None:
+def sql_consistent(fqn: str, instance: BaseExpression, dialect: Any, registry: Any = None) -> None:
     """Assert to_sql is identical after round-trip, when the dialect supports it."""
     try:
         expected = instance.to_sql()
     except Exception:
         return
-    for restored in (_rt_dict(instance, dialect), _rt_json(instance, dialect), _rt_xml(instance, dialect)):
+    read_registry = registry if registry is not None else dialect.artifact_registry()
+    for restored in (
+        _rt_dict(instance, dialect, read_registry),
+        _rt_json(instance, dialect, read_registry),
+        _rt_xml(instance, dialect, read_registry),
+    ):
         assert restored.to_sql() == expected, fqn
 
 
@@ -1271,10 +1333,10 @@ def parse_roundtrip_failures(
 
 __all__ = [
     "assert_params_equal",
+    "codec_registry",
     "collect_expression_classes",
     "make_instance",
     "parse_roundtrip_failures",
-    "register_all",
     "register_special_constructor",
     "roundtrip_expression",
     "sql_consistent",

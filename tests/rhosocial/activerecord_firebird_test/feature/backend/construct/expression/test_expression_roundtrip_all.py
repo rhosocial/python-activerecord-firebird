@@ -167,6 +167,7 @@ from rhosocial.activerecord.backend.impl.firebird.expression.ddl.routine import 
 from rhosocial.activerecord.backend.impl.firebird.expression.ddl.sequence import (
     FirebirdCreateSequenceStatement,
 )
+from rhosocial.activerecord.backend.impl.firebird.registry import backend_registry
 from rhosocial.activerecord.backend.expression.statements import (
     ddl_alter,
     ddl_comment,
@@ -223,9 +224,9 @@ from rhosocial.activerecord.backend.expression.values import LiteralKind
 from expression_roundtrip_harness import (
     assert_params_equal,
     assert_render_survives,
+    codec_registry,
     collect_expression_classes,
     make_instance,
-    register_all,
     register_special_constructor,
     roundtrip_expression,
 )
@@ -242,11 +243,11 @@ def _collect_matrix_classes():
     """Every concrete expression class the two packages define.
 
     Collected by walking each package, not by reading ``ExpressionRegistry``:
-    the registry is process-global and *grows* as sibling test modules import
-    their own backends, so reading it makes this matrix's contents depend on
-    which files pytest happened to import first. Reading it once in this
-    process, once for this purpose, gave three different numbers across three
-    sessions; a package walk is deterministic.
+    the registry used to be process-global and *grew* as sibling test modules
+    imported their own backends, so reading it made this matrix's contents
+    depend on which files pytest happened to import first. Reading it once in
+    this process, once for this purpose, gave three different numbers across
+    three sessions; a package walk is deterministic.
 
     ``ddl_alter`` exports aliases (four spellings of two classes), and several
     modules re-export under a second name. They are the same objects, so the
@@ -256,7 +257,6 @@ def _collect_matrix_classes():
     for package in MATRIX_PACKAGES:
         for fqn, cls in sorted(collect_expression_classes(package).items()):
             collected.setdefault(fqn, cls)
-    register_all(collected)
 
     by_identity: Dict[int, str] = {}
     for fqn, cls in sorted(collected.items()):
@@ -270,6 +270,14 @@ def _collect_matrix_classes():
 
 
 REGISTERED = _collect_matrix_classes()
+
+#: The table this matrix reads its own artifacts through. The backend publishes
+#: a frozen registry of the kinds it can read; the matrix wrote every artifact
+#: below, so it reads through a twin that also admits the kinds the published
+#: table leaves out by design (``RawSQL`` / ``RawSQLPredicate`` carry
+#: caller-vouched text) plus any collected node that names no formatter. It is
+#: local to this module: nothing process-global is mutated.
+CODEC_REGISTRY = codec_registry(backend_registry(), REGISTERED)
 
 
 # ---------------------------------------------------------------------------
@@ -1569,7 +1577,7 @@ _CHANNELS = (
 )
 
 
-def assert_sql_roundtrip_classified(fqn, instance, dialect):
+def assert_sql_roundtrip_classified(fqn, instance, dialect, registry=None):
     """Assert an expression's SQL survives the round-trip, or say precisely why not.
 
     Four outcomes, each asserted:
@@ -1596,6 +1604,9 @@ def assert_sql_roundtrip_classified(fqn, instance, dialect):
 
     Returns the branch taken, so a caller can report the classification
     distribution.
+
+    ``registry`` is the table the read resolves kinds through; it defaults to
+    the dialect's published table, and the matrix passes its trusted local view.
 
     Raises:
         AssertionError: On a round-trip mismatch, on an unexpected exception
@@ -1642,12 +1653,13 @@ def assert_sql_roundtrip_classified(fqn, instance, dialect):
         ) from exc
 
     refusals = _refusal_channels(fqn)
+    read_registry = registry if registry is not None else dialect.artifact_registry()
     for channel, (encode, decode) in _CHANNELS:
         pin = refusals.get(channel)
         if pin is not None:
             expected_type, fragment = pin
             try:
-                decoded = decode(encode(instance), dialect)
+                decoded = decode(encode(instance), dialect, registry=read_registry)
                 decoded_sql, decoded_params = decoded.to_sql()
                 same_sql = decoded_sql == expected_sql
                 same_params = decoded_params == expected_params
@@ -1670,7 +1682,7 @@ def assert_sql_roundtrip_classified(fqn, instance, dialect):
                     f"came back -- the pin is stale and must go"
                 )
             continue
-        decoded = decode(encode(instance), dialect)
+        decoded = decode(encode(instance), dialect, registry=read_registry)
         decoded_sql, decoded_params = decoded.to_sql()
         assert decoded_sql == expected_sql, (
             f"{fqn}: {channel} round-trip changed the SQL.\n"
@@ -1705,12 +1717,16 @@ class TestExpressionRoundtripAll:
 
     def test_get_params_roundtrip_across_encodings(self, expr_case, fb4_dialect):
         fqn, instance = expr_case
-        roundtrip_expression(fqn, instance, fb4_dialect, _refusal_channels(fqn))
+        roundtrip_expression(
+            fqn, instance, fb4_dialect, _refusal_channels(fqn), registry=CODEC_REGISTRY
+        )
 
     def test_to_sql_roundtrip_classified(self, expr_case, fb4_dialect):
         """A render must survive the round-trip; a non-render must be classified."""
         fqn, instance = expr_case
-        assert_sql_roundtrip_classified(fqn, instance, fb4_dialect)
+        assert_sql_roundtrip_classified(
+            fqn, instance, fb4_dialect, registry=CODEC_REGISTRY
+        )
 
 
 class TestMatrixIntegrity:
@@ -1866,14 +1882,14 @@ class TestMatrixIntegrity:
             for channel, (encode, decode) in _CHANNELS:
                 pin = channels.get(channel)
                 if pin is None:
-                    restored = decode(encode(instance), fb4_dialect)
+                    restored = decode(encode(instance), fb4_dialect, registry=CODEC_REGISTRY)
                     assert_params_equal(
                         restored.get_params(), instance.get_params(), f"{fqn}/{channel}"
                     )
                     continue
                 expected_type, fragment = pin
                 try:
-                    restored = decode(encode(instance), fb4_dialect)
+                    restored = decode(encode(instance), fb4_dialect, registry=CODEC_REGISTRY)
                     assert_params_equal(
                         restored.get_params(), instance.get_params(), f"{fqn}/{channel}"
                     )
@@ -1908,7 +1924,7 @@ class TestMatrixIntegrity:
             failing = set()
             for channel, (encode, decode) in _CHANNELS:
                 try:
-                    restored = decode(encode(instance), fb4_dialect)
+                    restored = decode(encode(instance), fb4_dialect, registry=CODEC_REGISTRY)
                     assert_params_equal(
                         restored.get_params(), instance.get_params(), f"{fqn}/{channel}"
                     )
@@ -1979,32 +1995,47 @@ class TestMatrixIntegrity:
     def test_every_covered_class_is_registered_for_deserialization(self):
         """A class in the matrix can be found again when deserializing.
 
-        Deserialization resolves a kind to its class through the framework's
-        default registry (the kind whitelist), so a class the matrix renders
-        but the registry cannot resolve would round-trip into nothing at all.
+        Deserialization resolves a kind to its class through a registry, so a
+        class the matrix renders but the read table cannot resolve would
+        round-trip into nothing at all.
 
         This is the one place the registry is read, and it is a resolution
         check over an already-collected set -- never a source of tests.
         Discovery is the package walk in :func:`_collect_matrix_classes`,
-        precisely because the registry is process-global and grows as
-        sibling modules import their own backends. Core and built-in
-        classes resolve because the registry populates them at first use;
-        this backend's resolve because ``register_all`` handed the
-        collected set to the same registry.
+        because a published table only carries what each owner admits. The
+        matrix's own table, :data:`CODEC_REGISTRY`, is a twin of the backend's
+        published one plus the trusted opt-ins, so every collected class must
+        resolve through it and to the class it was collected as.
         """
-        from rhosocial.activerecord.backend.expression.serialization import (
-            default_registry,
-        )
-
-        registry = default_registry()
         unresolved = sorted(
             fqn
             for fqn, cls in REGISTERED.items()
-            if registry.resolve_node(cls.kind()) is not cls
+            if CODEC_REGISTRY.resolve_node(cls.kind()) is not cls
         )
         assert not unresolved, (
             f"the matrix covers classes the registry cannot resolve: {unresolved}"
         )
+
+    def test_the_published_table_is_the_dialects_and_holds_firebird_kinds(
+        self, fb4_dialect
+    ):
+        """The table this backend publishes is its own, composed onto core's.
+
+        Firebird owns the kinds its expression package declares; the overlap
+        with core is composition, not a merge, and no other backend's kind is
+        present. The table is frozen: a reader holding it cannot change what
+        another reader resolves.
+        """
+        registry = fb4_dialect.artifact_registry()
+        assert registry is backend_registry()
+        assert registry.is_frozen
+
+        assert "firebird_create_domain_expression" in registry.node_kinds()
+        assert "column" in registry.node_kinds()  # core's, composed in
+        foreign = sorted(
+            kind for kind in registry.node_kinds() if kind.startswith("sqlite_")
+        )
+        assert not foreign, f"a sibling backend's kinds leaked in: {foreign}"
 
     def test_coverage_report(self, fb4_dialect):
         """Surface the classification, so coverage stays transparent.
@@ -2018,7 +2049,9 @@ class TestMatrixIntegrity:
             if instance is None:
                 branch = "pinned-unconstructible"
             else:
-                branch = assert_sql_roundtrip_classified(fqn, instance, fb4_dialect)
+                branch = assert_sql_roundtrip_classified(
+                    fqn, instance, fb4_dialect, registry=CODEC_REGISTRY
+                )
             census[branch] = census.get(branch, 0) + 1
         assert sum(census.values()) == len(REGISTERED)
         print(
@@ -2252,7 +2285,11 @@ class TestClausePairFieldsRoundTrip:
         assert params[a] == a_value, f"{case_id}: {a} was not stored"
         assert not params[b], f"{case_id}: {b} must stay unset"
         roundtrip_expression(
-            f"{case_id}.{a}", instance, fb4_dialect, _pair_refusals(case_id)
+            f"{case_id}.{a}",
+            instance,
+            fb4_dialect,
+            _pair_refusals(case_id),
+            registry=CODEC_REGISTRY,
         )
 
     @pytest.mark.parametrize(
@@ -2268,7 +2305,11 @@ class TestClausePairFieldsRoundTrip:
         assert params[b] == b_value, f"{case_id}: {b} was not stored"
         assert not params[a], f"{case_id}: {a} must stay unset"
         roundtrip_expression(
-            f"{case_id}.{b}", instance, fb4_dialect, _pair_refusals(case_id)
+            f"{case_id}.{b}",
+            instance,
+            fb4_dialect,
+            _pair_refusals(case_id),
+            registry=CODEC_REGISTRY,
         )
 
     def test_the_two_spellings_do_not_share_a_parameter(self, fb4_dialect):

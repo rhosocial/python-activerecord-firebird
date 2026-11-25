@@ -12,9 +12,11 @@ from rhosocial.activerecord.backend.dialect.protocols import (
 from rhosocial.activerecord.backend.expression import Literal
 from rhosocial.activerecord.backend.expression.objects import Domain
 from rhosocial.activerecord.backend.expression.operators import RawSQLPredicate
-from rhosocial.activerecord.backend.expression.registry import ExpressionRegistry
+from rhosocial.activerecord.backend.expression.registry import (
+    RegistryError,
+    RegistryReason,
+)
 from rhosocial.activerecord.backend.expression.serialization import (
-    default_registry,
     deserialize,
     deserialize_json,
     deserialize_xml,
@@ -65,45 +67,29 @@ from rhosocial.activerecord.backend.impl.firebird.expression.types import (
 )
 from rhosocial.activerecord.backend.impl.firebird.mixins.domain import FirebirdDomainMixin
 from rhosocial.activerecord.backend.impl.firebird.protocols import FirebirdDomainSupport
+from rhosocial.activerecord.backend.impl.firebird.registry import backend_registry
 from rhosocial.activerecord.backend.impl.sqlite.dialect import SQLiteDialect
 
 
-#: This backend's own artifact kinds and the enum its payloads carry. The
-#: class-path index these used to be registered into was removed with the
-#: kind-based artifact format (core ``ee5f4b55``); the registry says which
-#: class a kind *is*, and a deployment that wants to read this backend's
-#: artifacts registers its kinds through the public entry point. The
-#: module-level registration below is this test process doing exactly that,
-#: so the round-trip cases below read what they write.
-_FIREBIRD_ARTIFACT_CLASSES = (
-    FirebirdCreateDomainExpression,
-    FirebirdAlterDomainExpression,
-    FirebirdDropDomainExpression,
-    FirebirdSetDomainDataTypeAction,
-    FirebirdCharType,
-    FirebirdVarCharType,
-    FirebirdTimeStampTzType,
-    FirebirdTimeTzType,
-    FirebirdTimeWithoutTimeZoneType,
-    FirebirdDecFloatType,
-    FirebirdInt128Type,
-)
+def trusted_registry():
+    """This module's read table: the backend's kinds plus the raw-SQL opt-in.
 
-for _firebird_class in _FIREBIRD_ARTIFACT_CLASSES:
-    default_registry().register_node(_firebird_class)
-# No ``register_enum`` beside it: core ``679d9817`` took the enum and dataclass
-# whitelists off the registry along with the ``__enum__`` / ``__dataclass__``
-# markers they existed to key. ``FirebirdDomainAlterMode`` is a ``(str, Enum)``
-# with ``__str__ = str.__str__``, so a member travels as its own bare word and
-# the constructor normalizes it back -- there is nothing left to whitelist.
-del _firebird_class
+    The class-path index these Firebird classes were once registered into was
+    removed with the kind-based artifact format (core ``ee5f4b55``). Each owner
+    now publishes its own registry: ``backend_registry()`` holds this backend's
+    kinds composed onto core's, frozen and cached, so the round-trip cases below
+    read this backend's own nodes without registering anything.
 
-# ``RawSQLPredicate`` is carried by this backend's DOMAIN payload: the CHECK
-# condition is caller-vouched text, so the class opts out of the default
-# registry (an artifact must not choose its own SQL). The artifacts here are
-# trusted -- this test wrote them -- so the reader registers it explicitly,
-# which is the documented opt-in rather than a relaxation of the default.
-default_registry().register_node(RawSQLPredicate)
+    ``RawSQLPredicate`` is carried by this backend's DOMAIN payload: the CHECK
+    condition is caller-vouched text, so the class opts out of a published
+    table (an artifact must not choose its own SQL). The artifacts here are
+    trusted -- this module wrote them -- so the reader admits it explicitly,
+    on a *twin*: the published table stays untouched for every other reader,
+    and nothing process-global changes.
+    """
+    registry = backend_registry().twin()
+    registry.register_node(RawSQLPredicate)
+    return registry
 
 
 def _check(dialect, condition, *, name=None):
@@ -662,27 +648,24 @@ class TestDispatchAndSerialization:
         assert type(dialect).format_domain_alter_action is FirebirdDomainMixin.format_domain_alter_action
 
     def test_backend_domain_classes_are_registered(self):
-        """Each class resolves under the kind its name derives.
+        """Each class resolves through the dialect's own published table.
 
-        The registry is the only name authority for reading an artifact, and a
-        fresh one starts empty: registration is what makes a backend's own
-        kinds readable, which is why the test registers rather than looks
-        anything up by import path (that index is gone with the kind-based
-        artifact format).
+        A dialect answers ``artifact_registry()`` with the kinds its backend
+        can read; ``deserialize(artifact, dialect)`` selects that table. An
+        artifact is read by name, so a class that does not resolve here would
+        round-trip into nothing.
         """
-        registry = ExpressionRegistry()
+        registry = FirebirdDialect((4, 0, 0)).artifact_registry()
         for expression_class in (
             FirebirdCreateDomainExpression,
             FirebirdAlterDomainExpression,
             FirebirdDropDomainExpression,
             FirebirdSetDomainDataTypeAction,
         ):
-            kind = registry.register_node(expression_class)
-            assert kind == expression_class.kind()
-            assert registry.resolve_node(kind) is expression_class
+            assert registry.resolve_node(expression_class.kind()) is expression_class
 
     def test_firebird_data_types_are_registered(self):
-        registry = ExpressionRegistry()
+        registry = FirebirdDialect((4, 0, 0)).artifact_registry()
         for expression_class in (
             FirebirdCharType,
             FirebirdVarCharType,
@@ -692,9 +675,42 @@ class TestDispatchAndSerialization:
             FirebirdDecFloatType,
             FirebirdInt128Type,
         ):
-            kind = registry.register_node(expression_class)
-            assert kind == expression_class.kind()
-            assert registry.resolve_node(kind) is expression_class
+            assert registry.resolve_node(expression_class.kind()) is expression_class
+
+    def test_the_backend_registry_is_frozen(self):
+        """A published table cannot be changed by a reader that holds it."""
+        registry = FirebirdDialect((4, 0, 0)).artifact_registry()
+        assert registry.is_frozen
+        with pytest.raises(RegistryError) as caught:
+            registry.register_node(FirebirdCreateDomainExpression)
+        assert caught.value.reason is RegistryReason.REGISTRY_FROZEN
+        assert "frozen" in str(caught.value)
+
+    def test_a_foreign_backend_kind_is_refused(self):
+        """This backend reads its own kinds and core's -- no sibling's."""
+        registry = FirebirdDialect((4, 0, 0)).artifact_registry()
+        with pytest.raises(RegistryError) as caught:
+            registry.resolve_node("sqlite_vacuum_statement")
+        assert "sqlite_vacuum_statement" in str(caught.value)
+
+        # And the raw-SQL opt-in is this module's twin, not the published table.
+        with pytest.raises(RegistryError):
+            registry.resolve_node(RawSQLPredicate.kind())
+        assert RawSQLPredicate.kind() in trusted_registry().node_kinds()
+
+    def test_a_domain_artifact_is_read_through_the_dialects_registry(self):
+        """``deserialize(spec, dialect)`` resolves a Firebird kind by name."""
+        dialect = FirebirdDialect((4, 0, 0))
+        expression = FirebirdAlterDomainExpression(
+            dialect,
+            Domain(dialect, "positive"),
+            FirebirdDomainAlterMode.SET_DEFAULT,
+            value=1,
+        )
+
+        restored = deserialize(serialize(expression), dialect)
+        assert type(restored) is FirebirdAlterDomainExpression
+        assert restored.to_sql() == expression.to_sql()
 
     def test_firebird_data_types_round_trip_in_all_codecs(self):
         dialect = FirebirdDialect((4, 0, 0))
@@ -724,7 +740,7 @@ class TestDispatchAndSerialization:
         for expression in expressions:
             for encoder, decoder in codecs:
                 payload = encoder(expression)
-                restored = decoder(payload, dialect)
+                restored = decoder(payload, dialect, registry=dialect.artifact_registry())
                 assert type(restored) is type(expression)
                 assert restored.to_sql() == expression.to_sql()
                 assert encoder(restored) == payload
@@ -778,10 +794,13 @@ class TestDispatchAndSerialization:
             (serialize_xml, deserialize_xml),
         )
 
+        # The CHECK condition travels as ``RawSQLPredicate``: read through the
+        # module's trusted twin, not the backend's published table.
+        trusted = trusted_registry()
         for expression in expressions:
             for encoder, decoder in codecs:
                 payload = encoder(expression)
-                restored = decoder(payload, dialect)
+                restored = decoder(payload, dialect, registry=trusted)
                 assert type(restored) is type(expression)
                 assert restored.to_sql() == expression.to_sql()
                 assert encoder(restored) == payload

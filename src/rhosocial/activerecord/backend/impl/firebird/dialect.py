@@ -593,6 +593,19 @@ class FirebirdDialect(
         if version is not None:
             self.version = version
 
+    def artifact_registry(self):
+        """The kinds this backend can read: core's kinds plus Firebird's own.
+
+        Firebird owns its expression package, so the composition lives here
+        rather than in core: ``backend_registry()`` is
+        ``registry_for_packages("...impl.firebird.expression", base=core_registry())``,
+        frozen and cached. No other backend's kinds are present, and a read
+        through this dialect resolves exactly what this backend can rebuild.
+        """
+        from .registry import backend_registry
+
+        return backend_registry()
+
     # region Version-based feature detection
 
     def version_at_least(self, floor: Tuple[int, int, int]) -> bool:
