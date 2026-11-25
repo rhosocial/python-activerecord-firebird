@@ -640,6 +640,33 @@ class FirebirdConstraintMixin:
         """
         return False
 
+    def supports_drop_constraint_by_kind(self) -> bool:
+        """False: Firebird drops a constraint by **name** only.
+
+        There is no kind-addressed spelling to fall back to -- no ``DROP
+        PRIMARY KEY`` and no ``DROP CHECK``, both measured on Firebird 5.0.4
+        against a real constraint::
+
+            ALTER TABLE t DROP PRIMARY KEY
+            -> -104: Token unknown - line 1, column 25 -PRIMARY
+
+            ALTER TABLE t DROP CHECK c
+            -> -104: Token unknown - line 1, column 25 -CHECK
+
+        The primary key has no namespace of its own here: it is dropped by the
+        constraint name that ``RDB$RELATION_CONSTRAINTS`` records, like every
+        other kind (:meth:`supports_drop_constraint`).  An action that carries
+        only a declaration therefore has nothing this server can address, so
+        :class:`~.FirebirdAlterTableModifierMixin.format_drop_table_constraint_action`
+        refuses it with ``UnsupportedFeatureError`` naming ``DROP CONSTRAINT by
+        kind`` instead of emitting SQL that would fail at the server.
+
+        This value is the backend's own declaration rather than core's
+        ``False`` default: the answer is a measurement about Firebird, and a
+        moved core default must not change what this backend renders.
+        """
+        return False
+
     # ------------------------------------------------------------------
     # Column-level clause position -- the CHARACTER SET / COLLATE pair
     # ------------------------------------------------------------------

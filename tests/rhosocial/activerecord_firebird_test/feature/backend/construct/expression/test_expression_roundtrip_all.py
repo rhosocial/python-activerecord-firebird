@@ -638,6 +638,15 @@ def register_specials():
             ),
         ),
     )
+    # The DROP action takes its address as a *defaulted* parameter now, so the
+    # introspective guess skips it and builds an action with neither a name nor
+    # a declaration -- which the formatter refuses as an unaddressable drop.
+    # Supplying a name is what keeps this class on the same "renders" branch it
+    # was on before the parameter gained its default: Firebird drops by name.
+    register_special_constructor(
+        "statements.ddl_alter.DropTableConstraintAction",
+        lambda d: ddl_alter.DropTableConstraintAction(d, constraint_name="c"),
+    )
 
     # -- CHECK branches: the condition is DDL, so it binds nothing ----------
     # The introspective guess builds the condition from a literal, and the

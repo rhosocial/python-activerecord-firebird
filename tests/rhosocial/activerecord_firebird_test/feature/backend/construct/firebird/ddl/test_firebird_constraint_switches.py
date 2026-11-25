@@ -84,6 +84,8 @@ CONSTRAINT_SWITCHES = {
     "supports_add_constraint": True,
     "supports_drop_constraint": True,
     "supports_drop_constraint_if_exists": False,
+    # -- The drop is addressed by name; no kind-addressed spelling exists.
+    "supports_drop_constraint_by_kind": False,
     # -- Column clause position: charset lives in the datatype, COLLATE last.
     "supports_column_character_set": False,
     "supports_column_collation": True,
@@ -113,6 +115,7 @@ EVIDENCE = {
     "supports_add_constraint": "-607",
     "supports_drop_constraint": "does not exist",
     "supports_drop_constraint_if_exists": "-104",
+    "supports_drop_constraint_by_kind": "-PRIMARY",
     "supports_column_character_set": "-104",
     "supports_column_collation": "COLLATE",
 }
@@ -505,6 +508,31 @@ class TestLifecycleIsAddAndDropOnly:
         with pytest.raises(UnsupportedFeatureError) as excinfo:
             action.to_sql()
         assert "IF EXISTS" in str(excinfo.value)
+
+    def test_the_modifier_guard_refuses_by_kind_by_name(self):
+        """``False`` on the by-kind probe has to reach the rendered SQL too.
+
+        Firebird spells no kind-addressed drop, so an action carrying only a
+        declaration must be refused with this backend's own ``by kind`` wording
+        rather than fall through to core's generic answer or emit a statement
+        the server rejects at ``-104``.
+        """
+        from rhosocial.activerecord.backend.dialect.exceptions import UnsupportedFeatureError
+        from rhosocial.activerecord.backend.expression.statements import (
+            DropTableConstraintAction,
+            TableConstraint,
+            TableUniqueConstraint,
+        )
+
+        dialect = _dialect()
+        assert dialect.supports_drop_constraint_by_kind() is False
+        constraint = TableConstraint(
+            dialect, branch=TableUniqueConstraint(dialect, ["c"]), name="UQ"
+        )
+        action = DropTableConstraintAction(dialect, constraint=constraint)
+        with pytest.raises(UnsupportedFeatureError) as excinfo:
+            action.to_sql()
+        assert "DROP CONSTRAINT by kind" in str(excinfo.value)
 
 
 class TestDeferrableAndEnforcedAreRefusedByName:

@@ -8,6 +8,12 @@ unreleased Firebird 6.0 master). Requesting any of these modifiers
 raises ``UnsupportedFeatureError``; applications should pre-check
 ``RDB$RELATION_FIELDS`` / ``RDB$RELATION_CONSTRAINTS`` instead.
 
+The same catalog is why a constraint can only be dropped by **name** here:
+Firebird spells no kind-addressed drop (``DROP PRIMARY KEY`` and ``DROP
+CHECK`` both answer ``-104 Token unknown``), so a
+``DropTableConstraintAction`` addressed by its declaration is refused by
+name as ``DROP CONSTRAINT by kind`` rather than rendered.
+
 Also renders the Firebird-only ``ALTER COLUMN`` identity / ordering
 clauses that the core ``DDLColumnMixin`` does not know about:
 ``SET GENERATED``, ``RESTART [WITH]``, ``SET INCREMENT``, ``DROP
@@ -120,10 +126,29 @@ class FirebirdAlterTableModifierMixin:
     def format_drop_table_constraint_action(self, expr: Any) -> Tuple[str, tuple]:
         """Format ALTER TABLE DROP CONSTRAINT for Firebird.
 
-        Firebird <= 5.0.4 does not support ``DROP CONSTRAINT IF EXISTS``.
-        Guard the modifier and delegate the plain form to the base
-        implementation.
+        Two refusals live here, both by name:
+
+        * a **declaration-addressed** drop (``constraint`` carrying the
+          declaration rather than ``constraint_name``) -- Firebird spells no
+          kind-addressed drop at all, so there is nothing to render;
+        * ``DROP CONSTRAINT IF EXISTS`` -- Firebird <= 5.0.4 does not support
+          that modifier either.
+
+        The name-only form is delegated to the base implementation unchanged.
         """
+        # The declaration guard comes first: it is the refusal that says what
+        # this dialect can address, and it holds whether the modifier is also
+        # asked for. ``constraint`` is DropTableConstraintAction's declared
+        # field; the guard reads it under its own name rather than probing.
+        if expr.constraint is not None:
+            raise UnsupportedFeatureError(
+                self.name,
+                "DROP CONSTRAINT by kind",
+                "Firebird drops a constraint by name only -- there is no "
+                "DROP PRIMARY KEY / DROP UNIQUE (<cols>) / DROP FOREIGN KEY "
+                "(<cols>) spelling to render. Address the constraint by name "
+                "instead; the name is what RDB$RELATION_CONSTRAINTS records.",
+            )
         # ``if_exists`` is DropTableConstraintAction's declared field; the
         # guard reads it under its own name rather than probing for it.
         if expr.if_exists is True:
