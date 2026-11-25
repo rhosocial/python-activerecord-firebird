@@ -8,7 +8,14 @@ any of these modifiers must raise ``UnsupportedFeatureError``.
 The same formatter also refuses a constraint dropped *by kind*: Firebird
 spells no ``DROP PRIMARY KEY`` / ``DROP CHECK``, so a
 ``DropTableConstraintAction`` addressed only by its declaration is refused
-by name as ``DROP CONSTRAINT by kind``. The name-only form is untouched.
+by name as ``DROP CONSTRAINT by kind``.
+
+A declaration supplied alongside a name is not a second address: it only
+**confirms** the name when it carries that same name, and the drop renders
+byte-identically to the name-only form. A declaration whose name differs, or
+one with no name at all, is an **ambiguous address** and is refused as
+``DROP CONSTRAINT address`` -- core's one resolution rule, never a per-backend
+preference. The name-only form is untouched.
 """
 
 import pytest
@@ -63,9 +70,9 @@ class TestGuardRaises:
             action.to_sql()
 
 
-def _unique(dialect):
+def _unique(dialect, name="uq"):
     """A declaration the by-kind drop would have spelled ``DROP UNIQUE (a)``."""
-    return TableConstraint(dialect, branch=TableUniqueConstraint(dialect, ["a"]), name="uq")
+    return TableConstraint(dialect, branch=TableUniqueConstraint(dialect, ["a"]), name=name)
 
 
 class TestDropByKindIsRefusedByName:
@@ -84,15 +91,109 @@ class TestDropByKindIsRefusedByName:
         with pytest.raises(UnsupportedFeatureError) as excinfo:
             action.to_sql()
         assert "DROP CONSTRAINT by kind" in str(excinfo.value)
+        assert excinfo.value.feature_name == "DROP CONSTRAINT by kind"
 
-    def test_name_and_declaration_together_are_still_refused_by_kind(self, dialect):
-        """The declaration guard sits first, so a name does not launder it."""
+    def test_declaration_only_is_still_refused_by_kind(self, dialect):
+        """The probe answers ``False``, so the resolver itself refuses kinds.
+
+        The local declaration guard is gone: the refusal now comes from
+        ``_resolve_drop_constraint_address``, which reaches the same conclusion
+        because this backend advertises no kind spelling.
+        """
+        action = DropTableConstraintAction(dialect, constraint=_unique(dialect))
+        assert dialect.supports_drop_constraint_by_kind() is False
+        with pytest.raises(UnsupportedFeatureError) as excinfo:
+            dialect._resolve_drop_constraint_address(action)
+        assert excinfo.value.feature_name == "DROP CONSTRAINT by kind"
+
+
+class TestDropConstraintAddress:
+    """A declaration beside a name confirms the name, or is an ambiguity.
+
+    The address rule is core's ``_resolve_drop_constraint_address``; this
+    formatter only consumes its answer, so the tests pin the formatter's
+    behaviour for each answer rather than restating the rule.
+    """
+
+    def test_equal_declaration_name_renders(self, dialect):
         action = DropTableConstraintAction(
-            dialect, constraint_name="uq", constraint=_unique(dialect)
+            dialect, constraint_name="uq", constraint=_unique(dialect, "uq")
+        )
+        assert dialect._resolve_drop_constraint_address(action) == "name"
+        sql, params = action.to_sql()
+        assert sql == 'DROP CONSTRAINT "UQ"'
+        assert params == ()
+
+    def test_equal_declaration_renders_byte_identically_to_name_only(self, dialect):
+        """The confirming declaration adds no second address to the SQL."""
+        name_only = DropTableConstraintAction(dialect, constraint_name="uq")
+        confirmed = DropTableConstraintAction(
+            dialect, constraint_name="uq", constraint=_unique(dialect, "uq")
+        )
+        assert confirmed.to_sql() == name_only.to_sql()
+        assert confirmed.to_sql() == ('DROP CONSTRAINT "UQ"', ())
+
+    def test_differing_declaration_name_is_an_ambiguous_address(self, dialect):
+        action = DropTableConstraintAction(
+            dialect, constraint_name="uq", constraint=_unique(dialect, "uq_other")
         )
         with pytest.raises(UnsupportedFeatureError) as excinfo:
             action.to_sql()
-        assert "DROP CONSTRAINT by kind" in str(excinfo.value)
+        assert excinfo.value.feature_name == "DROP CONSTRAINT address"
+        message = str(excinfo.value)
+        assert "'uq'" in message
+        assert "'uq_other'" in message
+        assert "ambiguous address is refused" in message
+
+    def test_unnamed_declaration_is_an_ambiguous_address(self, dialect):
+        action = DropTableConstraintAction(
+            dialect, constraint_name="uq", constraint=_unique(dialect, None)
+        )
+        with pytest.raises(UnsupportedFeatureError) as excinfo:
+            action.to_sql()
+        assert excinfo.value.feature_name == "DROP CONSTRAINT address"
+        assert "ambiguous address is refused" in str(excinfo.value)
+
+    def test_ambiguous_address_is_reported_before_the_if_exists_guard(self, dialect):
+        """Address resolution precedes the modifier guard, as it must."""
+        action = DropTableConstraintAction(
+            dialect,
+            constraint_name="uq",
+            constraint=_unique(dialect, "uq_other"),
+            if_exists=True,
+        )
+        with pytest.raises(UnsupportedFeatureError) as excinfo:
+            action.to_sql()
+        assert excinfo.value.feature_name == "DROP CONSTRAINT address"
+        assert "IF EXISTS" not in str(excinfo.value)
+
+    def test_equal_declaration_still_reaches_the_if_exists_guard(self, dialect):
+        """A resolved name does not launder an unsupported modifier."""
+        action = DropTableConstraintAction(
+            dialect, constraint_name="uq", constraint=_unique(dialect, "uq"), if_exists=True
+        )
+        with pytest.raises(UnsupportedFeatureError) as excinfo:
+            action.to_sql()
+        assert excinfo.value.feature_name == "DROP CONSTRAINT IF EXISTS"
+        assert "IF EXISTS" in str(excinfo.value)
+
+    def test_a_kind_advertising_subclass_has_no_kind_spelling(self):
+        """The resolver's ``"kind"`` answer has no spelling in this backend.
+
+        This backend answers ``False`` to the probe, so the branch is only
+        reachable through a subclass. It must refuse by name rather than reach
+        core's generic answer or emit nothing.
+        """
+
+        class KindDropDialect(FirebirdDialect):
+            def supports_drop_constraint_by_kind(self) -> bool:
+                return True
+
+        kind_dialect = KindDropDialect()
+        action = DropTableConstraintAction(kind_dialect, constraint=_unique(kind_dialect, "uq"))
+        assert kind_dialect._resolve_drop_constraint_address(action) == "kind"
+        with pytest.raises(NotImplementedError, match="no kind spelling"):
+            action.to_sql()
 
 
 class TestPlainForms:

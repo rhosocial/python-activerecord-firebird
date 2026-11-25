@@ -11,8 +11,12 @@ raises ``UnsupportedFeatureError``; applications should pre-check
 The same catalog is why a constraint can only be dropped by **name** here:
 Firebird spells no kind-addressed drop (``DROP PRIMARY KEY`` and ``DROP
 CHECK`` both answer ``-104 Token unknown``), so a
-``DropTableConstraintAction`` addressed by its declaration is refused by
-name as ``DROP CONSTRAINT by kind`` rather than rendered.
+``DropTableConstraintAction`` addressed only by its declaration is refused by
+name as ``DROP CONSTRAINT by kind``.  A declaration supplied *alongside* a
+name only confirms it when it carries that same name; an unequal or unnamed
+declaration is an ambiguous address and is refused as ``DROP CONSTRAINT
+address`` (the shared resolution rule,
+``ConstraintMixin._resolve_drop_constraint_address``).
 
 Also renders the Firebird-only ``ALTER COLUMN`` identity / ordering
 clauses that the core ``DDLColumnMixin`` does not know about:
@@ -126,28 +130,38 @@ class FirebirdAlterTableModifierMixin:
     def format_drop_table_constraint_action(self, expr: Any) -> Tuple[str, tuple]:
         """Format ALTER TABLE DROP CONSTRAINT for Firebird.
 
-        Two refusals live here, both by name:
+        The address is decided first, by the one rule every backend shares:
+        :meth:`~.ConstraintMixin._resolve_drop_constraint_address`.  Firebird
+        spells no kind-addressed drop at all -- no ``DROP PRIMARY KEY`` /
+        ``DROP UNIQUE (<cols>)`` / ``DROP FOREIGN KEY (<cols>)`` -- so a
+        **declaration-only** action is refused by the resolver as
+        ``DROP CONSTRAINT by kind`` (this dialect does not advertise
+        :meth:`supports_drop_constraint_by_kind`).  When a declaration
+        accompanies a name, it only **confirms** that name if it carries the
+        same name; otherwise the resolver refuses the **ambiguous address**
+        as ``DROP CONSTRAINT address``.  Only the resolved ``"name"`` form
+        reaches the spelling below.
 
-        * a **declaration-addressed** drop (``constraint`` carrying the
-          declaration rather than ``constraint_name``) -- Firebird spells no
-          kind-addressed drop at all, so there is nothing to render;
-        * ``DROP CONSTRAINT IF EXISTS`` -- Firebird <= 5.0.4 does not support
-          that modifier either.
+        ``DROP CONSTRAINT IF EXISTS`` is still guarded here -- Firebird <=
+        5.0.4 does not support that modifier -- and the guard runs **after**
+        the addressing decision, so a malformed address is reported before a
+        refused modifier.
 
         The name-only form is delegated to the base implementation unchanged.
         """
-        # The declaration guard comes first: it is the refusal that says what
-        # this dialect can address, and it holds whether the modifier is also
-        # asked for. ``constraint`` is DropTableConstraintAction's declared
-        # field; the guard reads it under its own name rather than probing.
-        if expr.constraint is not None:
-            raise UnsupportedFeatureError(
-                self.name,
-                "DROP CONSTRAINT by kind",
-                "Firebird drops a constraint by name only -- there is no "
-                "DROP PRIMARY KEY / DROP UNIQUE (<cols>) / DROP FOREIGN KEY "
-                "(<cols>) spelling to render. Address the constraint by name "
-                "instead; the name is what RDB$RELATION_CONSTRAINTS records.",
+        # Resolve the address before the IF EXISTS guard: which constraint the
+        # action names is the earlier question, and a declaration that does not
+        # agree with the name cannot be laundered by a modifier either.
+        address = self._resolve_drop_constraint_address(expr)
+        if address != "name":
+            # Unreachable with this backend's own
+            # ``supports_drop_constraint_by_kind() -> False``: the resolver
+            # already refused the kind address above. It is here so a subclass
+            # that advertises kinds without supplying a kind spelling cannot
+            # silently render nothing.
+            raise NotImplementedError(
+                f"{self.name} has no kind spelling for DROP CONSTRAINT; a "
+                f"declaration-only drop has no name to render."
             )
         # ``if_exists`` is DropTableConstraintAction's declared field; the
         # guard reads it under its own name rather than probing for it.

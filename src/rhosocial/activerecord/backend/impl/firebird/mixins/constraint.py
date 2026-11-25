@@ -661,6 +661,13 @@ class FirebirdConstraintMixin:
         refuses it with ``UnsupportedFeatureError`` naming ``DROP CONSTRAINT by
         kind`` instead of emitting SQL that would fail at the server.
 
+        Which address an action *names* is not decided here: core's
+        ``ConstraintMixin._resolve_drop_constraint_address`` is the single
+        rule, and the formatter consumes its answer.  A declaration given
+        alongside a name only confirms the name when it carries that same
+        name; an unequal or unnamed declaration is refused there as an
+        ambiguous ``DROP CONSTRAINT address``, never resolved by preference.
+
         This value is the backend's own declaration rather than core's
         ``False`` default: the answer is a measurement about Firebird, and a
         moved core default must not change what this backend renders.
