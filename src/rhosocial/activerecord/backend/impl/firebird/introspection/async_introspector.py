@@ -8,6 +8,7 @@ kept only for API parity. Use the synchronous introspector instead.
 
 from typing import Any, Dict, List, Optional
 
+from rhosocial.activerecord.backend.dialect.exceptions import UnsupportedFeatureError
 from rhosocial.activerecord.backend.introspection.base import (
     IntrospectorMixin,
     AsyncAbstractIntrospector,
@@ -15,11 +16,22 @@ from rhosocial.activerecord.backend.introspection.base import (
 from rhosocial.activerecord.backend.introspection.cache import (
     IntrospectionCache,
 )
+from rhosocial.activerecord.backend.introspection.errors import (
+    ObjectNotFoundError,
+)
 from rhosocial.activerecord.backend.introspection.types import (
     ColumnDataProfile,
     ColumnValueFrequency,
+    ConstraintState,
+    DerivedObjectState,
+    IndexState,
     IntrospectionDatabaseInfo,
     IntrospectionTableInfo,
+    ItemKind,
+    PartitionState,
+    SequenceState,
+    StorageOptionsState,
+    TableState,
     TableType,
     IntrospectionColumnInfo,
     IndexInfo,
@@ -120,6 +132,40 @@ _RELATION_TYPE_KINDS = {
     2: TableType.EXTERNAL,
     4: TableType.TEMPORARY,
     5: TableType.TEMPORARY,
+}
+
+#: ``RDB$RELATIONS.RDB$RELATION_TYPE`` -> ``TableState.kind``. The neutral
+#: table-state vocabulary is free-form (core's default is ``"regular"``), so
+#: this names Firebird's five relation kinds in that vocabulary. A global
+#: temporary table keeps the engine's own word here rather than the broader
+#: ``"temporary"``: the catalogue distinguishes a GTT from a transient table,
+#: and folding them would lose the distinction at the one layer that saw it.
+_TABLE_STATE_KINDS = {
+    0: "regular",
+    1: "view",
+    2: "external",
+    3: "monitoring",
+    4: "global_temporary",
+    5: "global_temporary",
+}
+
+#: Compound traits for a ``TableState``. The two GTT codes differ only in
+#: their ``ON COMMIT`` clause, which is exactly what ``traits`` is for.
+_TABLE_STATE_TRAITS = {
+    4: ("on_commit_preserve_rows",),
+    5: ("on_commit_delete_rows",),
+}
+
+#: ``RDB$RELATION_CONSTRAINTS.RDB$CONSTRAINT_TYPE`` -> ``ConstraintState.kind``.
+#: Core names no vocabulary for this slot (``kind`` is free-form), so the
+#: catalogue's five spellings are folded to the snake case core's own enums
+#: use. ``NOT NULL`` arrives here too: Firebird records it as a constraint row.
+_CONSTRAINT_STATE_KINDS = {
+    "PRIMARY KEY": "primary_key",
+    "FOREIGN KEY": "foreign_key",
+    "UNIQUE": "unique",
+    "CHECK": "check",
+    "NOT NULL": "not_null",
 }
 
 # The table-trigger values of ``RDB$TRIGGER_TYPE`` (language reference D.32.1).
@@ -1249,6 +1295,297 @@ class FirebirdAsyncIntrospectorMixin(IntrospectorMixin):
             schema=schema,
         )
 
+    # ------------------------------------------------------------------
+    # Neutral object state
+    #
+    # The questions and parsers the core's new state API asks for. Nothing
+    # here is Firebird's own result type: the sync and async halves of each
+    # pair only differ in how the statement reaches the server, so the SQL
+    # and the row-to-dataclass mapping live here, beside the catalogue
+    # families they belong to.
+    # ------------------------------------------------------------------
+
+    def catalogue_name_candidates(self, table_name: str) -> List[str]:
+        """The catalogue spellings to try for a name a caller wrote by hand.
+
+        Firebird folds *unquoted* identifiers to upper case, and the relation
+        name of the new state questions is a bind parameter rather than a
+        rendered identifier -- so a caller who wrote ``"orders"`` would be
+        compared, case-sensitively, against the catalogue's ``"ORDERS"`` and
+        find nothing. Trying the spelling as written first keeps a quoted
+        mixed-case name reachable (the catalogue stores it verbatim), and the
+        folded spelling second covers everything created unquoted.
+        """
+        written = table_name.strip()
+        folded = written.upper()
+        return [written] if written == folded else [written, folded]
+
+    def table_state_statement(self, table_name: str, schema: Optional[str] = None):
+        """Return the single-relation question the table state is read from.
+
+        It is the core's single-table statement -- this backend's formatter
+        projects the kind, the comment and the system flag beside the name --
+        with the column, index and foreign-key aggregates switched off: the
+        state describes the relation itself, not the objects under it.
+        """
+        from rhosocial.activerecord.backend.expression.introspection import (
+            TableInfoQueryStatement,
+        )
+
+        target_schema = schema if schema is not None else self.default_schema
+        return TableInfoQueryStatement(
+            self.dialect,
+            table_name=table_name,
+            schema=target_schema,
+            include_columns=False,
+            include_indexes=False,
+            include_foreign_keys=False,
+        )
+
+    def index_state_statement(self, table_name: str, schema: Optional[str] = None):
+        """Return the question a table's index states are read from.
+
+        The index listing already asks everything a state needs -- uniqueness,
+        the inactive flag, the index type and the constraint join -- so this
+        delegates rather than writing a second question over ``RDB$INDICES``.
+        """
+        return self.index_info_statement(table_name=table_name, schema=schema)
+
+    def constraint_state_statement(
+        self, table_name: str, schema: Optional[str] = None
+    ):
+        """Return the question a table's constraint states are read from.
+
+        Same relation and same joins as the constraint listing, narrowed to
+        one table and to the objects the caller owns. A state adds no
+        catalogue column, so a second statement would only duplicate SQL.
+        """
+        return self.constraint_list_statement(table_name, None, False)
+
+    def sequence_state_statement(self, schema: Optional[str] = None):
+        """Return the question a database's sequence states are read from.
+
+        Generators and sequences are one object kind in Firebird; the listing
+        that names them and their owning identity column answers the state
+        family too. Its per-generator ``GEN_ID`` value read is deliberately
+        not part of the state: ``SequenceState`` carries the declaration's
+        facts, not the number the generator has reached.
+        """
+        return self.generator_list_statement(False)
+
+    def parse_table_state(
+        self,
+        rows: List[Dict[str, Any]],
+        table_name: str,
+        schema: Optional[str],
+    ) -> Optional[TableState]:
+        """Read one relation row into the neutral table state.
+
+        ``kind`` maps ``RDB$RELATION_TYPE`` onto this backend's spelling of
+        the free-form vocabulary, with the GTT ``ON COMMIT`` behaviour in
+        ``traits`` rather than collapsed into the kind. ``storage`` carries
+        no slot: Firebird's catalogue has no per-table storage fact to read
+        (the ``RDB$PAGES``/``gstat`` material describes the database file),
+        so every field stays ``None`` -- "the engine used its default", which
+        is the meaning core gives that value, not "unknown".
+
+        ``partitioning`` stays ``None`` here because Firebird has no table
+        partitioning; :meth:`get_partition_state` carries that explicit
+        answer.
+
+        ``None`` is returned for an empty row set, which the I/O half turns
+        into ``ObjectNotFoundError``: a state for a relation that is not
+        there would otherwise read as a successful answer.
+        """
+        for row in rows or []:
+            name = self._row_name(row, "RDB$RELATION_NAME") or table_name
+            relation_type = row.get("RDB$RELATION_TYPE")
+            return TableState(
+                name=name,
+                schema=schema,
+                kind=_TABLE_STATE_KINDS.get(relation_type, "unknown"),
+                traits=_TABLE_STATE_TRAITS.get(relation_type, ()),
+                storage=StorageOptionsState(),
+                comment=self._text_or_none(row.get("RDB$DESCRIPTION")),
+                partitioning=None,
+                raw={
+                    "relation_type": relation_type,
+                    "is_system": bool(row.get("RDB$SYSTEM_FLAG")),
+                },
+            )
+        return None
+
+    def parse_index_states(
+        self,
+        rows: List[Dict[str, Any]],
+        table_name: str,
+        schema: str,
+    ) -> List[IndexState]:
+        """Group the index listing's segment rows into one state per index.
+
+        The index question answers one row per key segment, so the first row
+        of a name carries the index-level facts and the rest are its key. A
+        Firebird index is a B-tree and the engine has no invisible-index
+        state, so ``method`` is ``"btree"`` and ``visible`` is ``True`` as
+        facts about this engine -- while ``usable`` is read off
+        ``RDB$INDEX_INACTIVE``, the flag ``ALTER INDEX ... INACTIVE`` sets.
+        The constraint join is what names the constraint an index backs; an
+        ordinary index has no constraint row and keeps ``None``.
+        """
+        states: Dict[str, IndexState] = {}
+        for row in rows or []:
+            name = self._row_name(row, "INDEX_NAME")
+            if not name or name in states:
+                continue
+            states[name] = IndexState(
+                name=name,
+                table=table_name,
+                schema=schema,
+                unique=row.get("UNIQUE_FLAG") == 1,
+                method="btree",
+                predicate=None,
+                visible=True,
+                usable=not bool(row.get("INACTIVE")),
+                backs_constraint=self._text_or_none(row.get("CONSTRAINT_NAME")),
+                raw={
+                    "inactive": row.get("INACTIVE"),
+                    "index_type": row.get("INDEX_TYPE"),
+                    "constraint_type": self._text_or_none(row.get("CONSTRAINT_TYPE")),
+                },
+            )
+        return list(states.values())
+
+    def parse_constraint_states(
+        self,
+        rows: List[Dict[str, Any]],
+        table_name: str,
+        schema: str,
+    ) -> List[ConstraintState]:
+        """Read the constraint listing into neutral constraint states.
+
+        Firebird constraints cannot be disabled, carry no "not valid" state
+        and are checked when declared, so ``validated`` and ``enforced`` are
+        ``True`` and ``disabled`` is ``False`` as facts about the engine.
+        Deferral is the one state the catalogue records: a constraint with
+        ``INITIALLY DEFERRED`` answers ``deferred=True``. ``backing_index``
+        is the index the constraint owns; a ``CHECK`` or ``NOT NULL`` row
+        has none.
+
+        ``kind`` folds the catalogue's spelling to the snake case core's own
+        enums use, while ``raw`` keeps the spelled value so nothing is lost
+        at the only layer that saw it.
+        """
+        result: List[ConstraintState] = []
+        for row in rows or []:
+            name = self._row_name(row, "CONSTRAINT_NAME")
+            if not name:
+                continue
+            spelled = (self._text_or_none(row.get("CONSTRAINT_TYPE")) or "").upper()
+            deferred = (
+                (self._text_or_none(row.get("INITIALLY_DEFERRED")) or "").upper()
+                == "DEFERRED"
+            )
+            result.append(
+                ConstraintState(
+                    name=name,
+                    table=self._row_name(row, "RELATION_NAME") or table_name,
+                    kind=_CONSTRAINT_STATE_KINDS.get(spelled, spelled.lower()),
+                    schema=schema,
+                    validated=True,
+                    enforced=True,
+                    deferred=deferred,
+                    disabled=False,
+                    backing_index=self._text_or_none(row.get("INDEX_NAME")),
+                    raw={
+                        "constraint_type": spelled or None,
+                        "deferrable": self._text_or_none(row.get("DEFERRABLE")),
+                        "check_trigger": self._text_or_none(
+                            row.get("CHECK_TRIGGER")
+                        ),
+                        "check_source": self._text_or_none(row.get("CHECK_SOURCE")),
+                    },
+                )
+            )
+        return result
+
+    def parse_sequence_states(
+        self, rows: List[Dict[str, Any]], schema: str
+    ) -> List[SequenceState]:
+        """Read the generator listing into neutral sequence states.
+
+        ``owned_by`` is the identity column the generator backs, when the
+        listing's left join found one; a caller-created generator owns no
+        column and keeps ``None``. ``start`` and ``increment`` stay ``None``
+        because ``RDB$GENERATORS`` stores neither -- a generator's initial
+        value and step are clauses of its declaration, not catalogue columns,
+        so "not recorded here" is the honest answer rather than a guessed
+        default of 1.
+        """
+        result: List[SequenceState] = []
+        for row in rows or []:
+            name = self._row_name(row, "GENERATOR_NAME")
+            if not name:
+                continue
+            table = self._text_or_none(row.get("OWNER_TABLE"))
+            column = self._text_or_none(row.get("OWNER_COLUMN"))
+            owned_by = f"{table}.{column}" if table and column else None
+            result.append(
+                SequenceState(
+                    name=name,
+                    schema=schema,
+                    owned_by=owned_by,
+                    start=None,
+                    increment=None,
+                    raw={
+                        "is_system": bool(row.get("SYSTEM_FLAG")),
+                        "identity_type": row.get("IDENTITY_TYPE"),
+                    },
+                )
+            )
+        return result
+
+    def derived_objects_from_constraints(
+        self, constraints: List[ConstraintState]
+    ) -> List[DerivedObjectState]:
+        """The backing indexes among a table's constraint states.
+
+        A constraint's index is created by the declaration that owns it, not
+        by the caller, and Firebird gives it a generated name when the
+        constraint was unnamed -- so a plan must know it is there before it
+        alters or drops the index. Every index created for a constraint is
+        reachable here through the state's ``backing_index``; identity
+        generators are derived objects too, but they are already reachable
+        through :meth:`list_sequence_states`'s ``owned_by`` and are not
+        repeated as a second answer.
+        """
+        return [
+            DerivedObjectState(
+                kind="backing_index",
+                name=constraint.backing_index,
+                owned_by=constraint.name,
+                raw={"constraint_type": constraint.raw.get("constraint_type")},
+            )
+            for constraint in constraints
+            if constraint.backing_index
+        ]
+
+    def partition_state(self) -> PartitionState:
+        """The neutral partition state of any Firebird relation.
+
+        Firebird has no table partitioning: there is no partition clause in
+        its DDL, no partition relation in ``RDB$``, and no commercial or
+        open-source release announces one. ``scheme=None`` is therefore not
+        "unknown" -- core defines it as the single answer for "not
+        partitioned", and this backend can answer that for every relation it
+        holds. Refusing through the base class instead would say "this engine
+        cannot tell you", which would be false.
+
+        ``include_stats`` on :meth:`get_partition_state` asks for per-partition
+        figures; with no partitions there are none to measure, so the argument
+        changes nothing here.
+        """
+        return PartitionState(scheme=None)
+
 
 class AsyncFirebirdIntrospector(FirebirdAsyncIntrospectorMixin, AsyncAbstractIntrospector):
     """Asynchronous Firebird schema introspector.
@@ -1657,3 +1994,158 @@ class AsyncFirebirdIntrospector(FirebirdAsyncIntrospectorMixin, AsyncAbstractInt
         result = self.parse_publications(await self._executor.execute(sql, params))
         self._cache.set(key, result)
         return result
+
+    # ------------------------------------------------------------------
+    # Neutral object state (async twins)
+    #
+    # Same names, signatures, statements and cache keys as
+    # :class:`FirebirdIntrospector`: the only difference is the awaited
+    # executor, so a caller moves between the two by changing nothing but
+    # the ``await``.
+    # ------------------------------------------------------------------
+
+    async def get_table_state(
+        self,
+        table_name: str,
+        schema: Optional[str] = None,
+    ) -> TableState:
+        """Read one relation's kind, comment and storage state."""
+        key = self._cache.key(
+            IntrospectionScope.TABLE, table_name, "state", schema=schema
+        )
+        cached = self._cache.get(key)
+        if cached is not None:
+            return cached
+
+        rows: List[Dict[str, Any]] = []
+        for candidate in self.catalogue_name_candidates(table_name):
+            sql, params = self.table_state_statement(candidate, schema).to_sql()
+            rows = await self._executor.execute(sql, params)
+            if rows:
+                break
+
+        state = self.parse_table_state(
+            rows,
+            table_name,
+            schema if schema is not None else self.default_schema,
+        )
+        if state is None:
+            raise ObjectNotFoundError("table", table_name, schema)
+        self._cache.set(key, state)
+        return state
+
+    async def get_partition_state(
+        self,
+        table_name: str,
+        schema: Optional[str] = None,
+        include_stats: bool = False,
+    ) -> Optional[PartitionState]:
+        """Answer the partition question with this engine's one fact."""
+        self.dialect.reject_namespace(schema)
+        return self.partition_state()
+
+    async def list_index_states(
+        self,
+        table_name: str,
+        schema: Optional[str] = None,
+    ) -> List[IndexState]:
+        """Read every index on the table, including the unusable ones."""
+        state = await self.get_table_state(table_name, schema)
+        key = self._cache.key(
+            IntrospectionScope.INDEX, state.name, "state", schema=schema
+        )
+        cached = self._cache.get(key)
+        if cached is not None:
+            return cached
+        sql, params = self.index_state_statement(state.name, schema).to_sql()
+        result = self.parse_index_states(
+            await self._executor.execute(sql, params),
+            state.name,
+            schema if schema is not None else self.default_schema,
+        )
+        self._cache.set(key, result)
+        return result
+
+    async def list_constraint_states(
+        self,
+        table_name: str,
+        schema: Optional[str] = None,
+    ) -> List[ConstraintState]:
+        """Read every constraint on the table, with its deferral state."""
+        state = await self.get_table_state(table_name, schema)
+        key = self._cache.key(
+            IntrospectionScope.TABLE, state.name, "constraint_states", schema=schema
+        )
+        cached = self._cache.get(key)
+        if cached is not None:
+            return cached
+        sql, params = self.constraint_state_statement(state.name, schema).to_sql()
+        result = self.parse_constraint_states(
+            await self._executor.execute(sql, params),
+            state.name,
+            schema if schema is not None else self.default_schema,
+        )
+        self._cache.set(key, result)
+        return result
+
+    async def list_sequence_states(
+        self, schema: Optional[str] = None
+    ) -> List[SequenceState]:
+        """Read the user sequences this database holds and their owners."""
+        self.dialect.reject_namespace(schema)
+        key = self._cache.key(IntrospectionScope.SEQUENCE, extra="states")
+        cached = self._cache.get(key)
+        if cached is not None:
+            return cached
+        sql, params = self.sequence_state_statement(schema).to_sql()
+        result = self.parse_sequence_states(
+            await self._executor.execute(sql, params),
+            schema if schema is not None else self.default_schema,
+        )
+        self._cache.set(key, result)
+        return result
+
+    async def list_derived_objects(
+        self,
+        table_name: str,
+        schema: Optional[str] = None,
+    ) -> List[DerivedObjectState]:
+        """Read the indexes Firebird created for a table's constraints."""
+        state = await self.get_table_state(table_name, schema)
+        key = self._cache.key(
+            IntrospectionScope.TABLE, state.name, "derived_objects", schema=schema
+        )
+        cached = self._cache.get(key)
+        if cached is not None:
+            return cached
+        result = self.derived_objects_from_constraints(
+            await self.list_constraint_states(state.name, schema)
+        )
+        self._cache.set(key, result)
+        return result
+
+    async def item_exists(
+        self,
+        kind: ItemKind,
+        name: str,
+        schema: Optional[str] = None,
+    ) -> bool:
+        """Whether a shared object of one of this engine's kinds exists."""
+        if kind is ItemKind.SCHEMA:
+            self.dialect.reject_namespace(schema)
+            return not (name or "").strip()
+        if kind is ItemKind.DOMAIN:
+            self.dialect.reject_namespace(schema)
+            return await self.get_domain_info(name) is not None
+        if kind is ItemKind.SEQUENCE:
+            self.dialect.reject_namespace(schema)
+            states = await self.list_sequence_states(schema)
+            return self._find_by_name(states, name) is not None
+        raise UnsupportedFeatureError(
+            self.dialect.name,
+            f"item_exists for {kind.value!r}",
+            suggestion=(
+                "Firebird has no shared object of that kind to test; ask "
+                "about a schema, domain or sequence."
+            ),
+        )

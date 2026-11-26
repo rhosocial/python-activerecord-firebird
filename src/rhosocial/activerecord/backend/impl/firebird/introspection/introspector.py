@@ -11,21 +11,32 @@ and ``list_domains``/``get_domain_info`` are Firebird's own object families and
 are declared below as the sync half of that pair.
 """
 
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
+from rhosocial.activerecord.backend.dialect.exceptions import UnsupportedFeatureError
 from rhosocial.activerecord.backend.introspection.base import (
     AbstractIntrospector,
 )
 from rhosocial.activerecord.backend.introspection.cache import (
     IntrospectionCache,
 )
+from rhosocial.activerecord.backend.introspection.errors import (
+    ObjectNotFoundError,
+)
 from rhosocial.activerecord.backend.introspection.executor import (
     IntrospectorExecutor,
 )
 from rhosocial.activerecord.backend.introspection.types import (
     ColumnDataProfile,
+    ConstraintState,
+    DerivedObjectState,
+    IndexState,
     IntrospectionScope,
     IntrospectionTableInfo,
+    ItemKind,
+    PartitionState,
+    SequenceState,
+    TableState,
 )
 
 from .async_introspector import FirebirdAsyncIntrospectorMixin
@@ -452,6 +463,216 @@ class FirebirdIntrospector(FirebirdAsyncIntrospectorMixin, AbstractIntrospector)
         result = self.parse_publications(self._executor.execute(sql, params))
         self._cache.set(key, result)
         return result
+
+    # ------------------------------------------------------------------
+    # Neutral object state
+    #
+    # Core's object-state API, answered from this backend's own catalogue.
+    # The shared half -- the statements, the parsers and the one fact
+    # Firebird has no question for -- lives in
+    # :class:`FirebirdAsyncIntrospectorMixin`; these methods add the I/O and
+    # the cache, and the async introspector declares the same names.
+    # ------------------------------------------------------------------
+
+    def get_table_state(
+        self,
+        table_name: str,
+        schema: Optional[str] = None,
+    ) -> TableState:
+        """Read one relation's kind, comment and storage state.
+
+        The relation name is bound as written and, for an unquoted name, as
+        folded -- see :meth:`catalogue_name_candidates`: Firebird folds
+        unquoted identifiers, and a bare ``"orders"`` would otherwise be
+        compared case-sensitively against the catalogue's ``"ORDERS"`` and
+        read as a missing table.
+
+        ``ObjectNotFoundError`` answers a name the catalogue does not hold,
+        rather than a default state that would read as a real regular table.
+        """
+        key = self._cache.key(
+            IntrospectionScope.TABLE, table_name, "state", schema=schema
+        )
+        cached = self._cache.get(key)
+        if cached is not None:
+            return cached
+
+        rows: List[Dict[str, Any]] = []
+        for candidate in self.catalogue_name_candidates(table_name):
+            sql, params = self.table_state_statement(candidate, schema).to_sql()
+            rows = self._executor.execute(sql, params)
+            if rows:
+                break
+
+        state = self.parse_table_state(
+            rows,
+            table_name,
+            schema if schema is not None else self.default_schema,
+        )
+        if state is None:
+            raise ObjectNotFoundError("table", table_name, schema)
+        self._cache.set(key, state)
+        return state
+
+    def get_partition_state(
+        self,
+        table_name: str,
+        schema: Optional[str] = None,
+        include_stats: bool = False,
+    ) -> Optional[PartitionState]:
+        """Answer the partition question with this engine's one fact.
+
+        Firebird has no table partitioning at all, so the answer is a
+        ``PartitionState`` whose ``scheme`` is ``None`` -- core's single
+        neutral spelling for "not partitioned". This is an engine-level
+        fact, not a catalogue read: ``None`` here does not mean "unknown",
+        which is what the base class's refusal would say. ``include_stats``
+        changes nothing because there are no partitions to measure.
+        """
+        self.dialect.reject_namespace(schema)
+        return self.partition_state()
+
+    def list_index_states(
+        self,
+        table_name: str,
+        schema: Optional[str] = None,
+    ) -> List[IndexState]:
+        """Read every index on the table, including the unusable ones.
+
+        An index switched ``INACTIVE`` stays in ``RDB$INDICES`` and is still
+        reported here, with ``usable=False``: that flag is exactly the state
+        a plan needs to know about before trusting the index. The family is
+        answered only for a relation that exists, for the reason
+        :meth:`get_table_state` gives.
+        """
+        state = self.get_table_state(table_name, schema)
+        key = self._cache.key(
+            IntrospectionScope.INDEX, state.name, "state", schema=schema
+        )
+        cached = self._cache.get(key)
+        if cached is not None:
+            return cached
+        sql, params = self.index_state_statement(state.name, schema).to_sql()
+        result = self.parse_index_states(
+            self._executor.execute(sql, params),
+            state.name,
+            schema if schema is not None else self.default_schema,
+        )
+        self._cache.set(key, result)
+        return result
+
+    def list_constraint_states(
+        self,
+        table_name: str,
+        schema: Optional[str] = None,
+    ) -> List[ConstraintState]:
+        """Read every constraint on the table, with its deferral state."""
+        state = self.get_table_state(table_name, schema)
+        key = self._cache.key(
+            IntrospectionScope.TABLE, state.name, "constraint_states", schema=schema
+        )
+        cached = self._cache.get(key)
+        if cached is not None:
+            return cached
+        sql, params = self.constraint_state_statement(state.name, schema).to_sql()
+        result = self.parse_constraint_states(
+            self._executor.execute(sql, params),
+            state.name,
+            schema if schema is not None else self.default_schema,
+        )
+        self._cache.set(key, result)
+        return result
+
+    def list_sequence_states(self, schema: Optional[str] = None) -> List[SequenceState]:
+        """Read the user sequences this database holds and their owners.
+
+        Firebird's generators and sequences are one kind, and the system
+        ones (the generators behind identity columns) are excluded, exactly
+        as the ``generators`` listing excludes them: this answers the
+        sequences a caller created or can drop. The declaration's start and
+        increment are not catalogue columns and stay ``None``.
+        """
+        self.dialect.reject_namespace(schema)
+        key = self._cache.key(IntrospectionScope.SEQUENCE, extra="states")
+        cached = self._cache.get(key)
+        if cached is not None:
+            return cached
+        sql, params = self.sequence_state_statement(schema).to_sql()
+        result = self.parse_sequence_states(
+            self._executor.execute(sql, params),
+            schema if schema is not None else self.default_schema,
+        )
+        self._cache.set(key, result)
+        return result
+
+    def list_derived_objects(
+        self,
+        table_name: str,
+        schema: Optional[str] = None,
+    ) -> List[DerivedObjectState]:
+        """Read the indexes Firebird created for a table's constraints.
+
+        The answer is derived from the constraint states rather than read
+        by a second query: the constraint listing already names the index
+        each constraint owns, and asking ``RDB$INDICES`` again would be the
+        same fact spelled twice.
+        """
+        state = self.get_table_state(table_name, schema)
+        key = self._cache.key(
+            IntrospectionScope.TABLE, state.name, "derived_objects", schema=schema
+        )
+        cached = self._cache.get(key)
+        if cached is not None:
+            return cached
+        result = self.derived_objects_from_constraints(
+            self.list_constraint_states(state.name, schema)
+        )
+        self._cache.set(key, result)
+        return result
+
+    def item_exists(
+        self,
+        kind: ItemKind,
+        name: str,
+        schema: Optional[str] = None,
+    ) -> bool:
+        """Whether a shared object of one of this engine's kinds exists.
+
+        Three kinds are answerable here:
+
+        * ``SCHEMA`` -- Firebird has exactly one unnamed namespace per
+          database file, so the empty name names it (``True``) and any other
+          name names nothing (``False``). A non-empty ``schema`` argument is
+          refused for the same reason every other family refuses it.
+        * ``DOMAIN`` -- through the domain family's own definition, which
+          is the one place the ``RDB$FIELDS`` domain/descriptor split is
+          decided.
+        * ``SEQUENCE`` -- through :meth:`list_sequence_states`, so "exists"
+          means the same thing the sequence family lists (a user
+          generator; an identity column's internal generator is not one).
+
+        Any other kind is refused by name rather than answered ``False``:
+        "this engine cannot ask that" and "it is not there" are different
+        answers, and only the first is true for a kind Firebird has no
+        catalogue for.
+        """
+        if kind is ItemKind.SCHEMA:
+            self.dialect.reject_namespace(schema)
+            return not (name or "").strip()
+        if kind is ItemKind.DOMAIN:
+            self.dialect.reject_namespace(schema)
+            return self.get_domain_info(name) is not None
+        if kind is ItemKind.SEQUENCE:
+            self.dialect.reject_namespace(schema)
+            return self._find_by_name(self.list_sequence_states(schema), name) is not None
+        raise UnsupportedFeatureError(
+            self.dialect.name,
+            f"item_exists for {kind.value!r}",
+            suggestion=(
+                "Firebird has no shared object of that kind to test; ask "
+                "about a schema, domain or sequence."
+            ),
+        )
 
 
 __all__ = ["FirebirdIntrospector"]

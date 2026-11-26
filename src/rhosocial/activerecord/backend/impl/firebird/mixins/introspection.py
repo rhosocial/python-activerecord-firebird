@@ -400,14 +400,28 @@ class FirebirdIntrospectionMixin:
 
         The core's ``get_table_info`` synthesizes its answer from the list,
         column, index and foreign-key questions, so this one is not on that
-        path. It still has to be a real question for the statement to be
-        renderable: it asks for the relation and for whether it is a view.
+        path. It is the question the neutral table state asks instead: one
+        relation row carrying its name, whether it is a view, its relation
+        kind, its comment and whether Firebird owns it.
+
+        ``RDB$RELATION_TYPE`` is what tells a persistent table from an
+        external, monitoring or global-temporary relation;
+        ``RDB$DESCRIPTION`` is where ``COMMENT ON TABLE`` stores its text. A
+        view is still a relation, so it is answered rather than excluded:
+        the caller asked about the name, and the state's ``kind`` says what
+        it is.
         """
         params = expr.get_params()
         self.reject_namespace(params.get("schema"))
         return select_sql(
             self,
-            [column(self, "RDB$RELATION_NAME"), column(self, "RDB$VIEW_BLR")],
+            [
+                column(self, "RDB$RELATION_NAME"),
+                column(self, "RDB$VIEW_BLR"),
+                column(self, "RDB$RELATION_TYPE"),
+                column(self, "RDB$DESCRIPTION"),
+                column(self, "RDB$SYSTEM_FLAG"),
+            ],
             from_=relation(self, "RDB$RELATIONS"),
             where=compare(
                 self,
@@ -523,6 +537,7 @@ class FirebirdIntrospectionMixin:
                 column(self, "RDB$UNIQUE_FLAG", "i", alias="UNIQUE_FLAG"),
                 column(self, "RDB$INDEX_INACTIVE", "i", alias="INACTIVE"),
                 column(self, "RDB$INDEX_TYPE", "i", alias="INDEX_TYPE"),
+                column(self, "RDB$CONSTRAINT_NAME", "rc", alias="CONSTRAINT_NAME"),
                 column(self, "RDB$CONSTRAINT_TYPE", "rc", alias="CONSTRAINT_TYPE"),
                 column(self, "RDB$FIELD_NAME", "isg", alias="FIELD_NAME"),
                 column(self, "RDB$FIELD_POSITION", "isg", alias="FIELD_POSITION"),
