@@ -18,74 +18,6 @@ Firebird SQL dialect features and version support:
 from typing import Any, Optional, Tuple
 
 from rhosocial.activerecord.backend.dialect.base import SQLDialectBase
-from rhosocial.activerecord.backend.suggestion.protocols import (
-    ColumnReorderSuggestionSupport,
-    CreateTableLayoutSuggestionSupport,
-    PartitionSchemeChangeSuggestionSupport,
-    TableConstraintChangeSuggestionSupport,
-    TableIndexChangeSuggestionSupport,
-)
-from rhosocial.activerecord.backend.dialect.protocols import (
-    CollationSupport,
-    CTESupport,
-    WindowFunctionSupport,
-    JSONSupport,
-    ReturningSupport,
-    SetOperationSupport,
-    SequenceObjectSupport,
-    UpsertSupport,
-    LockingSupport,
-    ExplainSupport,
-    JoinSupport,
-    WildcardSupport,
-    ILIKESupport,
-    FilterClauseSupport,
-    AdvancedGroupingSupport,
-    ArraySupport,
-    LateralJoinSupport,
-    MergeSupport,
-    TemporalTableSupport,
-    QualifyClauseSupport,
-    OrderedSetAggregationSupport,
-    GraphSupport,
-    TableObjectSupport,
-    TruncateSupport,
-    IndexObjectSupport,
-    TriggerObjectSupport,
-    ConstraintSupport,
-    IntrospectionSupport,
-    TransactionControlSupport,
-    TransactionalDDLSupport,
-    GeneratedColumnSupport,
-    IdentityColumnSupport,
-    AutoIncrementColumnSupport,
-    ViewObjectSupport,
-    RoutineObjectSupport,
-    CreateTableSupport,
-    DropTableSupport,
-    AlterTableSupport,
-    CreateViewSupport,
-    DropViewSupport,
-    CreateIndexSupport,
-    DropIndexSupport,
-    CreateTriggerSupport,
-    DropTriggerSupport,
-    CreateRoutineSupport,
-    DropRoutineSupport,
-    CreateSequenceSupport,
-    AlterSequenceSupport,
-    DropSequenceSupport,
-    CreateDomainSupport,
-    AlterDomainSupport,
-    DropDomainSupport,
-    CreateTypeSupport,
-    AlterTypeSupport,
-    DropTypeSupport,
-    TypeObjectSupport,
-    CreateSchemaSupport,
-    DropSchemaSupport,
-    CommentSupport,
-)
 from rhosocial.activerecord.backend.dialect.mixins import (
     CollationMixin,
     NamespaceMixin,
@@ -216,38 +148,6 @@ from .suggestion import (
     FirebirdTableConstraintChangeSuggestionMixin,
     FirebirdTableIndexChangeSuggestionMixin,
 )
-from .protocols import (
-    FirebirdDMLOperationSupport,
-    FirebirdGeneratorSupport,
-    FirebirdBlobSupport,
-    FirebirdLockingSupport,
-    FirebirdTransactionSupport,
-    FirebirdTableSupport,
-    FirebirdTriggerSupport,
-    FirebirdReturningSupport,
-    FirebirdIntrospectionSupport,
-    FirebirdExecuteBlockSupport,
-    FirebirdExplainSupport,
-    FirebirdFunctionSupport,
-    FirebirdBooleanSupport,
-    FirebirdDecFloatSupport,
-    FirebirdPaginationSupport,
-    FirebirdDatabaseTriggerSupport,
-    FirebirdWindowFunctionSupport,
-    FirebirdCTESupport,
-    FirebirdFullTextSearchSupport,
-    FirebirdUDFSupport,
-    FirebirdPackageSupport,
-    FirebirdGlobalMappingSupport,
-    FirebirdMonitoringSupport,
-    FirebirdRoleSupport,
-    FirebirdCursorSupport,
-    FirebirdCollationSupport,
-    FirebirdExceptionSupport,
-    FirebirdContextVariableSupport,
-    FirebirdDomainSupport,
-    FirebirdTypeSupport,
-)
 
 
 class FirebirdDialect(
@@ -289,10 +189,11 @@ class FirebirdDialect(
     # It defines ``format_identifier`` -- the one primitive Firebird overrides,
     # by upper-casing the identifier and doubling any inner quote -- and listed
     # first it would shadow FirebirdIdentifierMixin, forcing a second copy of
-    # that method onto this class. It stays *before* the Protocol bases on
-    # purpose: a runtime_checkable Protocol defines ``__init__``, so putting
-    # SQLDialectBase after them would let ``super().__init__()`` land on a
-    # Protocol and skip the base constructor entirely.
+    # that method onto this class.
+    # It still precedes the two suggestion mixins that inherit a
+    # runtime_checkable Protocol: such a Protocol defines ``__init__``, so a
+    # base after the mixins lets ``super().__init__()`` land on the Protocol
+    # and skip the base constructor entirely.
     FirebirdTransactionMixin,    # Before TransactionControlMixin
     FirebirdExpressionMixin,     # Before ExpressionMixin
     FirebirdDateTimeMixin,       # Before DateTimeMixin
@@ -408,13 +309,13 @@ class FirebirdDialect(
     # Object naming, one mixin per object kind the dialect can spell, plus the
     # NamespaceMixin they all reach through.
     #
-    # These have to *precede* the matching *ObjectSupport protocols further down
-    # for the same reason FirebirdTableMixin re-binds
-    # format_drop_table_statement: C3 resolves to whichever base comes first, so
-    # a mixin listed after a Protocol loses to the Protocol's `...` stub and
-    # every object renders as None. NamespaceMixin precedes NamespaceSupport for
-    # the same reason -- without it the three naming switches return None rather
-    # than False, and the core's validate_namespace reads None as "no
+    # These still have to precede the core naming mixins for the same reason
+    # FirebirdTableMixin re-binds format_drop_table_statement: C3 resolves to
+    # whichever base comes first, so a backend mixin listed after the core
+    # naming mixin loses and every object renders with core's answer.
+    # NamespaceMixin precedes the core's RelationSourceMixin for the same
+    # reason -- without it the three naming switches return None rather than
+    # False, and the core's validate_namespace reads None as "no
     # qualification", which happens to be Firebird's answer but by accident
     # rather than by decision. A test asserts the resolution rather than trusting
     # it.
@@ -432,8 +333,9 @@ class FirebirdDialect(
     DatabaseNameMixin,
     SchemaNameMixin,
     NamespaceMixin,
-    # Last of the implementation mixins, first of the declarations: see the
-    # class comment for why SQLDialectBase cannot lead the list.
+    # Last of the implementation mixins: only the two suggestion mixins that
+    # inherit a Protocol follow it. See the class comment for why
+    # SQLDialectBase cannot lead the list.
     SQLDialectBase,
     # The create-table layout answer is assembled from this dialect's own
     # inline-index / table-comment probes, so it must see their real
@@ -449,106 +351,6 @@ class FirebirdDialect(
     # whose own ``__init__`` would otherwise intercept ``super().__init__()`` and
     # skip the base initialiser (losing ``strict_validation`` and ``_version``).
     FirebirdStringConcatenationSuggestionMixin,
-    CollationSupport,
-    CTESupport,
-    WindowFunctionSupport,
-    JSONSupport,
-    ReturningSupport,
-    SetOperationSupport,
-    SequenceObjectSupport,
-    UpsertSupport,
-    LockingSupport,
-    ExplainSupport,
-    JoinSupport,
-    WildcardSupport,
-    ILIKESupport,
-    FilterClauseSupport,
-    AdvancedGroupingSupport,
-    ArraySupport,
-    LateralJoinSupport,
-    MergeSupport,
-    TemporalTableSupport,
-    QualifyClauseSupport,
-    OrderedSetAggregationSupport,
-    GraphSupport,
-    TableObjectSupport,
-    TruncateSupport,
-    # The DDL protocols for schemas stay in, and they now split per statement:
-    # CreateSchemaSupport / DropSchemaSupport replace the single umbrella.
-    # They are satisfied by SchemaMixin (above) with every switch False, which
-    # is Firebird's answer rather than an omission -- there is no CREATE
-    # SCHEMA to render.
-    IndexObjectSupport,
-    TriggerObjectSupport,
-    ConstraintSupport,
-    IntrospectionSupport,
-    TransactionControlSupport,
-    TransactionalDDLSupport,
-    GeneratedColumnSupport,
-    # IdentityColumnSupport is satisfied by the core IdentityColumnMixin with
-    # Firebird's measured probes; AutoIncrementColumnSupport by the core
-    # AutoIncrementColumnMixin with Firebird's False answer. Both switches being
-    # reachable by name is the point -- a capability question should be
-    # answerable before rendering, not only as a side effect of a refusal.
-    IdentityColumnSupport,
-    AutoIncrementColumnSupport,
-    ViewObjectSupport,
-    RoutineObjectSupport,
-    CreateTableSupport,
-    DropTableSupport,
-    AlterTableSupport,
-    CreateViewSupport,
-    DropViewSupport,
-    CreateIndexSupport,
-    DropIndexSupport,
-    CreateTriggerSupport,
-    DropTriggerSupport,
-    CreateRoutineSupport,
-    DropRoutineSupport,
-    CreateSequenceSupport,
-    AlterSequenceSupport,
-    DropSequenceSupport,
-    CreateTypeSupport,
-    AlterTypeSupport,
-    DropTypeSupport,
-    TypeObjectSupport,
-    CreateSchemaSupport,
-    DropSchemaSupport,
-    CommentSupport,
-    # FirebirdDomainSupport subclasses the three core DOMAIN DDL protocols, so
-    # it has to precede them in this list: C3 puts a subclass ahead of its base.
-    FirebirdDomainSupport,
-    CreateDomainSupport,
-    AlterDomainSupport,
-    DropDomainSupport,
-    FirebirdDMLOperationSupport,
-    FirebirdGeneratorSupport,
-    FirebirdBlobSupport,
-    FirebirdLockingSupport,
-    FirebirdTransactionSupport,
-    FirebirdTableSupport,
-    FirebirdTriggerSupport,
-    FirebirdReturningSupport,
-    FirebirdIntrospectionSupport,
-    FirebirdExecuteBlockSupport,
-    FirebirdExplainSupport,
-    FirebirdFunctionSupport,
-    FirebirdBooleanSupport,
-    FirebirdDecFloatSupport,
-    FirebirdPaginationSupport,
-    FirebirdDatabaseTriggerSupport,
-    FirebirdWindowFunctionSupport,
-    FirebirdCTESupport,
-    FirebirdFullTextSearchSupport,
-    FirebirdUDFSupport,
-    FirebirdPackageSupport,
-    FirebirdGlobalMappingSupport,
-    FirebirdMonitoringSupport,
-    FirebirdRoleSupport,
-    FirebirdCursorSupport,
-    FirebirdCollationSupport,
-    FirebirdExceptionSupport,
-    FirebirdContextVariableSupport,
     # The column side of the type protocol, listed immediately after the DDL
     # side it is deliberately independent of: FirebirdTypeSupportMixin answers
     # which DataType a column is declared as, FirebirdColumnTypeMixin
@@ -563,19 +365,6 @@ class FirebirdDialect(
     # later never wins over one listed earlier.
     FirebirdDataTypeSuggestionsMixin,
     FirebirdTypeSupportMixin,
-    # Must come AFTER FirebirdTypeSupportMixin: a dialect's bases resolve left to
-    # right, and this Protocol restates the firebird_* formatter and support names
-    # with empty bodies. Listed first it would shadow every one of the real
-    # implementations and the dialect would answer None for all of them.
-    FirebirdTypeSupport,
-    # Suggestion protocols are declared last: the backend mixins above already
-    # implement these, and listing each Protocol after its mixin keeps its empty
-    # stub from shadowing the real answer.
-    CreateTableLayoutSuggestionSupport,
-    ColumnReorderSuggestionSupport,
-    TableConstraintChangeSuggestionSupport,
-    TableIndexChangeSuggestionSupport,
-    PartitionSchemeChangeSuggestionSupport,
 ):
     """Firebird dialect implementation that adapts to Firebird version.
 

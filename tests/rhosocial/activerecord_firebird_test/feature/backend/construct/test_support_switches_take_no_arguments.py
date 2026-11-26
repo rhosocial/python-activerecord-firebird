@@ -10,6 +10,13 @@ The scan is static (``ast``) so it sees the declaration even where a test would
 have to construct a dialect to call it, and it covers this repository's own
 ``src`` tree rather than the core package. It also requires the ``-> bool``
 annotation: a mapping answer is a catalogue, and belongs under ``suggest_*``.
+
+A second scan guards the same idea from the other side: a ``runtime_checkable``
+Protocol is satisfied structurally, so naming one as a base of a ``*Dialect``
+class adds nothing but its ``...`` stubs -- and those stubs make ``isinstance``
+answer True for members the dialect never implemented. No class ending
+``Dialect`` may therefore inherit a base ending ``Support``; the protocol
+remains a declaration to be checked, not an ancestor.
 """
 
 import ast
@@ -55,6 +62,33 @@ def _annotates_bool(func):
     if isinstance(annotation, ast.Constant) and annotation.value == "bool":
         return True
     return False
+
+
+def _base_name(base):
+    """The spelled name of a base expression: ``Name`` or ``a.b.C``."""
+    if isinstance(base, ast.Name):
+        return base.id
+    if isinstance(base, ast.Attribute):
+        return base.attr
+    return None
+
+
+def _dialect_support_bases(tree, label):
+    """``label:line Class(bases)`` for a Dialect inheriting a Support protocol."""
+    found = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.ClassDef):
+            continue
+        if not node.name.endswith("Dialect"):
+            continue
+        offenders = [
+            name
+            for name in (_base_name(base) for base in node.bases)
+            if name is not None and name.endswith("Support")
+        ]
+        if offenders:
+            found.append(f"{label}:{node.lineno} {node.name}({', '.join(offenders)})")
+    return found
 
 
 def _offenders(tree, label):
@@ -157,3 +191,54 @@ def test_the_scan_accepts_a_defaulted_parameter(tmp_path):
 
     tree = ast.parse(probe.read_text(encoding="utf-8"))
     assert not _offenders(tree, "probe")
+
+
+def test_no_dialect_class_inherits_a_support_protocol():
+    """A Dialect class names only implementations, never a capability Protocol."""
+    files = _source_files()
+    assert files, "no source files were found -- the scan reached nothing"
+    offenders = []
+    for path in files:
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        offenders.extend(_dialect_support_bases(tree, path.name))
+    assert not offenders, (
+        "a Dialect class inherits a *Support protocol, so its `...` stubs are "
+        "what isinstance sees instead of a real implementation:\n"
+        + "\n".join(offenders)
+    )
+
+
+def test_the_dialect_scan_flags_a_planted_violation(tmp_path):
+    probe = tmp_path / "_probe.py"
+    probe.write_text(
+        "class Mixin:\n"
+        "    pass\n"
+        "\n"
+        "class ProbeDialect(Mixin, ExplainSupport):\n"
+        "    pass\n",
+        encoding="utf-8",
+    )
+
+    tree = ast.parse(probe.read_text(encoding="utf-8"))
+    offenders = _dialect_support_bases(tree, "probe")
+    assert offenders, "the scan did not notice a Dialect inheriting a protocol"
+    assert "ProbeDialect(ExplainSupport)" in offenders[0]
+
+
+def test_the_dialect_scan_accepts_implementations_and_mixins(tmp_path):
+    """A clean control: the protocol stays a declaration, the mixin an implementation."""
+    probe = tmp_path / "_probe.py"
+    probe.write_text(
+        "class ExplainSupport:\n"
+        "    pass\n"
+        "\n"
+        "class Mixin(ExplainSupport):\n"
+        "    pass\n"
+        "\n"
+        "class ProbeDialect(Mixin):\n"
+        "    pass\n",
+        encoding="utf-8",
+    )
+
+    tree = ast.parse(probe.read_text(encoding="utf-8"))
+    assert not _dialect_support_bases(tree, "probe")
