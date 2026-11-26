@@ -69,7 +69,7 @@ The families core defines but this backend does not answer stay on the base mixi
 | `index-stats` | `supports_index_stats()` | The same missing per-index counters |
 | `ddl` | `supports_ddl_extraction()` | Firebird records a source body, not a rebuildable `CREATE` |
 | object dependencies | `supports_object_dependencies()` | The catalogue's shape is not this family's; see [Dependency Edges](#dependency-edges) |
-| partitions | `supports_partition_info()` | Firebird has no partitioned tables |
+| partitions | `supports_partition_metadata_introspection()` | Firebird has no partitioned tables |
 | extensions | `supports_extensions()` | No add-on component catalogue is mapped |
 
 The distinction that matters is between `False` and an empty answer. A `False` tells a caller not to ask; an empty list would tell it the question was asked and nothing was found. An operator reading "no unused indexes" for an engine that keeps no such counter would be reading a report nobody produced.
@@ -83,7 +83,7 @@ These are real catalogue objects, or real engine absences, that this backend doe
 | Object | Catalogue | Why there is no family |
 |--------|-----------|------------------------|
 | `types` | none; domains live in `RDB$FIELDS` | Firebird has no standalone user-defined type. Domains *are* its reusable type layer, and `domains` already answers them; a second `types` family would duplicate the same rows under another name. |
-| Table partitioning | none | Firebird 5 and 6 have no partitioned tables; `supports_partition_info()` is `False` and the mixin refuses every partition clause. |
+| Table partitioning | none | Firebird 5 and 6 have no partitioned tables; `supports_partition_metadata_introspection()` is `False` and the mixin refuses every partition clause. |
 | Tablespaces | none | Firebird has no tablespace object. Its file objects (`RDB$FILES`) describe secondary and shadow files, not a table's storage placement. |
 | `packages` | `RDB$PACKAGES` | The relation exists and Firebird 5's language reference documents `CREATE PACKAGE`, but this backend's measured probe recorded `CREATE PACKAGE` refused on 5.0.4 and the 6.0.0 server, so the relation is treated as reserved. This is a contradiction worth re-measuring before a family is added. |
 | `filters` | `RDB$FILTERS` | `DECLARE FILTER` is a real schema object (a declared BLOB converter); no family answers it. |

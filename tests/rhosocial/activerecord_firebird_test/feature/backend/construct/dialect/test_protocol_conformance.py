@@ -6,8 +6,15 @@ This test ensures:
 1. FirebirdDialect implements every *generic* dialect protocol it claims to support.
 2. The generic protocols Firebird intentionally does NOT implement are listed
    explicitly, so the omission is a deliberate, tested contract.
-3. Every generic protocol is classified into exactly one of the two lists
-   (positive / negative), so no protocol silently escapes coverage.
+3. Every generic protocol is classified into exactly one of the three lists
+   (positive / refused / negative), so no protocol silently escapes coverage.
+
+The introspection surface is four families rather than one protocol. Firebird
+answers structure and data profiles; the operational-statistics and
+DDL-extraction families are genuinely absent. They are structurally reachable
+because the core composition mixin supplies their defaults, so their absence is
+recorded as an explicit refusal (every probe ``False``, every formatter raising
+``UnsupportedFeatureError``) rather than as a missing attribute.
 
 Protocols defined in ``rhosocial.activerecord.backend.dialect.protocols``
 (the generic capability contract) and in
@@ -25,6 +32,7 @@ elif sys.version_info >= (3, 12):
 
 import pytest
 from rhosocial.activerecord.backend.dialect import protocols as dialect_protocols
+from rhosocial.activerecord.backend.dialect.exceptions import UnsupportedFeatureError
 from rhosocial.activerecord.backend.suggestion import protocols as suggestion_protocols
 from rhosocial.activerecord.backend.impl.firebird import dialect as firebird_dialect
 
@@ -64,6 +72,33 @@ def get_all_generic_protocols() -> dict:
     return discovered
 
 
+# The four introspection families, split out of the old single
+# ``IntrospectionSupport``. Firebird answers the two about declarations and
+# rows; the two about measured behaviour and retained text stay absent.
+#
+# The families are enumerated rather than left implicit so each one is
+# classified by name: a family that stops being answered has to move, and a
+# family the core adds cannot fall through unnoticed.
+FIREBIRD_INTROSPECTION_IMPLEMENTED = [
+    dialect_protocols.StructureIntrospectionSupport,
+    dialect_protocols.AsyncStructureIntrospectionSupport,
+    dialect_protocols.DataProfileIntrospectionSupport,
+    dialect_protocols.AsyncDataProfileIntrospectionSupport,
+]
+
+# Absent families are *refused*, not unimplemented-by-attribute: core's
+# composition mixin still gives the dialect every member, so ``isinstance``
+# passes. What makes absence honest is the answer -- ``False`` from each probe
+# and an ``UnsupportedFeatureError`` from each formatter -- and that is what
+# ``TestIntrospectionFamiliesAreClassifiedHonestly`` holds them to.
+FIREBIRD_INTROSPECTION_REFUSED = [
+    dialect_protocols.OperationalStatsIntrospectionSupport,
+    dialect_protocols.AsyncOperationalStatsIntrospectionSupport,
+    dialect_protocols.DdlExtractionIntrospectionSupport,
+    dialect_protocols.AsyncDdlExtractionIntrospectionSupport,
+]
+
+
 # Generic protocols FirebirdDialect implements.
 #
 # The core splits naming from rendering, so a DDL protocol is now one per
@@ -98,7 +133,7 @@ FIREBIRD_PROTOCOLS = [
     dialect_protocols.ArraySupport,
     dialect_protocols.AutoIncrementColumnSupport,
     dialect_protocols.DatabaseAssignedColumnSupport,
-    dialect_protocols.AsyncIntrospectionSupport,
+    *FIREBIRD_INTROSPECTION_IMPLEMENTED,
     dialect_protocols.DDLColumnSupport,
     dialect_protocols.DMLSupport,
     dialect_protocols.DQLSupport,
@@ -166,7 +201,6 @@ FIREBIRD_PROTOCOLS = [
     suggestion_protocols.GeneratedValueSuggestionSupport,
     dialect_protocols.GraphSupport,
     dialect_protocols.ILIKESupport,
-    dialect_protocols.IntrospectionSupport,
     dialect_protocols.JSONSupport,
     dialect_protocols.JoinSupport,
     dialect_protocols.LateralJoinSupport,
@@ -281,7 +315,7 @@ class TestDialectNegativeProtocolConformance:
             f"(and implement the behaviour fully)."
         )
 
-    def test_positive_and_negative_lists_partition_all_protocols(self):
+    def test_the_classification_lists_partition_all_protocols(self):
         """Every generic protocol must be classified for Firebird.
 
         Membership is compared by object identity, not by ``__module__``. The
@@ -294,17 +328,64 @@ class TestDialectNegativeProtocolConformance:
         all_protos = set(get_all_generic_protocols().values())
         positive = set(FIREBIRD_PROTOCOLS)
         negative = set(FIREBIRD_NOT_IMPLEMENTED)
+        refused = set(FIREBIRD_INTROSPECTION_REFUSED)
         positive_names = {p.__name__ for p in positive}
         negative_names = {p.__name__ for p in negative}
+        refused_names = {p.__name__ for p in refused}
 
-        overlap = positive_names & negative_names
+        overlap = positive_names & (negative_names | refused_names)
         assert not overlap, f"Protocols in BOTH lists: {sorted(overlap)}"
+        assert not (negative_names & refused_names), (
+            f"Protocols in both refused and negative lists: "
+            f"{sorted(negative_names & refused_names)}"
+        )
 
-        unclassified = all_protos - positive - negative
+        unclassified = all_protos - positive - negative - refused
         assert not unclassified, (
             f"Generic protocols not classified for Firebird: {sorted(p.__name__ for p in unclassified)}. "
-            f"Add each to FIREBIRD_PROTOCOLS or FIREBIRD_NOT_IMPLEMENTED."
+            f"Add each to FIREBIRD_PROTOCOLS, FIREBIRD_INTROSPECTION_REFUSED or FIREBIRD_NOT_IMPLEMENTED."
         )
+
+
+class TestIntrospectionFamiliesAreClassifiedHonestly:
+    """The four families split out of ``IntrospectionSupport``, classified.
+
+    Structure and data profiles are answered: Firebird reads the ``RDB$``
+    catalogue for the first and aggregates the table's rows for the second.
+    Operational statistics and DDL extraction are *refused*: there is no
+    collector relation on this engine and no statement text to return. Because
+    core's composition mixin supplies their members either way, ``isinstance``
+    cannot tell those two states apart -- so absence is pinned to the answers
+    instead of to the attribute's existence.
+    """
+
+    @pytest.fixture
+    def dialect(self):
+        return firebird_dialect.FirebirdDialect((4, 0, 0))
+
+    @pytest.mark.parametrize("protocol", FIREBIRD_INTROSPECTION_IMPLEMENTED)
+    def test_implemented_family_is_structurally_present(self, dialect, protocol):
+        assert isinstance(dialect, protocol), (
+            f"FirebirdDialect does not answer {protocol.__name__}; missing methods: "
+            f"{get_all_protocol_methods(protocol) - set(dir(dialect))}"
+        )
+
+    @pytest.mark.parametrize("protocol", FIREBIRD_INTROSPECTION_REFUSED)
+    def test_refused_family_says_false_and_refuses_every_formatter(self, dialect, protocol):
+        """Absence is explicit: every probe answers ``False``, every formatter refuses."""
+        members = get_all_protocol_methods(protocol)
+        probes = sorted(name for name in members if name.startswith("supports_"))
+        formatters = sorted(name for name in members if name.startswith("format_"))
+        assert probes, f"{protocol.__name__} declares no support probe"
+        assert formatters, f"{protocol.__name__} declares no formatter"
+
+        for probe in probes:
+            assert getattr(dialect, probe)() is False, (
+                f"{protocol.__name__}.{probe} must answer False: Firebird does not answer that family"
+            )
+        for formatter in formatters:
+            with pytest.raises(UnsupportedFeatureError):
+                getattr(dialect, formatter)(None)
 
 
 class TestTheBackendOwnAnswersAreTheEffectiveOnes:
@@ -345,3 +426,88 @@ class TestTheBackendOwnAnswersAreTheEffectiveOnes:
             "a core class wins these backend methods, so the backend's "
             f"implementation is dead code: {shadowed}"
         )
+
+
+class TestIntrospectionSplitIsTheCoreOne:
+    """Guard the four-family split from this backend's side.
+
+    Three things can regress silently: the old single name can come back as an
+    alias, the partition probe can be repointed at the deleted
+    ``supports_partition_info``, or this backend can import a local
+    re-declaration instead of the core family. Each check below names the
+    contract rather than the symptom.
+    """
+
+    @pytest.fixture
+    def dialect(self):
+        return firebird_dialect.FirebirdDialect((4, 0, 0))
+
+    def test_the_old_partition_probe_is_absent(self, dialect):
+        assert not hasattr(dialect, "supports_partition_info")
+        assert "supports_partition_info" not in dir(type(dialect))
+
+    def test_no_cli_family_map_names_the_old_partition_probe(self):
+        from rhosocial.activerecord.backend.impl.firebird.cli import info, introspect
+
+        assert "partitions" not in introspect._TYPE_CAPABILITIES
+        assert "supports_partition_info" not in inspect.getsource(introspect)
+        assert "supports_partition_info" not in inspect.getsource(info)
+        for probe in introspect._TYPE_CAPABILITIES.values():
+            assert probe != "supports_partition_info"
+
+    def test_the_partition_switch_resolves_to_the_metadata_probe(self, dialect):
+        protocol = dialect_protocols.PartitionSupport
+        assert "supports_partition_metadata_introspection" in get_all_protocol_methods(protocol)
+        assert "supports_partition_info" not in get_all_protocol_methods(protocol)
+
+        # The answer comes from Firebird's own mixin, not from core's default:
+        # a dialect whose switch merely exists would let an implementation of
+        # the old probe masquerade as an answer to the metadata question.
+        owner = next(
+            klass
+            for klass in type(dialect).__mro__
+            if "supports_partition_metadata_introspection" in klass.__dict__
+        )
+        assert owner.__module__.startswith("rhosocial.activerecord.backend.impl.firebird")
+        assert dialect.supports_partition_metadata_introspection() is False
+
+    def test_the_four_families_import_from_the_new_core_modules(self):
+        from rhosocial.activerecord.backend.dialect.protocols.introspect.data_profile import (
+            AsyncDataProfileIntrospectionSupport,
+            DataProfileIntrospectionSupport,
+        )
+        from rhosocial.activerecord.backend.dialect.protocols.introspect.ddl_extraction import (
+            AsyncDdlExtractionIntrospectionSupport,
+            DdlExtractionIntrospectionSupport,
+        )
+        from rhosocial.activerecord.backend.dialect.protocols.introspect.operational_stats import (
+            AsyncOperationalStatsIntrospectionSupport,
+            OperationalStatsIntrospectionSupport,
+        )
+        from rhosocial.activerecord.backend.dialect.protocols.introspect.structure import (
+            AsyncStructureIntrospectionSupport,
+            StructureIntrospectionSupport,
+        )
+
+        expected = [
+            (StructureIntrospectionSupport, "structure"),
+            (AsyncStructureIntrospectionSupport, "structure"),
+            (OperationalStatsIntrospectionSupport, "operational_stats"),
+            (AsyncOperationalStatsIntrospectionSupport, "operational_stats"),
+            (DataProfileIntrospectionSupport, "data_profile"),
+            (AsyncDataProfileIntrospectionSupport, "data_profile"),
+            (DdlExtractionIntrospectionSupport, "ddl_extraction"),
+            (AsyncDdlExtractionIntrospectionSupport, "ddl_extraction"),
+        ]
+        for cls, module in expected:
+            assert cls is getattr(dialect_protocols, cls.__name__)
+            assert cls.__module__ == (
+                f"rhosocial.activerecord.backend.dialect.protocols.introspect.{module}"
+            ), f"{cls.__name__} must come from core's {module} module, not a local re-declaration"
+
+    def test_the_old_aggregate_names_are_not_exported(self):
+        from rhosocial.activerecord.backend.impl.firebird import protocols as firebird_protocols
+
+        for name in ("IntrospectionSupport", "AsyncIntrospectionSupport"):
+            assert not hasattr(dialect_protocols, name), f"core still exports the old {name}"
+            assert not hasattr(firebird_protocols, name), f"Firebird re-exports the old {name}"
