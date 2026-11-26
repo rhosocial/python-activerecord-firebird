@@ -24,8 +24,16 @@ class FirebirdBlobMixin:
     def supports_blob(self) -> bool:
         return True
 
-    def supports_blob_sub_type(self, sub_type: int) -> bool:
-        return sub_type in (0, 1, 2, 3, 4, 5)
+    # Firebird addresses a BLOB by sub-type number: 0 is binary and 1 is text.
+    # Those are the two kinds the closed switch vocabulary names; this backend
+    # has always accepted 0 through 5, so both named kinds answer True.
+    def supports_blob_sub_type_binary(self) -> bool:
+        """Whether ``BLOB SUB_TYPE 0`` (binary) is supported."""
+        return True
+
+    def supports_blob_sub_type_text(self) -> bool:
+        """Whether ``BLOB SUB_TYPE 1`` (text) is supported."""
+        return True
 
     def format_blob_literal_expression(self, expr: "BlobLiteralExpression") -> Tuple[str, tuple]:
         escaped = expr.value.hex()

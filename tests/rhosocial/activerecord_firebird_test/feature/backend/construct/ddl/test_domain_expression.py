@@ -28,6 +28,7 @@ from rhosocial.activerecord.backend.expression.statements import (
     AddDomainCheckAction,
     AlterDomainStatement,
     CreateDomainStatement,
+    DomainAlterAction,
     DomainCheckConstraint,
     DomainNullability,
     DomainValueExpression,
@@ -559,15 +560,29 @@ class TestVersionBoundaries:
         action = action_type(dialect)
         expression = AlterDomainStatement(dialect, Domain(dialect, "positive"), [action])
 
-        assert dialect.supports_alter_domain_action(action_type) is False
         with pytest.raises(UnsupportedFeatureError, match="ALTER DOMAIN action"):
             expression.to_sql()
 
     def test_not_null_actions_render_on_firebird_30(self):
         dialect = FirebirdDialect((3, 0, 0))
 
-        assert dialect.supports_alter_domain_action(SetDomainNotNullAction) is True
-        assert dialect.supports_alter_domain_action(DropDomainNotNullAction) is True
+        assert dialect.format_domain_alter_action(SetDomainNotNullAction(dialect)) == (
+            "SET NOT NULL",
+            (),
+        )
+        assert dialect.format_domain_alter_action(DropDomainNotNullAction(dialect)) == (
+            "DROP NOT NULL",
+            (),
+        )
+
+    def test_unknown_action_is_refused_unconditionally(self):
+        dialect = FirebirdDialect((4, 0, 0))
+
+        class NotAFirebirdAction(DomainAlterAction):
+            action_kind = "not_a_firebird_action"
+
+        with pytest.raises(UnsupportedFeatureError, match="not_a_firebird_action"):
+            dialect.format_domain_alter_action(NotAFirebirdAction(dialect))
 
     def test_domain_statements_fail_before_firebird_25(self):
         dialect = FirebirdDialect((2, 0, 0))
@@ -588,8 +603,8 @@ class TestCapabilities:
         assert dialect.supports_alter_domain() is True
         assert dialect.supports_drop_domain() is True
         assert dialect.supports_domain_default() is True
-        assert dialect.supports_domain_nullability(DomainNullability.NOT_NULL) is True
-        assert dialect.supports_domain_nullability(DomainNullability.NULLABLE) is False
+        assert dialect.supports_domain_nullable() is False
+        assert dialect.supports_domain_not_null() is True
         assert dialect.supports_domain_checks() is True
         assert dialect.supports_named_domain_checks() is False
         assert dialect.supports_multiple_domain_checks() is False
@@ -617,8 +632,11 @@ class TestCapabilities:
         for name in capability_names:
             assert getattr(dialect, name)() is False
         assert dialect.supported_type_definitions() == ()
-        assert dialect.supports_type_definition(IntegerType) is False
-        assert dialect.supports_type_alter_action(DropDomainDefaultAction) is False
+        # The kind-as-capability probes are gone: kinds are the formatter's
+        # dispatch, not a support flag, and no name survives to be called.
+        assert not hasattr(dialect, "supports_type_definition")
+        assert not hasattr(dialect, "supports_type_alter_action")
+        assert not hasattr(dialect, "supports_alter_domain_action")
         assert FirebirdDialect.supports_type_objects is UserDefinedTypeMixin.supports_type_objects
 
     def test_domain_protocols_and_mro(self):

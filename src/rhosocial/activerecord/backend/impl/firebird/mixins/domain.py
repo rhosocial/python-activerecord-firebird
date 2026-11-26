@@ -1,7 +1,7 @@
 # src/rhosocial/activerecord/backend/impl/firebird/mixins/domain.py
 """Firebird DOMAIN statement formatting mixin."""
 
-from typing import Optional, Tuple, Type, TYPE_CHECKING
+from typing import Optional, Tuple, TYPE_CHECKING
 
 from rhosocial.activerecord.backend.dialect.exceptions import UnsupportedFeatureError
 from rhosocial.activerecord.backend.dialect.mixins import DomainMixin
@@ -49,8 +49,15 @@ class FirebirdDomainMixin(DomainMixin):
     def supports_domain_default(self) -> bool:
         return self.supports_domains()
 
-    def supports_domain_nullability(self, nullability: DomainNullability) -> bool:
-        return self.supports_domains() and nullability is DomainNullability.NOT_NULL
+    def supports_domain_nullable(self) -> bool:
+        # A Firebird domain is nullable unless ``NOT NULL`` is stated, and the
+        # CREATE DOMAIN grammar has no ``NULL`` clause to spell. The old
+        # parameterized switch answered ``False`` for ``NULLABLE``; that answer
+        # is now the switch itself.
+        return False
+
+    def supports_domain_not_null(self) -> bool:
+        return self.supports_domains()
 
     def supports_domain_checks(self) -> bool:
         return self.supports_domains()
@@ -63,34 +70,6 @@ class FirebirdDomainMixin(DomainMixin):
 
     def supports_domain_collation(self) -> bool:
         return self.supports_domains()
-
-    def supports_alter_domain_action(
-        self,
-        action_type: Type[DomainAlterAction],
-    ) -> bool:
-        if not self.supports_domains():
-            return False
-        try:
-            if issubclass(
-                action_type,
-                (SetDomainNotNullAction, DropDomainNotNullAction),
-            ):
-                return self.version_at_least(
-                    FIREBIRD_VERSION_BOUNDARIES["DOMAIN_NOT_NULL_ACTION"]
-                )
-            return issubclass(
-                action_type,
-                (
-                    SetDomainDefaultAction,
-                    DropDomainDefaultAction,
-                    AddDomainCheckAction,
-                    DropDomainCheckAction,
-                    RenameDomainAction,
-                    FirebirdSetDomainDataTypeAction,
-                ),
-            )
-        except TypeError:
-            return False
 
     def supports_multiple_domain_alter_actions(self) -> bool:
         return self.supports_alter_domain()
@@ -144,12 +123,13 @@ class FirebirdDomainMixin(DomainMixin):
             if default_params:
                 raise ValueError("DOMAIN DEFAULT must render without bind parameters")
             parts.append(f"DEFAULT {default_sql}")
-        if expr.nullability is not DomainNullability.UNSPECIFIED:
-            if not self.supports_domain_nullability(expr.nullability):
-                raise UnsupportedFeatureError(
-                    self.name,
-                    f"DOMAIN {expr.nullability.value}",
-                )
+        if expr.nullability is DomainNullability.NULLABLE:
+            if not self.supports_domain_nullable():
+                raise UnsupportedFeatureError(self.name, "DOMAIN NULL")
+            parts.append(expr.nullability.value)
+        elif expr.nullability is DomainNullability.NOT_NULL:
+            if not self.supports_domain_not_null():
+                raise UnsupportedFeatureError(self.name, "DOMAIN NOT NULL")
             parts.append(expr.nullability.value)
         checks = list(expr.checks)
         if checks and not self.supports_domain_checks():
@@ -216,13 +196,8 @@ class FirebirdDomainMixin(DomainMixin):
         action_groups_seen = set()
         ordered_actions = []
         for action in expr.actions:
-            if not self.supports_alter_domain_action(type(action)):
-                raise UnsupportedFeatureError(
-                    self.name,
-                    f"ALTER DOMAIN action {action.action_kind}",
-                )
             group = self._domain_action_group(action)
-            if group is None:
+            if group is None or not self._can_spell_domain_action(action):
                 raise UnsupportedFeatureError(
                     self.name,
                     f"ALTER DOMAIN action {action.action_kind}",
@@ -256,13 +231,14 @@ class FirebirdDomainMixin(DomainMixin):
         self,
         expr: DomainAlterAction,
     ) -> Tuple[str, tuple]:
+        """Render one ALTER DOMAIN action, or refuse the kind by name.
+
+        The kind vocabulary is Firebird's, so an action class this formatter
+        does not know is not a capability question -- it is a node with no
+        spelling, and the method therefore ends in an unconditional refusal.
+        """
         if not self.supports_domains() or not self.supports_alter_domain():
             raise UnsupportedFeatureError(self.name, "ALTER DOMAIN action")
-        if not self.supports_alter_domain_action(type(expr)):
-            raise UnsupportedFeatureError(
-                self.name,
-                f"ALTER DOMAIN action {expr.action_kind}",
-            )
         if isinstance(expr, FirebirdSetDomainDataTypeAction):
             data_type = expr.resolve_data_type()
             type_sql, type_params = data_type.to_sql()
@@ -271,11 +247,59 @@ class FirebirdDomainMixin(DomainMixin):
             # The rename target is a domain like any other: it names the object
             # the domain becomes, so it goes through the same object layer.
             return f"TO {Domain(self, expr.new_name).to_sql()[0]}", ()
-        if isinstance(expr, SetDomainNotNullAction):
-            return "SET NOT NULL", ()
-        if isinstance(expr, DropDomainNotNullAction):
+        if isinstance(expr, (SetDomainNotNullAction, DropDomainNotNullAction)):
+            if not self._can_spell_domain_action(expr):
+                raise UnsupportedFeatureError(
+                    self.name,
+                    f"ALTER DOMAIN action {expr.action_kind}",
+                )
+            if isinstance(expr, SetDomainNotNullAction):
+                return "SET NOT NULL", ()
             return "DROP NOT NULL", ()
-        return super().format_domain_alter_action(expr)
+        if isinstance(expr, SetDomainDefaultAction):
+            if not self.supports_domain_default():
+                raise UnsupportedFeatureError(self.name, "ALTER DOMAIN SET DEFAULT")
+            value_sql, params = expr.default.to_sql()
+            if params:
+                raise ValueError("ALTER DOMAIN DEFAULT must render without bind parameters")
+            return f"SET DEFAULT {value_sql}", ()
+        if isinstance(expr, DropDomainDefaultAction):
+            if not self.supports_domain_default():
+                raise UnsupportedFeatureError(self.name, "ALTER DOMAIN DROP DEFAULT")
+            return "DROP DEFAULT", ()
+        if isinstance(expr, AddDomainCheckAction):
+            check_sql, params = expr.check.to_sql()
+            return f"ADD {check_sql}", tuple(params)
+        if isinstance(expr, DropDomainCheckAction):
+            if not self.supports_domain_checks():
+                raise UnsupportedFeatureError(self.name, "ALTER DOMAIN DROP CHECK")
+            if expr.name is None:
+                if not self.supports_unnamed_domain_check_drop():
+                    raise UnsupportedFeatureError(
+                        self.name,
+                        "unnamed DOMAIN CHECK drop",
+                    )
+                return "DROP CONSTRAINT", ()
+            if not self.supports_named_domain_checks():
+                raise UnsupportedFeatureError(self.name, "named DOMAIN CHECK drop")
+            return f"DROP CONSTRAINT {self.format_identifier(expr.name)}", ()
+        raise UnsupportedFeatureError(
+            self.name,
+            f"ALTER DOMAIN action {expr.action_kind}",
+        )
+
+    def _can_spell_domain_action(self, action: DomainAlterAction) -> bool:
+        """Whether this engine version has *action*'s ALTER DOMAIN spelling.
+
+        A node-kind question, not a capability switch: Firebird learned
+        ``SET``/``DROP NOT NULL`` on ALTER DOMAIN in 3.0, while the other
+        actions exist as soon as DOMAIN itself does.
+        """
+        if isinstance(action, (SetDomainNotNullAction, DropDomainNotNullAction)):
+            return self.version_at_least(
+                FIREBIRD_VERSION_BOUNDARIES["DOMAIN_NOT_NULL_ACTION"]
+            )
+        return self._domain_action_group(action) is not None
 
     @staticmethod
     def _domain_action_group(action: DomainAlterAction) -> Optional[str]:

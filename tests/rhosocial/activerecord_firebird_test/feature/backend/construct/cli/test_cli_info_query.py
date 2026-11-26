@@ -220,7 +220,7 @@ class TestInfoHelpers:
         methods = info_mod.get_protocol_support_methods(Dummy)
         assert methods == ["is_beta_available", "supports_alpha"]
 
-    def test_check_protocol_support_bool_and_parameterized(self):
+    def test_check_protocol_support_parameters_are_bool(self):
         from rhosocial.activerecord.backend.impl.firebird.protocols import (
             FirebirdBlobSupport,
             FirebirdWindowFunctionSupport,
@@ -229,13 +229,10 @@ class TestInfoHelpers:
         dialect = FirebirdDialect((4, 0, 0))
         blob = info_mod.check_protocol_support(dialect, FirebirdBlobSupport)
         assert blob["supports_blob"] is True
-        parameterized = blob["supports_blob_sub_type"]
-        assert set(parameterized) == {"supported", "total", "args"}
-        assert parameterized["total"] == len(parameterized["args"]) == 2
-        # F8 anchor: sub-type args are ints ("0"/"1" must not be compared as
-        # strings), so both BLOB sub-types report as supported.
-        assert parameterized["supported"] == parameterized["total"]
-        assert set(parameterized["args"].values()) == {True}
+        assert blob["supports_blob_sub_type_binary"] is True
+        assert blob["supports_blob_sub_type_text"] is True
+        # Every switch takes no arguments, so every reported value is a bool.
+        assert all(isinstance(value, bool) for value in blob.values())
 
         window = info_mod.check_protocol_support(dialect, FirebirdWindowFunctionSupport)
         assert window["supports_window_functions"] is True

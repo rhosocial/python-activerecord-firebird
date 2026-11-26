@@ -92,7 +92,7 @@ class TestProtocolDiscovery:
             "is_beta_available", "supports_alpha",
         ]
 
-    def test_check_bool_and_parameterized_methods(self):
+    def test_check_bool_and_parameterless_methods(self):
         class Proto:
             def supports_alpha(self):
                 return True
@@ -100,8 +100,11 @@ class TestProtocolDiscovery:
             def supports_beta(self):
                 return False
 
-            def supports_blob_sub_type(self, sub_type):
-                return sub_type in (0, 1)
+            def supports_blob_sub_type_binary(self):
+                return True
+
+            def supports_blob_sub_type_text(self):
+                return True
 
             def is_gamma_available(self):
                 return True
@@ -109,18 +112,16 @@ class TestProtocolDiscovery:
         dialect = SimpleNamespace(
             supports_alpha=lambda: True,
             supports_beta=lambda: False,
-            supports_blob_sub_type=lambda value: value in (0, 1),
+            supports_blob_sub_type_binary=lambda: True,
+            supports_blob_sub_type_text=lambda: True,
             is_gamma_available=lambda: True,
         )
         result = mod.check_protocol_support(dialect, Proto)
         assert result["supports_alpha"] is True
         assert result["supports_beta"] is False
         assert result["is_gamma_available"] is True
-        assert result["supports_blob_sub_type"] == {
-            "supported": 2,
-            "total": 2,
-            "args": {"0": True, "1": True},
-        }
+        assert result["supports_blob_sub_type_binary"] is True
+        assert result["supports_blob_sub_type_text"] is True
 
     def test_missing_method_is_false(self):
         class Proto:
@@ -129,7 +130,7 @@ class TestProtocolDiscovery:
 
         assert mod.check_protocol_support(SimpleNamespace(), Proto) == {"supports_absent": False}
 
-    def test_unmapped_parameterized_method_is_false(self):
+    def test_parameterized_method_is_not_a_support_switch(self):
         class Proto:
             def supports_needs_arg(self, value):
                 return True

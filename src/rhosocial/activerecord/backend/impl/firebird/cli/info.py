@@ -153,11 +153,8 @@ PROTOCOL_FAMILY_GROUPS: Dict[str, list] = {
     ],
 }
 
-# All possible test arguments for methods that require parameters
-SUPPORT_METHOD_ALL_ARGS: Dict[str, List[str]] = {
-    "supports_explain_format": ["TEXT", "JSON", "TREE", "XML", "YAML", "DOT"],
-    "supports_blob_sub_type": ["0", "1"],
-}
+# All support switches take no arguments and return a bool, so there is no
+# per-argument table to run.
 
 
 def create_parser(subparsers):
@@ -285,7 +282,6 @@ def handle(args):
         dialect,
         family_groups=PROTOCOL_FAMILY_GROUPS,
         dialect_specific_groups=DIALECT_SPECIFIC_GROUPS,
-        all_args=SUPPORT_METHOD_ALL_ARGS,
         verbose=args.verbose,
     )
 
@@ -349,11 +345,12 @@ def get_protocol_support_methods(protocol_class: type) -> List[str]:
 def check_protocol_support(dialect, protocol_class: type) -> Dict[str, Any]:
     """Check all support methods for a protocol against the dialect.
 
-    For methods requiring parameters, tests all possible arguments.
+    A support switch takes no arguments and returns a bool; a method that
+    requires an argument is not a support switch and is reported ``False``
+    rather than guessed at.
 
     Returns:
-        Dict with method names as keys. For no-arg methods: bool value.
-        For methods with parameters: dict with 'supported', 'total', 'args' keys.
+        Dict with method names as keys and bool values.
     """
     results = {}
     methods = get_protocol_support_methods(protocol_class)
@@ -361,37 +358,14 @@ def check_protocol_support(dialect, protocol_class: type) -> Dict[str, Any]:
         if hasattr(dialect, method_name):
             try:
                 method = getattr(dialect, method_name)
-                # Check if method requires arguments (beyond self)
+                # A support switch answers from the dialect alone. A required
+                # parameter is a contract violation, not an argument to invent.
                 sig = inspect.signature(method)
                 params = [p for p in sig.parameters.values() if p.default == inspect.Parameter.empty]
                 required_params = [p for p in params if p.name != "self"]
 
                 if len(required_params) == 0:
-                    result = method()
-                    results[method_name] = bool(result)
-                elif method_name in SUPPORT_METHOD_ALL_ARGS:
-                    all_args = SUPPORT_METHOD_ALL_ARGS[method_name]
-                    arg_results = {}
-                    for arg in all_args:
-                        try:
-                            # Numeric strings describe int parameters (e.g.
-                            # supports_blob_sub_type takes a BLOB sub-type
-                            # number); passing "0" verbatim would compare
-                            # against int sub-types and always miss.
-                            call_arg = (
-                                int(arg)
-                                if isinstance(arg, str) and arg.lstrip("-").isdigit()
-                                else arg
-                            )
-                            arg_results[arg] = bool(method(call_arg))
-                        except Exception:
-                            arg_results[arg] = False
-                    supported_count = sum(1 for v in arg_results.values() if v)
-                    results[method_name] = {
-                        "supported": supported_count,
-                        "total": len(all_args),
-                        "args": arg_results,
-                    }
+                    results[method_name] = bool(method())
                 else:
                     results[method_name] = False
             except Exception:

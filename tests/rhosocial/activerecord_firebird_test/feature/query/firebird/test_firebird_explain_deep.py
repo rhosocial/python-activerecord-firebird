@@ -26,11 +26,11 @@ What *is* true and testable locally is the capability contract:
 """
 
 import pytest
+from rhosocial.activerecord.backend.dialect.exceptions import UnsupportedFeatureError
 from rhosocial.activerecord.backend.dialect.protocols import ExplainSupport
 from rhosocial.activerecord.backend.expression import (
     ExplainFormat,
     ExplainOptions,
-    ExplainType,
     Literal,
 )
 from rhosocial.activerecord.backend.expression.objects import Table
@@ -74,10 +74,23 @@ class TestFirebirdExplainCapabilityGate:
         assert d.supports_explain_plan() is False
 
     def test_related_explain_option_gates_are_closed(self, dialect):
-        """No ANALYZE / FORMAT options either -- Firebird honors none of them."""
+        """No ANALYZE / FORMAT / option gates either -- Firebird honors none."""
         assert dialect.supports_explain_analyze() is False
-        for fmt in ("TEXT", "JSON", "TREE", "XML", "YAML", "DOT"):
-            assert dialect.supports_explain_format(fmt) is False
+        for probe in (
+            "supports_explain_verbose",
+            "supports_explain_costs",
+            "supports_explain_buffers",
+            "supports_explain_timing",
+            "supports_explain_settings",
+            "supports_explain_wal",
+            "supports_explain_format_text",
+            "supports_explain_format_json",
+            "supports_explain_format_xml",
+            "supports_explain_format_yaml",
+            "supports_explain_format_tree",
+            "supports_explain_format_traditional",
+        ):
+            assert getattr(dialect, probe)() is False, probe
 
 
 class TestFirebirdExplainRendering:
@@ -105,16 +118,26 @@ class TestFirebirdExplainRendering:
         expr = _explain_of(dialect)
         assert expr.to_sql() == dialect.format_explain_statement(expr)
 
-    def test_unsupported_options_are_not_injected(self, dialect):
-        """Bogus ANALYZE/FORMAT/VERBOSE clauses are never fabricated."""
-        options = ExplainOptions(
-            analyze=True,
-            verbose=True,
-            type=ExplainType.ANALYZE,
-            format=ExplainFormat.JSON,
-        )
-        sql, _params = dialect.format_explain_statement(_explain_of(dialect, options))
+    @pytest.mark.parametrize(
+        "options,option",
+        [
+            (ExplainOptions(analyze=True), "EXPLAIN ANALYZE"),
+            (ExplainOptions(format=ExplainFormat.JSON), "EXPLAIN FORMAT JSON"),
+            (ExplainOptions(costs=False), "EXPLAIN COSTS"),
+            (ExplainOptions(buffers=True), "EXPLAIN BUFFERS"),
+            (ExplainOptions(verbose=True), "EXPLAIN VERBOSE"),
+            (ExplainOptions(settings=True), "EXPLAIN SETTINGS"),
+            (ExplainOptions(wal=True), "EXPLAIN WAL"),
+        ],
+    )
+    def test_unsupported_options_are_refused_by_name(self, dialect, options, option):
+        """An option Firebird cannot honor is refused, never silently dropped."""
+        with pytest.raises(UnsupportedFeatureError, match=option):
+            dialect.format_explain_statement(_explain_of(dialect, options))
 
+    def test_default_options_request_nothing(self, dialect):
+        """``costs`` defaults to True, so a default option set asks for no clause."""
+        sql, _params = dialect.format_explain_statement(
+            _explain_of(dialect, ExplainOptions())
+        )
         assert sql == 'EXPLAIN PLAN FOR SELECT ? FROM "USERS"'
-        for bogus in ("ANALYZE", "FORMAT", "VERBOSE", "JSON"):
-            assert bogus not in sql, f"Firebird cannot honor '{bogus}'; must not render it"
