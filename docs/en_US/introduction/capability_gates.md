@@ -27,9 +27,11 @@ supported by the transaction manager.
 
 ## Function-level gates
 
-`supports_functions()` returns a per-function truth map built from version floors.
-For example, `datediff` is gated at Firebird 2.5; this is the check to make before
-constructing a `seconds_between` node. See
+`suggest_functions()` returns the SQL-function catalogue: a `FunctionSuggestion`
+whose `functions` mapping answers per name, built from version floors.
+For example, `datediff` is gated at Firebird 2.5; read
+`suggest_functions().functions["datediff"]` before constructing a `seconds_between`
+node. See
 [Date/time differences](../querying/seconds_between.md#availability).
 
 ## Introspection gates

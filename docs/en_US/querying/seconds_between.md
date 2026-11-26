@@ -83,6 +83,6 @@ then quoted (`"QUEUE_SECONDS"`).
 ## Availability
 
 The formatter uses `DATEDIFF`, which this backend already gates at Firebird
-2.5 through `supports_functions()["datediff"]`. On an older server the SQL
-is not accepted; the capability answer is the place to check before
+2.5 through `suggest_functions().functions["datediff"]`. On an older server the SQL
+is not accepted; the catalogue answer is the place to check before
 constructing the node.

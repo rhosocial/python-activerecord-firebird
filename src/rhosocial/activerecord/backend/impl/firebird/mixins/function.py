@@ -1,7 +1,9 @@
 # src/rhosocial/activerecord/backend/impl/firebird/mixins/function.py
 """Firebird function support mixin."""
 
-from typing import Dict, Tuple, TYPE_CHECKING
+from typing import Tuple, TYPE_CHECKING
+
+from rhosocial.activerecord.backend.suggestion.definitions import FunctionSuggestion
 
 from .version_boundaries import _norm_version
 
@@ -26,7 +28,14 @@ class FirebirdFunctionMixin:
         "rpad": ((2, 5, 0), None),
     }
 
-    def supports_functions(self) -> Dict[str, bool]:
+    def suggest_functions(self) -> "FunctionSuggestion":
+        """Return the SQL-function catalogue this dialect renders.
+
+        Firebird has no SQL/XML functions, so the expression constructors the
+        core lists under their XML names are not catalogue entries here. Every
+        other core name is offered, and the names Firebird gates by version are
+        answered from ``_FIREBIRD_FUNCTION_VERSIONS``.
+        """
         from rhosocial.activerecord.backend.expression.functions import __all__ as core_functions
         expression_constructors = {
             "xmlagg",
@@ -49,7 +58,7 @@ class FirebirdFunctionMixin:
                 result[func_name] = True
         for func_name, (_min_ver, _max_ver) in self._FIREBIRD_FUNCTION_VERSIONS.items():
             result[func_name] = self._is_firebird_function_supported(func_name)
-        return result
+        return FunctionSuggestion(result)
 
     def _is_firebird_function_supported(self, func_name: str) -> bool:
         version_range = self._FIREBIRD_FUNCTION_VERSIONS.get(func_name)

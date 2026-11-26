@@ -8,7 +8,8 @@ the node (open vocabulary) -- never an argument to ``supports_*``.
 
 The scan is static (``ast``) so it sees the declaration even where a test would
 have to construct a dialect to call it, and it covers this repository's own
-``src`` tree rather than the core package.
+``src`` tree rather than the core package. It also requires the ``-> bool``
+annotation: a mapping answer is a catalogue, and belongs under ``suggest_*``.
 """
 
 import ast
@@ -44,8 +45,20 @@ def _required_arguments(func):
     return [arg.arg for arg in required]
 
 
+def _annotates_bool(func):
+    """A switch declares ``-> bool``; a catalogue or mapping is not a switch."""
+    annotation = func.returns
+    if annotation is None:
+        return False
+    if isinstance(annotation, ast.Name) and annotation.id == "bool":
+        return True
+    if isinstance(annotation, ast.Constant) and annotation.value == "bool":
+        return True
+    return False
+
+
 def _offenders(tree, label):
-    """``label:line name(params)`` for every support switch needing an input."""
+    """``label:line name(params)`` for every support switch that is not a bool switch."""
     found = []
     for node in ast.walk(tree):
         if not isinstance(node, ast.ClassDef):
@@ -58,6 +71,8 @@ def _offenders(tree, label):
             missing = _required_arguments(item)
             if missing:
                 found.append(f"{label}:{item.lineno} {item.name}({', '.join(missing)})")
+            elif not _annotates_bool(item):
+                found.append(f"{label}:{item.lineno} {item.name} does not return bool")
     return found
 
 
@@ -89,11 +104,53 @@ def test_the_scan_flags_a_planted_violation(tmp_path):
     assert "supports_thing(name)" in offenders[0]
 
 
+def test_the_scan_flags_a_mapping_annotation(tmp_path):
+    probe = tmp_path / "_probe.py"
+    probe.write_text(
+        "from typing import Dict\n"
+        "class P:\n"
+        "    def supports_thing(self) -> Dict[str, bool]:\n"
+        "        return {}\n",
+        encoding="utf-8",
+    )
+
+    tree = ast.parse(probe.read_text(encoding="utf-8"))
+    offenders = _offenders(tree, "probe")
+    assert offenders, "the scan did not notice a catalogue spelled as a switch"
+    assert "does not return bool" in offenders[0]
+
+
+def test_the_scan_flags_a_missing_annotation(tmp_path):
+    probe = tmp_path / "_probe.py"
+    probe.write_text(
+        "class P:\n"
+        "    def supports_thing(self):\n"
+        "        return False\n",
+        encoding="utf-8",
+    )
+
+    tree = ast.parse(probe.read_text(encoding="utf-8"))
+    offenders = _offenders(tree, "probe")
+    assert offenders, "the scan did not notice an unannotated switch"
+    assert "does not return bool" in offenders[0]
+
+
+def test_the_scan_accepts_a_quoted_bool_annotation(tmp_path):
+    probe = tmp_path / "_probe.py"
+    probe.write_text(
+        'class P:\n    def supports_thing(self) -> "bool":\n        return False\n',
+        encoding="utf-8",
+    )
+
+    tree = ast.parse(probe.read_text(encoding="utf-8"))
+    assert not _offenders(tree, "probe")
+
+
 def test_the_scan_accepts_a_defaulted_parameter(tmp_path):
     probe = tmp_path / "_probe.py"
     probe.write_text(
         "class P:\n"
-        "    def supports_thing(self, name=None):\n"
+        "    def supports_thing(self, name=None) -> bool:\n"
         "        return False\n",
         encoding="utf-8",
     )

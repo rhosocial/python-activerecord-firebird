@@ -2,6 +2,8 @@
 """Tests for FirebirdDialect SQL generation."""
 
 
+from collections.abc import Mapping
+
 from rhosocial.activerecord.backend.impl.firebird.dialect import FirebirdDialect
 
 
@@ -174,23 +176,26 @@ class TestFirebirdDialectTransaction:
 
 
 class TestFirebirdDialectFunctions:
-    """Function support tests."""
+    """Function catalogue tests."""
 
-    def test_supports_functions_returns_dict(self, dialect):
-        result = dialect.supports_functions()
-        assert isinstance(result, dict)
-        assert len(result) > 0
+    def test_suggest_functions_returns_catalogue(self, dialect):
+        from rhosocial.activerecord.backend.suggestion.definitions import FunctionSuggestion
 
-    def test_gen_uuid_supported(self, dialect):
-        result = dialect.supports_functions()
-        assert "gen_uuid" in result
+        result = dialect.suggest_functions()
+        assert isinstance(result, FunctionSuggestion)
+        assert isinstance(result.functions, Mapping)
+        assert len(result.functions) > 0
+
+    def test_gen_uuid_is_catalogued(self, dialect):
+        result = dialect.suggest_functions()
+        assert "gen_uuid" in result.functions
 
     def test_sqlxml_constructors_are_not_plain_functions(self, dialect):
-        result = dialect.supports_functions()
+        result = dialect.suggest_functions()
         sqlxml_constructors = [
             "xmlparse", "xmlserialize", "xmlelement", "xmlattributes",
             "xmlforest", "xmlconcat", "xmlcomment", "xmlpi", "xmlroot",
             "xmlagg", "xmlquery", "xmlexists", "xmltable",
         ]
         for func in sqlxml_constructors:
-            assert func not in result
+            assert func not in result.functions

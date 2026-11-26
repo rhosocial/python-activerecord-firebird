@@ -183,7 +183,10 @@ FIREBIRD_PROTOCOLS = [
     dialect_protocols.PartitionSupport,
     dialect_protocols.QualifyClauseSupport,
     dialect_protocols.ReturningSupport,
-    dialect_protocols.SQLFunctionSupport,
+    # The SQL-function catalogue is a suggestion value rather than a switch:
+    # ``suggest_functions()`` answers which functions this dialect renders,
+    # with the per-name availability built from Firebird's version floors.
+    suggestion_protocols.FunctionSuggestionSupport,
     dialect_protocols.SetOperationSupport,
     dialect_protocols.TemporalTableSupport,
     dialect_protocols.TransactionControlSupport,
@@ -330,7 +333,7 @@ class TestTheBackendOwnAnswersAreTheEffectiveOnes:
             if not klass.__name__.endswith("Mixin"):
                 continue
             for name in vars(klass):
-                if not name.startswith(("format_", "supports_", "get_")):
+                if not name.startswith(("format_", "supports_", "get_", "suggest_")):
                     continue
                 if not callable(vars(klass)[name]):
                     continue
