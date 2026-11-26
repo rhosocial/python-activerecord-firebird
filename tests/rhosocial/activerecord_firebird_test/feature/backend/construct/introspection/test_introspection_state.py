@@ -20,7 +20,10 @@ from __future__ import annotations
 import asyncio
 
 import pytest
-from rhosocial.activerecord.backend.dialect.exceptions import UnsupportedFeatureError
+from rhosocial.activerecord.backend.dialect.exceptions import (
+    ProtocolNotImplementedError,
+    UnsupportedFeatureError,
+)
 from rhosocial.activerecord.backend.introspection.cache import (
     InMemoryIntrospectionCache,
 )
@@ -363,6 +366,38 @@ class TestSequenceStates:
 # ---------------------------------------------------------------------------
 
 
+def _one_object_per_family(name):
+    """One row shaped for every family ``item_exists`` may consult.
+
+    Each parser reads the slots it needs and ignores the rest, so a single
+    row can stand in for a domain, a function, a generator and a relation.
+    That lets the all-kinds guard exercise every supported branch without a
+    per-family executor.
+    """
+    return {
+        # domain family
+        "DOMAIN_NAME": name,
+        "FIELD_TYPE": 8,
+        "FIELD_SUB_TYPE": 0,
+        "NULL_FLAG": 1,
+        # function family
+        "FUNCTION_NAME": name,
+        "LEGACY_FLAG": 0,
+        # sequence family
+        "GENERATOR_NAME": name,
+        "OWNER_TABLE": None,
+        "OWNER_COLUMN": None,
+        "IDENTITY_TYPE": None,
+        # table family
+        "RDB$RELATION_NAME": name,
+        "RDB$VIEW_BLR": None,
+        "RDB$RELATION_TYPE": 0,
+        "RDB$DESCRIPTION": None,
+        # shared parser slot: domain and sequence both read system_flag
+        "SYSTEM_FLAG": 0,
+    }
+
+
 class TestItemExists:
     def test_the_one_unnamed_namespace_is_the_empty_name(self):
         assert _Probe([]).item_exists(ItemKind.SCHEMA, "") is True
@@ -382,6 +417,12 @@ class TestItemExists:
         assert probe.item_exists(ItemKind.DOMAIN, "POSITIVE_INT") is True
         assert probe.item_exists(ItemKind.DOMAIN, "NOPE") is False
 
+    def test_a_function_is_asked_through_its_own_family(self):
+        rows = [{"FUNCTION_NAME": "F_ADD", "SYSTEM_FLAG": 0}]
+        probe = _Probe(rows)
+        assert probe.item_exists(ItemKind.FUNCTION, "F_ADD") is True
+        assert probe.item_exists(ItemKind.FUNCTION, "NOPE") is False
+
     def test_a_sequence_is_the_user_generator_the_family_lists(self):
         rows = [
             {
@@ -396,9 +437,65 @@ class TestItemExists:
         assert probe.item_exists(ItemKind.SEQUENCE, "GEN_INVOICE_NO") is True
         assert probe.item_exists(ItemKind.SEQUENCE, "NOPE") is False
 
-    def test_a_kind_with_no_catalogue_is_refused_not_answered_false(self):
-        with pytest.raises(UnsupportedFeatureError, match="item_exists"):
-            _Probe([]).item_exists(ItemKind.TABLESPACE, "USER_SPACE")
+    def test_a_table_is_the_relation_the_listing_reports(self):
+        rows = [
+            {
+                "RDB$RELATION_NAME": "ORDERS",
+                "RDB$VIEW_BLR": None,
+                "RDB$RELATION_TYPE": 0,
+            }
+        ]
+        probe = _Probe(rows)
+        assert probe.item_exists(ItemKind.TABLE, "ORDERS") is True
+        assert probe.item_exists(ItemKind.TABLE, "NOPE") is False
+
+    def test_an_engine_absent_kind_answers_false_without_querying(self):
+        for kind in FirebirdIntrospector.ENGINE_ABSENT_ITEM_KINDS:
+            probe = _Probe([])
+            assert probe.item_exists(kind, "ANY_NAME") is False
+            # Absence is a fact about the engine, not a failed lookup.
+            assert probe._executor.calls == []
+
+    def test_an_index_is_refused_for_want_of_a_name_only_query(self):
+        probe = _Probe([])
+        with pytest.raises(ProtocolNotImplementedError, match="item_exists"):
+            probe.item_exists(ItemKind.INDEX, "IDX_ORDERS_A")
+        assert probe._executor.calls == []
+
+    def test_the_declared_sets_partition_every_kind(self):
+        """The sets must name every kind, and nothing else may exist."""
+        supported = FirebirdIntrospector.SUPPORTED_ITEM_KINDS
+        refused = FirebirdIntrospector.REFUSED_ITEM_KINDS
+        absent = FirebirdIntrospector.ENGINE_ABSENT_ITEM_KINDS
+
+        assert supported | refused | absent == frozenset(ItemKind)
+        assert not (supported & refused)
+        assert not (supported & absent)
+        assert not (refused & absent)
+        # The async twin inherits the same declarations, not a copy of them.
+        assert AsyncFirebirdIntrospector.SUPPORTED_ITEM_KINDS == supported
+        assert AsyncFirebirdIntrospector.REFUSED_ITEM_KINDS == refused
+        assert AsyncFirebirdIntrospector.ENGINE_ABSENT_ITEM_KINDS == absent
+
+    def test_every_kind_takes_the_branch_its_set_declares(self):
+        """The guard: no kind falls silently through to a default answer."""
+        for kind in ItemKind:
+            if kind in FirebirdIntrospector.REFUSED_ITEM_KINDS:
+                probe = _Probe([])
+                with pytest.raises(ProtocolNotImplementedError):
+                    probe.item_exists(kind, "PROBE")
+                assert probe._executor.calls == []
+                continue
+
+            probe = _Probe([_one_object_per_family("PROBE")])
+            name = "" if kind is ItemKind.SCHEMA else "PROBE"
+            answer = probe.item_exists(kind, name)
+            if kind in FirebirdIntrospector.SUPPORTED_ITEM_KINDS:
+                assert answer is True, kind
+            else:
+                assert kind in FirebirdIntrospector.ENGINE_ABSENT_ITEM_KINDS
+                assert answer is False, kind
+                assert probe._executor.calls == []
 
 
 # ---------------------------------------------------------------------------
@@ -483,3 +580,23 @@ class TestAsyncState:
         probe = _AsyncProbe(rows)
         assert asyncio.run(probe.item_exists(ItemKind.SEQUENCE, "GEN_INVOICE_NO")) is True
         assert asyncio.run(probe.item_exists(ItemKind.SEQUENCE, "NOPE")) is False
+
+    def test_async_every_kind_takes_the_branch_its_set_declares(self):
+        """The async twin makes the same three-case answer as the sync one."""
+        for kind in ItemKind:
+            if kind in AsyncFirebirdIntrospector.REFUSED_ITEM_KINDS:
+                probe = _AsyncProbe([])
+                with pytest.raises(ProtocolNotImplementedError):
+                    asyncio.run(probe.item_exists(kind, "PROBE"))
+                assert probe._executor.calls == []
+                continue
+
+            probe = _AsyncProbe([_one_object_per_family("PROBE")])
+            name = "" if kind is ItemKind.SCHEMA else "PROBE"
+            answer = asyncio.run(probe.item_exists(kind, name))
+            if kind in AsyncFirebirdIntrospector.SUPPORTED_ITEM_KINDS:
+                assert answer is True, kind
+            else:
+                assert kind in AsyncFirebirdIntrospector.ENGINE_ABSENT_ITEM_KINDS
+                assert answer is False, kind
+                assert probe._executor.calls == []

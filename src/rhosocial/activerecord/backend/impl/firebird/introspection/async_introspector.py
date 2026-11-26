@@ -6,9 +6,8 @@ API; this class is a thread-pool wrapper over synchronous introspection calls,
 kept only for API parity. Use the synchronous introspector instead.
 """
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, FrozenSet, List, Optional
 
-from rhosocial.activerecord.backend.dialect.exceptions import UnsupportedFeatureError
 from rhosocial.activerecord.backend.introspection.base import (
     IntrospectorMixin,
     AsyncAbstractIntrospector,
@@ -215,6 +214,42 @@ class FirebirdAsyncIntrospectorMixin(IntrospectorMixin):
     are separate classes that cannot coexist, and they share every parser and
     every Firebird-specific statement factory through this mixin.
     """
+
+    # ------------------------------------------------------------------
+    # The kinds ``item_exists`` answers
+    #
+    # The three sets partition :class:`ItemKind` exactly, and each one is
+    # declared here rather than inferred from the dispatch below: a kind the
+    # enum gains later must be placed in one of them, or the offline guard
+    # test fails instead of letting it fall silently through to ``False``.
+    # ------------------------------------------------------------------
+
+    #: Kinds Firebird has and this backend can resolve from a name alone.
+    SUPPORTED_ITEM_KINDS: FrozenSet[ItemKind] = frozenset(
+        {
+            ItemKind.SCHEMA,
+            ItemKind.DOMAIN,
+            ItemKind.FUNCTION,
+            ItemKind.SEQUENCE,
+            ItemKind.TABLE,
+        }
+    )
+
+    #: Kinds Firebird has, but this backend has no name-only catalogue query
+    #: for. ``False`` would disguise an implementation gap as absence.
+    REFUSED_ITEM_KINDS: FrozenSet[ItemKind] = frozenset({ItemKind.INDEX})
+
+    #: Kinds Firebird has no objects of at all; "there is none" is a fact.
+    ENGINE_ABSENT_ITEM_KINDS: FrozenSet[ItemKind] = frozenset(
+        {
+            ItemKind.TYPE,
+            ItemKind.EXTENSION,
+            ItemKind.TABLESPACE,
+            ItemKind.PARTITION_FUNCTION,
+            ItemKind.PARTITION_SCHEME,
+            ItemKind.FULLTEXT_CATALOG,
+        }
+    )
 
     @property
     def default_schema(self) -> str:
@@ -2130,22 +2165,45 @@ class AsyncFirebirdIntrospector(FirebirdAsyncIntrospectorMixin, AsyncAbstractInt
         name: str,
         schema: Optional[str] = None,
     ) -> bool:
-        """Whether a shared object of one of this engine's kinds exists."""
+        """Whether a shared object of one of this engine's kinds exists.
+
+        The answer follows core's three-case rule, and the sets above name
+        which case a kind takes:
+
+        * :data:`SUPPORTED_ITEM_KINDS` -- the engine has the objects and this
+          backend can query them, so the family is asked and the result
+          returned.
+        * :data:`ENGINE_ABSENT_ITEM_KINDS` -- the engine has no objects of
+          that kind, so absence is the fact, not a failure to look.
+        * :data:`REFUSED_ITEM_KINDS` -- the engine has the objects but this
+          backend has no name-only query, so the question is refused rather
+          than answered ``False``.
+
+        Async counterpart of the sync answer; the families are awaited and
+        the result matches the sync twin.
+        """
+        kind = ItemKind(kind)
+        if kind in self.REFUSED_ITEM_KINDS:
+            self._refuse("StructureIntrospectionSupport", "item_exists")
+        if kind not in self.SUPPORTED_ITEM_KINDS:
+            return False
+
+        self.dialect.reject_namespace(schema)
         if kind is ItemKind.SCHEMA:
-            self.dialect.reject_namespace(schema)
             return not (name or "").strip()
         if kind is ItemKind.DOMAIN:
-            self.dialect.reject_namespace(schema)
             return await self.get_domain_info(name) is not None
+        if kind is ItemKind.FUNCTION:
+            return await self.get_function_info(name) is not None
         if kind is ItemKind.SEQUENCE:
-            self.dialect.reject_namespace(schema)
             states = await self.list_sequence_states(schema)
             return self._find_by_name(states, name) is not None
-        raise UnsupportedFeatureError(
-            self.dialect.name,
-            f"item_exists for {kind.value!r}",
-            suggestion=(
-                "Firebird has no shared object of that kind to test; ask "
-                "about a schema, domain or sequence."
-            ),
-        )
+        if kind is ItemKind.TABLE:
+            tables = await self.list_tables(schema)
+            return self._find_by_name(tables, name) is not None
+
+        # Every supported kind has a branch above; this is reached only if
+        # one was added to the set without a query. Refusing keeps that a
+        # loud gap rather than a silent False.
+        self._refuse("StructureIntrospectionSupport", "item_exists")
+        return False

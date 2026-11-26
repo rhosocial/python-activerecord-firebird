@@ -13,7 +13,6 @@ are declared below as the sync half of that pair.
 
 from typing import Any, Dict, List, Optional
 
-from rhosocial.activerecord.backend.dialect.exceptions import UnsupportedFeatureError
 from rhosocial.activerecord.backend.introspection.base import (
     AbstractIntrospector,
 )
@@ -638,41 +637,50 @@ class FirebirdIntrospector(FirebirdAsyncIntrospectorMixin, AbstractIntrospector)
     ) -> bool:
         """Whether a shared object of one of this engine's kinds exists.
 
-        Three kinds are answerable here:
+        The answer follows core's three-case rule, and the sets declared on
+        :class:`FirebirdAsyncIntrospectorMixin` name which case a kind takes:
 
-        * ``SCHEMA`` -- Firebird has exactly one unnamed namespace per
-          database file, so the empty name names it (``True``) and any other
-          name names nothing (``False``). A non-empty ``schema`` argument is
-          refused for the same reason every other family refuses it.
-        * ``DOMAIN`` -- through the domain family's own definition, which
-          is the one place the ``RDB$FIELDS`` domain/descriptor split is
-          decided.
-        * ``SEQUENCE`` -- through :meth:`list_sequence_states`, so "exists"
-          means the same thing the sequence family lists (a user
-          generator; an identity column's internal generator is not one).
-
-        Any other kind is refused by name rather than answered ``False``:
-        "this engine cannot ask that" and "it is not there" are different
-        answers, and only the first is true for a kind Firebird has no
-        catalogue for.
+        * :data:`SUPPORTED_ITEM_KINDS` -- the engine has the objects and this
+          backend can query them, so the family is asked and the result
+          returned. That is a schema (the one unnamed namespace per database
+          file), a domain and a function through their own families, a
+          sequence through :meth:`list_sequence_states` (a user generator;
+          an identity column's internal generator is not one), and a table
+          through the table listing, which includes views as the catalogue
+          reports them.
+        * :data:`ENGINE_ABSENT_ITEM_KINDS` -- Firebird has no user types,
+          extensions, tablespaces, partition functions/schemes or full-text
+          catalogues at all, so absence is the fact rather than a failure to
+          look.
+        * :data:`REFUSED_ITEM_KINDS` -- Firebird has indexes, but this
+          backend reads them only as part of a table's answer
+          (:meth:`list_index_states`), so a name alone cannot be resolved.
+          That is an implementation gap, and a ``False`` here would disguise
+          it as absence.
         """
+        kind = ItemKind(kind)
+        if kind in self.REFUSED_ITEM_KINDS:
+            self._refuse("StructureIntrospectionSupport", "item_exists")
+        if kind not in self.SUPPORTED_ITEM_KINDS:
+            return False
+
+        self.dialect.reject_namespace(schema)
         if kind is ItemKind.SCHEMA:
-            self.dialect.reject_namespace(schema)
             return not (name or "").strip()
         if kind is ItemKind.DOMAIN:
-            self.dialect.reject_namespace(schema)
             return self.get_domain_info(name) is not None
+        if kind is ItemKind.FUNCTION:
+            return self.get_function_info(name) is not None
         if kind is ItemKind.SEQUENCE:
-            self.dialect.reject_namespace(schema)
             return self._find_by_name(self.list_sequence_states(schema), name) is not None
-        raise UnsupportedFeatureError(
-            self.dialect.name,
-            f"item_exists for {kind.value!r}",
-            suggestion=(
-                "Firebird has no shared object of that kind to test; ask "
-                "about a schema, domain or sequence."
-            ),
-        )
+        if kind is ItemKind.TABLE:
+            return self._find_by_name(self.list_tables(schema), name) is not None
+
+        # Every supported kind has a branch above; this is reached only if
+        # one was added to the set without a query. Refusing keeps that a
+        # loud gap rather than a silent False.
+        self._refuse("StructureIntrospectionSupport", "item_exists")
+        return False
 
 
 __all__ = ["FirebirdIntrospector"]
