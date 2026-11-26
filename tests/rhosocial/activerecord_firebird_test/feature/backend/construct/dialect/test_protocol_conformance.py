@@ -24,6 +24,7 @@ contract) are considered here. Firebird-specific protocols are covered elsewhere
 
 import inspect
 import sys
+from pathlib import Path
 
 if sys.version_info >= (3, 13):
     from typing import get_protocol_members
@@ -511,3 +512,30 @@ class TestIntrospectionSplitIsTheCoreOne:
         for name in ("IntrospectionSupport", "AsyncIntrospectionSupport"):
             assert not hasattr(dialect_protocols, name), f"core still exports the old {name}"
             assert not hasattr(firebird_protocols, name), f"Firebird re-exports the old {name}"
+
+    def test_no_table_state_is_built_with_a_null_partitioning(self):
+        """``TableState.partitioning`` is a shape, never ``None``.
+
+        An unpartitioned table must carry an empty ``PartitionState`` whose
+        ``scheme`` is ``None`` -- the same answer ``get_partition_state``
+        gives. A null ``partitioning`` argument would make the slot say
+        "unknown" at the table-state level even though this engine can answer
+        it. The needle is assembled so this guard does not match itself.
+        """
+        root = next(
+            parent
+            for parent in Path(__file__).resolve().parents
+            if (parent / "pyproject.toml").is_file()
+        )
+        needle = "partitioning=" + "None"
+        offenders = []
+        for directory in ("src", "tests"):
+            for path in sorted((root / directory).rglob("*.py")):
+                text = path.read_text(encoding="utf-8")
+                for lineno, line in enumerate(text.splitlines(), 1):
+                    if needle in line:
+                        offenders.append(f"{path}:{lineno}: {line.strip()}")
+        assert not offenders, (
+            "TableState.partitioning must be a PartitionState (scheme=None for "
+            "an unpartitioned table), never None:\n" + "\n".join(offenders)
+        )

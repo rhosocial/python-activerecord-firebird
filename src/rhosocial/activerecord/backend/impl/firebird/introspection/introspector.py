@@ -518,15 +518,16 @@ class FirebirdIntrospector(FirebirdAsyncIntrospectorMixin, AbstractIntrospector)
         table_name: str,
         schema: Optional[str] = None,
         include_stats: bool = False,
-    ) -> Optional[PartitionState]:
+    ) -> PartitionState:
         """Answer the partition question with this engine's one fact.
 
         Firebird has no table partitioning at all, so the answer is a
         ``PartitionState`` whose ``scheme`` is ``None`` -- core's single
-        neutral spelling for "not partitioned". This is an engine-level
-        fact, not a catalogue read: ``None`` here does not mean "unknown",
-        which is what the base class's refusal would say. ``include_stats``
-        changes nothing because there are no partitions to measure.
+        neutral spelling for "not partitioned". This is an engine-level fact,
+        not a catalogue read: the return is a ``PartitionState``, never
+        ``None``, and ``scheme=None`` does not mean "unknown", which is what
+        the base class's refusal would say. ``include_stats`` changes nothing
+        because there are no partitions to measure.
         """
         self.dialect.reject_namespace(schema)
         return self.partition_state()

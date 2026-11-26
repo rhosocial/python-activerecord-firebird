@@ -1424,9 +1424,11 @@ class FirebirdAsyncIntrospectorMixin(IntrospectorMixin):
         so every field stays ``None`` -- "the engine used its default", which
         is the meaning core gives that value, not "unknown".
 
-        ``partitioning`` stays ``None`` here because Firebird has no table
-        partitioning; :meth:`get_partition_state` carries that explicit
-        answer.
+        ``partitioning`` is an empty :class:`PartitionState` whose ``scheme``
+        is ``None``, the same answer :meth:`get_partition_state` gives:
+        Firebird has no table partitioning, and ``scheme=None`` is core's
+        single neutral spelling for "not partitioned". It is never ``None``,
+        which would say the state is unknown rather than unpartitioned.
 
         ``None`` is returned for an empty row set, which the I/O half turns
         into ``ObjectNotFoundError``: a state for a relation that is not
@@ -1442,7 +1444,7 @@ class FirebirdAsyncIntrospectorMixin(IntrospectorMixin):
                 traits=_TABLE_STATE_TRAITS.get(relation_type, ()),
                 storage=StorageOptionsState(),
                 comment=self._text_or_none(row.get("RDB$DESCRIPTION")),
-                partitioning=None,
+                partitioning=self.partition_state(),
                 raw={
                     "relation_type": relation_type,
                     "is_system": bool(row.get("RDB$SYSTEM_FLAG")),
@@ -2074,8 +2076,12 @@ class AsyncFirebirdIntrospector(FirebirdAsyncIntrospectorMixin, AsyncAbstractInt
         table_name: str,
         schema: Optional[str] = None,
         include_stats: bool = False,
-    ) -> Optional[PartitionState]:
-        """Answer the partition question with this engine's one fact."""
+    ) -> PartitionState:
+        """Answer the partition question with this engine's one fact.
+
+        Same answer as the sync twin: a ``PartitionState`` with ``scheme=None``
+        for every relation, never ``None``.
+        """
         self.dialect.reject_namespace(schema)
         return self.partition_state()
 

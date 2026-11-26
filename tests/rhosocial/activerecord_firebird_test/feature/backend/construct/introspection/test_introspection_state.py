@@ -28,7 +28,7 @@ from rhosocial.activerecord.backend.introspection.cache import (
     InMemoryIntrospectionCache,
 )
 from rhosocial.activerecord.backend.introspection.errors import ObjectNotFoundError
-from rhosocial.activerecord.backend.introspection.types import ItemKind
+from rhosocial.activerecord.backend.introspection.types import ItemKind, PartitionState
 
 from rhosocial.activerecord.backend.impl.firebird.dialect import FirebirdDialect
 from rhosocial.activerecord.backend.impl.firebird.introspection.async_introspector import (
@@ -169,7 +169,8 @@ class TestTableState:
         assert state.traits == ()
         assert state.comment == "orders comment"
         assert state.storage.engine is None
-        assert state.partitioning is None
+        assert isinstance(state.partitioning, PartitionState)
+        assert state.partitioning.scheme is None
         assert state.raw["relation_type"] == 0
 
     def test_global_temporary_tables_keep_the_on_commit_trait(self):
@@ -212,10 +213,18 @@ class TestPartitionState:
     def test_scheme_none_is_the_explicit_unpartitioned_answer(self):
         probe = _Probe([])
         state = probe.get_partition_state("ORDERS")
+        assert state is not None
+        assert isinstance(state, PartitionState)
         assert state.scheme is None
         assert state.bounds == ()
         # The answer is an engine fact, not a catalogue read.
         assert probe._executor.calls == []
+
+    def test_table_state_carries_the_same_unpartitioned_shape(self):
+        """The table-state slot says "not partitioned", never "unknown"."""
+        state = _Probe([_relation(0)]).get_table_state("ORDERS")
+        assert isinstance(state.partitioning, PartitionState)
+        assert state.partitioning.scheme is None
 
     def test_a_named_namespace_is_still_refused(self):
         with pytest.raises(UnsupportedFeatureError, match="schema-scoped introspection"):
@@ -543,8 +552,15 @@ class TestAsyncState:
     def test_async_partition_state_runs_no_query(self):
         probe = _AsyncProbe([])
         state = asyncio.run(probe.get_partition_state("ORDERS"))
+        assert state is not None
+        assert isinstance(state, PartitionState)
         assert state.scheme is None
         assert probe._executor.calls == []
+
+    def test_async_table_state_carries_the_same_unpartitioned_shape(self):
+        state = asyncio.run(_AsyncProbe([_relation(0)]).get_table_state("ORDERS"))
+        assert isinstance(state.partitioning, PartitionState)
+        assert state.partitioning.scheme is None
 
     def test_async_twins_share_the_names_and_the_answers(self):
         rows = [

@@ -74,6 +74,8 @@ The families core defines but this backend does not answer stay on the base mixi
 
 The distinction that matters is between `False` and an empty answer. A `False` tells a caller not to ask; an empty list would tell it the question was asked and nothing was found. An operator reading "no unused indexes" for an engine that keeps no such counter would be reading a report nobody produced.
 
+The partition answer holds that distinction at both levels. `get_partition_state()` returns a `PartitionState` whose `scheme` is `None`, never `None` itself, and `get_table_state(...).partitioning` carries the same empty `PartitionState` (`scheme=None`). `scheme=None` is core's single neutral spelling for "not partitioned"; a `None` state would read as "unknown", which is false for every Firebird relation.
+
 The probes do not test grants. If the connected user may not read a relation, the engine's own error arrives at execution; the probe answered about the server, not about this user's privileges.
 
 ### Engine Objects With No Family
