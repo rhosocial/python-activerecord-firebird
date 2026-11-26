@@ -189,11 +189,8 @@ class FirebirdDialect(
     # It defines ``format_identifier`` -- the one primitive Firebird overrides,
     # by upper-casing the identifier and doubling any inner quote -- and listed
     # first it would shadow FirebirdIdentifierMixin, forcing a second copy of
-    # that method onto this class.
-    # It still precedes the two suggestion mixins that inherit a
-    # runtime_checkable Protocol: such a Protocol defines ``__init__``, so a
-    # base after the mixins lets ``super().__init__()`` land on the Protocol
-    # and skip the base constructor entirely.
+    # that method onto this class. No concrete class here inherits a protocol,
+    # so ``SQLDialectBase.__init__`` is the only initialiser in this MRO.
     FirebirdTransactionMixin,    # Before TransactionControlMixin
     FirebirdExpressionMixin,     # Before ExpressionMixin
     FirebirdDateTimeMixin,       # Before DateTimeMixin
@@ -333,23 +330,17 @@ class FirebirdDialect(
     DatabaseNameMixin,
     SchemaNameMixin,
     NamespaceMixin,
-    # Last of the implementation mixins: only the two suggestion mixins that
-    # inherit a Protocol follow it. See the class comment for why
-    # SQLDialectBase cannot lead the list.
+    # Last of the implementation mixins: the two suggestion mixins below
+    # follow it. See the class comment for why SQLDialectBase cannot lead the
+    # list.
     SQLDialectBase,
     # The create-table layout answer is assembled from this dialect's own
     # inline-index / table-comment probes, so it must see their real
-    # implementations. Like the concatenation mixin below it inherits a
-    # runtime-checkable Protocol and therefore sits AFTER SQLDialectBase: listed
-    # first, the Protocol's ``__init__`` would intercept ``super().__init__()``
-    # and skip the base initialiser (losing ``strict_validation`` and
-    # ``_version``).
+    # implementations. It inherits no protocol: conformance is structural,
+    # checked against the methods it defines.
     FirebirdCreateTableLayoutSuggestionMixin,
     # Concatenation is spelled with ``||`` on Firebird; the core formatter asks
     # this suggestion before choosing between the operator and a function name.
-    # It must sit AFTER SQLDialectBase: it inherits a runtime-checkable Protocol,
-    # whose own ``__init__`` would otherwise intercept ``super().__init__()`` and
-    # skip the base initialiser (losing ``strict_validation`` and ``_version``).
     FirebirdStringConcatenationSuggestionMixin,
     # The column side of the type protocol, listed immediately after the DDL
     # side it is deliberately independent of: FirebirdTypeSupportMixin answers

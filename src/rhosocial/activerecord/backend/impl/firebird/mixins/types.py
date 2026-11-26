@@ -118,7 +118,6 @@ from typing import Optional, Tuple
 
 from rhosocial.activerecord.backend.dialect.exceptions import UnsupportedFeatureError
 from rhosocial.activerecord.backend.dialect.mixins import DataTypeMixin
-from rhosocial.activerecord.backend.dialect.protocols import DataTypeSupport
 from rhosocial.activerecord.backend.suggestion.definitions import (
     SubstituteAdviceSuggestion,
     SubstituteTypeSuggestion,
@@ -163,7 +162,7 @@ from ..expression.types import (
 )
 
 
-class FirebirdTypeSupportMixin(DataTypeMixin, DataTypeSupport):
+class FirebirdTypeSupportMixin(DataTypeMixin):
     """Firebird's data-type rendering.
 
     A ``TIME`` / ``TIMESTAMP`` declaration accepts a fractional-seconds

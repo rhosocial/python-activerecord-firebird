@@ -5,13 +5,9 @@ from rhosocial.activerecord.backend.suggestion.definitions import (
     ConcatenationFunctionSuggestion,
     CreateTableLayoutSuggestion,
 )
-from rhosocial.activerecord.backend.suggestion.protocols import (
-    CreateTableLayoutSuggestionSupport,
-    StringConcatenationSuggestionSupport,
-)
 
 
-class FirebirdCreateTableLayoutSuggestionMixin(CreateTableLayoutSuggestionSupport):
+class FirebirdCreateTableLayoutSuggestionMixin:
     """Firebird renders neither inline indexes nor inline comments in CREATE TABLE.
 
     The answer is assembled from the dialect's own capability probes so it cannot
@@ -30,7 +26,7 @@ class FirebirdCreateTableLayoutSuggestionMixin(CreateTableLayoutSuggestionSuppor
         )
 
 
-class FirebirdStringConcatenationSuggestionMixin(StringConcatenationSuggestionSupport):
+class FirebirdStringConcatenationSuggestionMixin:
     """Firebird spells string concatenation with the ``||`` operator.
 
     ``function=None`` is the protocol's way of saying "use ``||``": the core

@@ -12,11 +12,11 @@ have to construct a dialect to call it, and it covers this repository's own
 annotation: a mapping answer is a catalogue, and belongs under ``suggest_*``.
 
 A second scan guards the same idea from the other side: a ``runtime_checkable``
-Protocol is satisfied structurally, so naming one as a base of a ``*Dialect``
-class adds nothing but its ``...`` stubs -- and those stubs make ``isinstance``
-answer True for members the dialect never implemented. No class ending
-``Dialect`` may therefore inherit a base ending ``Support``; the protocol
-remains a declaration to be checked, not an ancestor.
+Protocol is satisfied structurally, so naming one as a base adds nothing but its
+``...`` stubs -- and, worse, it puts ``typing.Protocol.__init__`` into the MRO
+ahead of the base constructor. No concrete class may inherit a base ending
+``Support``; only another protocol may. The protocol remains a declaration to
+be checked, not an ancestor.
 """
 
 import ast
@@ -73,18 +73,25 @@ def _base_name(base):
     return None
 
 
-def _dialect_support_bases(tree, label):
-    """``label:line Class(bases)`` for a Dialect inheriting a Support protocol."""
+def _concrete_support_protocol_bases(tree, label):
+    """``label:line Class(bases)`` for a concrete class inheriting a Support protocol.
+
+    A class definition that names ``Protocol`` among its bases is itself a
+    protocol, and a protocol subclassing another protocol is the one allowed
+    shape. Every other class -- dialect, mixin, helper -- is concrete, and
+    must not have a ``*Support`` protocol in its bases: the protocol would
+    contribute only ``...`` stubs, and its ``__init__`` would take part in
+    the MRO.
+    """
     found = []
     for node in ast.walk(tree):
         if not isinstance(node, ast.ClassDef):
             continue
-        if not node.name.endswith("Dialect"):
+        names = [_base_name(base) for base in node.bases]
+        if "Protocol" in names:
             continue
         offenders = [
-            name
-            for name in (_base_name(base) for base in node.bases)
-            if name is not None and name.endswith("Support")
+            name for name in names if name is not None and name.endswith("Support")
         ]
         if offenders:
             found.append(f"{label}:{node.lineno} {node.name}({', '.join(offenders)})")
@@ -193,46 +200,55 @@ def test_the_scan_accepts_a_defaulted_parameter(tmp_path):
     assert not _offenders(tree, "probe")
 
 
-def test_no_dialect_class_inherits_a_support_protocol():
-    """A Dialect class names only implementations, never a capability Protocol."""
+def test_no_concrete_class_inherits_a_support_protocol():
+    """Only a protocol may inherit a protocol; everyone else implements methods."""
     files = _source_files()
     assert files, "no source files were found -- the scan reached nothing"
     offenders = []
     for path in files:
         tree = ast.parse(path.read_text(encoding="utf-8"))
-        offenders.extend(_dialect_support_bases(tree, path.name))
+        offenders.extend(_concrete_support_protocol_bases(tree, path.name))
     assert not offenders, (
-        "a Dialect class inherits a *Support protocol, so its `...` stubs are "
-        "what isinstance sees instead of a real implementation:\n"
-        + "\n".join(offenders)
+        "a concrete class inherits a *Support protocol, so its `...` stubs are "
+        "what isinstance sees instead of a real implementation (and its "
+        "``__init__`` joins the MRO):\n" + "\n".join(offenders)
     )
 
 
-def test_the_dialect_scan_flags_a_planted_violation(tmp_path):
+def test_the_scan_flags_a_planted_concrete_violation(tmp_path):
     probe = tmp_path / "_probe.py"
     probe.write_text(
         "class Mixin:\n"
         "    pass\n"
         "\n"
         "class ProbeDialect(Mixin, ExplainSupport):\n"
+        "    pass\n"
+        "\n"
+        "class ProbeSuggestionMixin(ExplainSupport):\n"
         "    pass\n",
         encoding="utf-8",
     )
 
     tree = ast.parse(probe.read_text(encoding="utf-8"))
-    offenders = _dialect_support_bases(tree, "probe")
-    assert offenders, "the scan did not notice a Dialect inheriting a protocol"
+    offenders = _concrete_support_protocol_bases(tree, "probe")
+    assert offenders, "the scan did not notice a concrete class inheriting a protocol"
     assert "ProbeDialect(ExplainSupport)" in offenders[0]
+    assert "ProbeSuggestionMixin(ExplainSupport)" in offenders[1]
 
 
-def test_the_dialect_scan_accepts_implementations_and_mixins(tmp_path):
-    """A clean control: the protocol stays a declaration, the mixin an implementation."""
+def test_the_scan_allows_protocols_inheriting_protocols(tmp_path):
+    """A clean control: protocol inheritance stays a declaration, not a concrete base."""
     probe = tmp_path / "_probe.py"
     probe.write_text(
-        "class ExplainSupport:\n"
+        "from typing import Protocol\n"
+        "\n"
+        "class ExplainSupport(Protocol):\n"
         "    pass\n"
         "\n"
-        "class Mixin(ExplainSupport):\n"
+        "class DerivedSupport(ExplainSupport, Protocol):\n"
+        "    pass\n"
+        "\n"
+        "class Mixin:\n"
         "    pass\n"
         "\n"
         "class ProbeDialect(Mixin):\n"
@@ -241,4 +257,4 @@ def test_the_dialect_scan_accepts_implementations_and_mixins(tmp_path):
     )
 
     tree = ast.parse(probe.read_text(encoding="utf-8"))
-    assert not _dialect_support_bases(tree, "probe")
+    assert not _concrete_support_protocol_bases(tree, "probe")
