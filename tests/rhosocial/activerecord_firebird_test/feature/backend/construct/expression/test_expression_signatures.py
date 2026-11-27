@@ -11,22 +11,22 @@ All tests are pure construction — no database connection.
 from rhosocial.activerecord.backend.expression.objects import Table
 from rhosocial.activerecord.backend.impl.firebird.dialect import FirebirdDialect
 from rhosocial.activerecord.backend.impl.firebird.expression import (
-    BlobColumnExpression,
-    BlobLiteralExpression,
-    UpdateOrInsertStatement,
-    AutonomousTransactionDoExpression,
-    ExecuteBlockStatement,
+    FirebirdBlobColumnExpression,
+    FirebirdBlobLiteralExpression,
+    FirebirdUpdateOrInsertStatement,
+    FirebirdAutonomousTransactionDoExpression,
+    FirebirdExecuteBlockStatement,
 )
 from rhosocial.activerecord.backend.impl.firebird.expression.generator import (
-    GenIdExpression,
-    NextValueForExpression,
+    FirebirdGenIdExpression,
+    FirebirdNextValueForExpression,
 )
 
 
 class TestBlobColumnExpression:
     def test_blob_column_expression_to_sql(self):
         dialect = FirebirdDialect((4, 0, 0))
-        sql, params = BlobColumnExpression(
+        sql, params = FirebirdBlobColumnExpression(
             dialect, "photo", sub_type=0, segment_size=65536,
         ).to_sql()
         assert sql == '"PHOTO" BLOB SUB_TYPE 0 SEGMENT SIZE 65536'
@@ -34,7 +34,7 @@ class TestBlobColumnExpression:
 
     def test_blob_column_expression_with_charset(self):
         dialect = FirebirdDialect((4, 0, 0))
-        sql, params = BlobColumnExpression(
+        sql, params = FirebirdBlobColumnExpression(
             dialect, "data", sub_type=1, character_set="UTF8",
         ).to_sql()
         assert sql == '"DATA" BLOB SUB_TYPE 1 CHARACTER SET UTF8 SEGMENT SIZE 65536'
@@ -44,7 +44,7 @@ class TestBlobColumnExpression:
 class TestBlobLiteralExpression:
     def test_blob_literal_expression_to_sql(self):
         dialect = FirebirdDialect((4, 0, 0))
-        sql, params = BlobLiteralExpression(
+        sql, params = FirebirdBlobLiteralExpression(
             dialect, b"\xde\xad\xbe\xef",
         ).to_sql()
         assert sql == "X'deadbeef'"
@@ -52,7 +52,7 @@ class TestBlobLiteralExpression:
 
     def test_blob_literal_expression_empty(self):
         dialect = FirebirdDialect((4, 0, 0))
-        sql, params = BlobLiteralExpression(dialect, b"").to_sql()
+        sql, params = FirebirdBlobLiteralExpression(dialect, b"").to_sql()
         assert sql == "X''"
         assert params == ()
 
@@ -60,7 +60,7 @@ class TestBlobLiteralExpression:
 class TestUpdateOrInsertExpression:
     def test_update_or_insert_expression_to_sql(self):
         dialect = FirebirdDialect((4, 0, 0))
-        sql, params = UpdateOrInsertStatement(
+        sql, params = FirebirdUpdateOrInsertStatement(
             dialect,
             Table(dialect, "users"),
             ["name", "email"],
@@ -75,7 +75,7 @@ class TestUpdateOrInsertExpression:
 
     def test_update_or_insert_expression_with_returning(self):
         dialect = FirebirdDialect((4, 0, 0))
-        sql, params = UpdateOrInsertStatement(
+        sql, params = FirebirdUpdateOrInsertStatement(
             dialect,
             Table(dialect, "users"),
             ["name"],
@@ -93,7 +93,7 @@ class TestUpdateOrInsertExpression:
 class TestAutonomousTransactionDoExpression:
     def test_autonomous_transaction_do_expression_to_sql(self):
         dialect = FirebirdDialect((4, 0, 0))
-        sql, params = AutonomousTransactionDoExpression(
+        sql, params = FirebirdAutonomousTransactionDoExpression(
             dialect, "EXECUTE PROCEDURE do_thing;",
         ).to_sql()
         assert sql == "IN AUTONOMOUS TRANSACTION DO BEGIN\nEXECUTE PROCEDURE do_thing;\nEND"
@@ -101,7 +101,7 @@ class TestAutonomousTransactionDoExpression:
 
     def test_autonomous_transaction_do_expression_preserves_begin(self):
         dialect = FirebirdDialect((4, 0, 0))
-        sql, params = AutonomousTransactionDoExpression(
+        sql, params = FirebirdAutonomousTransactionDoExpression(
             dialect, "BEGIN\n  INSERT INTO log VALUES (1);\nEND",
         ).to_sql()
         assert sql == (
@@ -114,7 +114,7 @@ class TestAutonomousTransactionDoExpression:
 class TestExecuteBlockExpression:
     def test_execute_block_expression_to_sql(self):
         dialect = FirebirdDialect((4, 0, 0))
-        sql, params = ExecuteBlockStatement(
+        sql, params = FirebirdExecuteBlockStatement(
             dialect, "INSERT INTO log VALUES (1);",
         ).to_sql()
         assert sql == (
@@ -124,7 +124,7 @@ class TestExecuteBlockExpression:
 
     def test_execute_block_expression_with_params(self):
         dialect = FirebirdDialect((4, 0, 0))
-        sql, params = ExecuteBlockStatement(
+        sql, params = FirebirdExecuteBlockStatement(
             dialect,
             "INSERT INTO log VALUES (:p_val);",
             params={"p_val": ("INTEGER", 42)},
@@ -139,13 +139,13 @@ class TestExecuteBlockExpression:
 class TestGenIdExpression:
     def test_gen_id_expression_default_step(self):
         dialect = FirebirdDialect((4, 0, 0))
-        sql, params = GenIdExpression(dialect, "gen_c").to_sql()
+        sql, params = FirebirdGenIdExpression(dialect, "gen_c").to_sql()
         assert sql == 'GEN_ID("GEN_C", 1)'
         assert params == ()
 
     def test_gen_id_expression_explicit_step(self):
         dialect = FirebirdDialect((4, 0, 0))
-        sql, params = GenIdExpression(dialect, "gen_c", 2).to_sql()
+        sql, params = FirebirdGenIdExpression(dialect, "gen_c", 2).to_sql()
         assert sql == 'GEN_ID("GEN_C", 2)'
         assert params == ()
 
@@ -153,6 +153,6 @@ class TestGenIdExpression:
 class TestNextValueForExpression:
     def test_next_value_for_expression_to_sql(self):
         dialect = FirebirdDialect((4, 0, 0))
-        sql, params = NextValueForExpression(dialect, "seq_b").to_sql()
+        sql, params = FirebirdNextValueForExpression(dialect, "seq_b").to_sql()
         assert sql == 'NEXT VALUE FOR "SEQ_B"'
         assert params == ()

@@ -17,7 +17,7 @@ from .version_boundaries import FIREBIRD_VERSION_BOUNDARIES
 
 if TYPE_CHECKING:
     from rhosocial.activerecord.backend.expression.statements.ddl_sequence import CreateSequenceStatement
-    from ..expression.generator import GenIdExpression, NextValueForExpression
+    from ..expression.generator import FirebirdGenIdExpression, FirebirdNextValueForExpression
 
 
 class FirebirdSequenceMixin:
@@ -194,11 +194,11 @@ class FirebirdSequenceMixin:
                 parts.append(f"INCREMENT BY {expr.increment}")
         return ' '.join(parts), ()
 
-    def format_gen_id_expression(self, expr: "GenIdExpression") -> Tuple[str, tuple]:
+    def format_gen_id_expression(self, expr: "FirebirdGenIdExpression") -> Tuple[str, tuple]:
         generator_sql = Sequence(self, expr.generator_name).to_sql()[0]
         return f"GEN_ID({generator_sql}, {expr.step})", ()
 
-    def format_next_value_for_expression(self, expr: "NextValueForExpression") -> Tuple[str, tuple]:
+    def format_next_value_for_expression(self, expr: "FirebirdNextValueForExpression") -> Tuple[str, tuple]:
         sequence_sql = Sequence(self, expr.sequence_name).to_sql()[0]
         return f"NEXT VALUE FOR {sequence_sql}", ()
 

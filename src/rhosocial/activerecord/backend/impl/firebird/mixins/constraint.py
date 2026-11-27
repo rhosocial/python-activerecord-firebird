@@ -914,10 +914,75 @@ class FirebirdConstraintMixin:
         diverge between the two, and the definition must precede
         ``DDLColumnMixin`` in the dialect's MRO for this override to win.
 
-        Everything else is core's: the referential actions, the ``MATCH``
-        refusal through :meth:`supports_fk_match`, and the object-kind check on
-        ``referenced_table``.
+        The clause is assembled from the node's declared fields rather than by
+        post-processing core's rendered string: once a clause is a string, the
+        only way to move a space is to rewrite SQL text, which this rule set
+        forbids. Everything else keeps core's decisions: the referential
+        actions, the ``MATCH`` refusal through :meth:`supports_fk_match`, and
+        the object-kind check on ``referenced_table``.
         """
-        sql, params = super().format_references_clause(expr)
-        table_sql = expr.referenced_table.to_sql()[0]
-        return sql.replace(f"{table_sql}(", f"{table_sql} (", 1), params
+        from rhosocial.activerecord.backend.dialect.exceptions import UnsupportedFeatureError
+        from rhosocial.activerecord.backend.dialect.mixins.ddl_table import (
+            normalize_foreign_key_match_type,
+        )
+        from rhosocial.activerecord.backend.expression.objects import Table
+        from rhosocial.activerecord.backend.expression.statements import ReferentialAction
+
+        if not isinstance(expr.referenced_table, Table):
+            raise TypeError(
+                f"ReferencesClause.referenced_table must be a Table, "
+                f"got {type(expr.referenced_table).__name__}"
+            )
+        if not expr.referenced_columns:
+            raise ValueError("REFERENCES clause requires at least one referenced column.")
+        ref_cols = ", ".join(self.format_identifier(col) for col in expr.referenced_columns)
+        result = f"REFERENCES {expr.referenced_table.to_sql()[0]} ({ref_cols})"
+        if expr.match_type is not None:
+            match_type = normalize_foreign_key_match_type(expr.match_type)
+            if not self.supports_fk_match():
+                raise UnsupportedFeatureError(
+                    self.name, "FOREIGN KEY MATCH",
+                    f"{self.name} does not support MATCH for foreign keys."
+                )
+            result += f" MATCH {match_type.value}"
+        on_delete = (
+            self._referential_action_value(expr.on_delete)
+            if expr.on_delete is not None
+            else None
+        )
+        if on_delete is not None and on_delete != ReferentialAction.NO_ACTION.value:
+            if not self.supports_foreign_key_on_delete():
+                raise UnsupportedFeatureError(
+                    self.name, "FOREIGN KEY ON DELETE",
+                    f"{self.name} does not support ON DELETE for foreign keys."
+                )
+            result += f" ON DELETE {on_delete}"
+        on_update = (
+            self._referential_action_value(expr.on_update)
+            if expr.on_update is not None
+            else None
+        )
+        if on_update is not None and on_update != ReferentialAction.NO_ACTION.value:
+            if not self.supports_foreign_key_on_update():
+                raise UnsupportedFeatureError(
+                    self.name, "FOREIGN KEY ON UPDATE",
+                    f"{self.name} does not support ON UPDATE for foreign keys."
+                )
+            result += f" ON UPDATE {on_update}"
+        has_deferral = (
+            expr.deferrable
+            or expr.not_deferrable
+            or expr.initially_deferred
+            or expr.initially_immediate
+        )
+        if has_deferral and not self.supports_deferrable_constraint():
+            raise UnsupportedFeatureError(
+                self.name, "DEFERRABLE / INITIALLY clause on a foreign key"
+            )
+        if expr.deferrable or expr.not_deferrable:
+            result += " DEFERRABLE" if expr.deferrable else " NOT DEFERRABLE"
+        if expr.initially_deferred or expr.initially_immediate:
+            result += (
+                " INITIALLY DEFERRED" if expr.initially_deferred else " INITIALLY IMMEDIATE"
+            )
+        return result, ()

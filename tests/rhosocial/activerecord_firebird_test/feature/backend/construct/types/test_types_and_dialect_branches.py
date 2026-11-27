@@ -71,11 +71,11 @@ from rhosocial.activerecord.backend.impl.firebird.expression.ddl.sequence import
     FirebirdCreateSequenceStatement,
 )
 from rhosocial.activerecord.backend.impl.firebird.expression.dml import (
-    UpdateOrInsertStatement,
+    FirebirdUpdateOrInsertStatement,
 )
 from rhosocial.activerecord.backend.impl.firebird.expression.generator import (
-    GenIdExpression,
-    NextValueForExpression,
+    FirebirdGenIdExpression,
+    FirebirdNextValueForExpression,
 )
 from rhosocial.activerecord.backend.impl.firebird.expression.types import (
     FirebirdDecFloatType,
@@ -597,7 +597,7 @@ class TestReturningBranches:
         assert delete.to_sql() == ('DELETE FROM "USERS" WHERE "ID" = ? RETURNING *', (7,))
 
     def test_update_or_insert_with_matching_and_returning(self, dialect):
-        expr = UpdateOrInsertStatement(
+        expr = FirebirdUpdateOrInsertStatement(
             dialect,
             Table(dialect, "users"),
             ["name", "age"],
@@ -768,10 +768,10 @@ class TestSequenceBranches:
         assert feature in str(exc_info.value)
 
     def test_gen_id_step(self, dialect):
-        assert GenIdExpression(dialect, "gen_c", 2).to_sql() == ('GEN_ID("GEN_C", 2)', ())
+        assert FirebirdGenIdExpression(dialect, "gen_c", 2).to_sql() == ('GEN_ID("GEN_C", 2)', ())
 
     def test_next_value_for(self, dialect):
-        assert NextValueForExpression(dialect, "seq_b").to_sql() == ('NEXT VALUE FOR "SEQ_B"', ())
+        assert FirebirdNextValueForExpression(dialect, "seq_b").to_sql() == ('NEXT VALUE FOR "SEQ_B"', ())
 
     def test_sequence_capability_flags(self, dialect):
         assert dialect.supports_sequence() is True

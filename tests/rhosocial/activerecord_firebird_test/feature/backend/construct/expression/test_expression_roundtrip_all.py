@@ -147,7 +147,7 @@ from rhosocial.activerecord.backend.expression.serialization import (
 )
 from rhosocial.activerecord.backend.expression.sources import NamedRelationRef
 from rhosocial.activerecord.backend.impl.firebird.expression.blob import (
-    BlobLiteralExpression,
+    FirebirdBlobLiteralExpression,
 )
 from rhosocial.activerecord.backend.impl.firebird.expression.comment import (
     FirebirdCommentOnStatement,
@@ -895,8 +895,8 @@ def register_specials():
     # The blob literal holds raw bytes and renders them as a hex literal; the
     # guess supplies an int.
     register_special_constructor(
-        "impl.firebird.expression.blob.BlobLiteralExpression",
-        lambda d: BlobLiteralExpression(d, b"\x01\x02"),
+        "impl.firebird.expression.blob.FirebirdBlobLiteralExpression",
+        lambda d: FirebirdBlobLiteralExpression(d, b"\x01\x02"),
     )
     # COLLATE names a collation Firebird actually declares; the guess's "x" is
     # not one and is refused by name. Firebird's whitelist is UNICODE /

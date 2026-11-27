@@ -4,11 +4,11 @@
 from .column import FirebirdColumnDefinition, FirebirdColumnOptions
 from .create_table import FirebirdCreateTableStatement
 from .alter_table import (
-    SetGeneratedAction,
-    RestartIdentityAction,
-    SetIncrementAction,
-    DropIdentityAction,
-    SetPositionAction,
+    FirebirdSetGeneratedAction,
+    FirebirdRestartIdentityAction,
+    FirebirdSetIncrementAction,
+    FirebirdDropIdentityAction,
+    FirebirdSetPositionAction,
 )
 from .comment import FirebirdCommentOnStatement, FirebirdCommentObjectType
 from .database import (
@@ -43,14 +43,14 @@ from .ddl import (
     FirebirdRoleAlterClause,
     FirebirdRoutineMode,
 )
-from .blob import BlobColumnExpression, BlobLiteralExpression
+from .blob import FirebirdBlobColumnExpression, FirebirdBlobLiteralExpression
 from .dml import (
-    AutonomousTransactionDoExpression,
-    ExecuteBlockStatement,
-    UpdateOrInsertStatement,
+    FirebirdAutonomousTransactionDoExpression,
+    FirebirdExecuteBlockStatement,
+    FirebirdUpdateOrInsertStatement,
 )
 from .execute_statement import FirebirdExecuteStatement
-from .generator import GenIdExpression, NextValueForExpression
+from .generator import FirebirdGenIdExpression, FirebirdNextValueForExpression
 from .introspection import (
     FirebirdCharsetListQueryStatement,
     FirebirdCollationListQueryStatement,
@@ -84,13 +84,13 @@ from .types import (
 __all__ = [
     'FirebirdColumnDefinition', 'FirebirdColumnOptions',
     "FirebirdCreateTableStatement",
-    "SetGeneratedAction",
-    "RestartIdentityAction",
-    "SetIncrementAction",
-    "DropIdentityAction",
-    "SetPositionAction",
-    "GenIdExpression",
-    "NextValueForExpression",
+    "FirebirdSetGeneratedAction",
+    "FirebirdRestartIdentityAction",
+    "FirebirdSetIncrementAction",
+    "FirebirdDropIdentityAction",
+    "FirebirdSetPositionAction",
+    "FirebirdGenIdExpression",
+    "FirebirdNextValueForExpression",
     "FirebirdGeneratorListQueryStatement",
     "FirebirdGeneratorValueQueryStatement",
     "FirebirdDomainListQueryStatement",
@@ -116,11 +116,11 @@ __all__ = [
     "FirebirdTimeWithoutTimeZoneType",
     "FirebirdDecFloatType",
     "FirebirdInt128Type",
-    "BlobColumnExpression",
-    "BlobLiteralExpression",
-    "UpdateOrInsertStatement",
-    "AutonomousTransactionDoExpression",
-    "ExecuteBlockStatement",
+    "FirebirdBlobColumnExpression",
+    "FirebirdBlobLiteralExpression",
+    "FirebirdUpdateOrInsertStatement",
+    "FirebirdAutonomousTransactionDoExpression",
+    "FirebirdExecuteBlockStatement",
     "FirebirdCreateDomainExpression",
     "FirebirdAlterDomainExpression",
     "FirebirdDomainAlterMode",

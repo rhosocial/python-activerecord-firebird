@@ -1,9 +1,9 @@
 # src/rhosocial/activerecord/backend/impl/firebird/expression/dml.py
 """Firebird DML-specific expression classes.
 
-``UpdateOrInsertStatement`` wraps the ``UPDATE OR INSERT INTO … MATCHING …``
-statement.  ``AutonomousTransactionDoExpression`` wraps the
-``IN AUTONOMOUS TRANSACTION DO …`` block.  ``ExecuteBlockStatement`` wraps the
+``FirebirdUpdateOrInsertStatement`` wraps the ``UPDATE OR INSERT INTO … MATCHING …``
+statement.  ``FirebirdAutonomousTransactionDoExpression`` wraps the
+``IN AUTONOMOUS TRANSACTION DO …`` block.  ``FirebirdExecuteBlockStatement`` wraps the
 ``EXECUTE BLOCK …`` statement.
 """
 
@@ -15,7 +15,7 @@ if TYPE_CHECKING:  # pragma: no cover
     from rhosocial.activerecord.backend.dialect import SQLDialectBase
 
 
-class UpdateOrInsertStatement(BaseExpression):
+class FirebirdUpdateOrInsertStatement(BaseExpression):
     """``UPDATE OR INSERT INTO table (cols) VALUES (vals) MATCHING (match)
     [RETURNING …]``.
 
@@ -56,7 +56,7 @@ class UpdateOrInsertStatement(BaseExpression):
         return "format_update_or_insert_statement"
 
 
-class AutonomousTransactionDoExpression(BaseExpression):
+class FirebirdAutonomousTransactionDoExpression(BaseExpression):
     """``IN AUTONOMOUS TRANSACTION DO BEGIN … END``."""
 
     def __init__(self, dialect: "SQLDialectBase", block: str):
@@ -68,7 +68,7 @@ class AutonomousTransactionDoExpression(BaseExpression):
         return "format_autonomous_transaction_do_expression"
 
 
-class ExecuteBlockStatement(BaseExpression):
+class FirebirdExecuteBlockStatement(BaseExpression):
     """``EXECUTE BLOCK (…) AS BEGIN … END``."""
 
     def __init__(
@@ -87,7 +87,7 @@ class ExecuteBlockStatement(BaseExpression):
 
 
 __all__ = [
-    "UpdateOrInsertStatement",
-    "AutonomousTransactionDoExpression",
-    "ExecuteBlockStatement",
+    "FirebirdUpdateOrInsertStatement",
+    "FirebirdAutonomousTransactionDoExpression",
+    "FirebirdExecuteBlockStatement",
 ]

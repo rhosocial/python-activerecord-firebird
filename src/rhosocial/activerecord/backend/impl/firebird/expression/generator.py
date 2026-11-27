@@ -9,7 +9,7 @@ if TYPE_CHECKING:
     from rhosocial.activerecord.backend.dialect import SQLDialectBase
 
 
-class GenIdExpression(BaseExpression):
+class FirebirdGenIdExpression(BaseExpression):
     """Expression for GEN_ID(generator_name, step)."""
 
     def __init__(self, dialect: "SQLDialectBase", generator_name: str, step: int = 1):
@@ -25,10 +25,10 @@ class GenIdExpression(BaseExpression):
         return "format_gen_id_expression"
 
     def __repr__(self) -> str:
-        return f"GenIdExpression({self.generator_name}, step={self.step})"
+        return f"FirebirdGenIdExpression({self.generator_name}, step={self.step})"
 
 
-class NextValueForExpression(BaseExpression):
+class FirebirdNextValueForExpression(BaseExpression):
     """Expression for NEXT VALUE FOR sequence_name."""
 
     def __init__(self, dialect: "SQLDialectBase", sequence_name: str):
@@ -40,7 +40,7 @@ class NextValueForExpression(BaseExpression):
         return "format_next_value_for_expression"
 
     def __repr__(self) -> str:
-        return f"NextValueForExpression({self.sequence_name})"
+        return f"FirebirdNextValueForExpression({self.sequence_name})"
 
 
-__all__ = ["GenIdExpression", "NextValueForExpression"]
+__all__ = ["FirebirdGenIdExpression", "FirebirdNextValueForExpression"]

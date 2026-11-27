@@ -1,8 +1,8 @@
 # src/rhosocial/activerecord/backend/impl/firebird/expression/blob.py
 """Firebird BLOB column and literal expressions.
 
-``BlobColumnExpression`` generates a ``BLOB SUB_TYPE …`` column definition
-suitable for DDL.  ``BlobLiteralExpression`` renders an inline hex literal
+``FirebirdBlobColumnExpression`` generates a ``BLOB SUB_TYPE …`` column definition
+suitable for DDL.  ``FirebirdBlobLiteralExpression`` renders an inline hex literal
 for DML (``X'…'``).
 """
 
@@ -15,7 +15,7 @@ if TYPE_CHECKING:  # pragma: no cover
     from rhosocial.activerecord.backend.dialect import SQLDialectBase
 
 
-class BlobColumnExpression(BaseExpression):
+class FirebirdBlobColumnExpression(BaseExpression):
     """Expression for ``BLOB SUB_TYPE n [SEGMENT SIZE n] [CHARACTER SET …]``."""
 
     def __init__(
@@ -41,7 +41,7 @@ class BlobColumnExpression(BaseExpression):
         return "format_blob_column_expression"
 
 
-class BlobLiteralExpression(BaseExpression):
+class FirebirdBlobLiteralExpression(BaseExpression):
     """Expression for ``X'…'`` hex-literal BLOB value."""
 
     def __init__(
@@ -80,4 +80,4 @@ class BlobLiteralExpression(BaseExpression):
         return "format_blob_literal_expression"
 
 
-__all__ = ["BlobColumnExpression", "BlobLiteralExpression"]
+__all__ = ["FirebirdBlobColumnExpression", "FirebirdBlobLiteralExpression"]

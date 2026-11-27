@@ -6,7 +6,7 @@ ALTER COLUMN ... POSITION n`` (Firebird 5.0 Language Reference, 5.4.2.8 "Changin
 the Position of a Column"). The same clause is already in the Firebird 3.0
 Language Reference, and this dialect's ``format_set_position_action`` pins the
 floor at 3.0. A reorder is therefore a real chain of existing
-``SetPositionAction`` nodes -- one ``AlterTableStatement`` per action -- rather
+``FirebirdSetPositionAction`` nodes -- one ``AlterTableStatement`` per action -- rather
 than an explicit "unsupported" answer.
 
 The point carries names only. A position-only chain is possible only when the
@@ -21,7 +21,7 @@ from rhosocial.activerecord.backend.suggestion import ColumnReorderSuggestion
 from rhosocial.activerecord.backend.expression.objects import Table
 from rhosocial.activerecord.backend.expression.statements import AlterTableStatement
 
-from ..expression import SetPositionAction
+from ..expression import FirebirdSetPositionAction
 from ._change_points import answer
 
 __all__ = ["FirebirdColumnReorderSuggestionMixin"]
@@ -70,7 +70,7 @@ class FirebirdColumnReorderSuggestionMixin:
                 AlterTableStatement(
                     self,
                     table,
-                    SetPositionAction(self, wanted, final_position),
+                    FirebirdSetPositionAction(self, wanted, final_position),
                 )
             )
             at = current.index(wanted)

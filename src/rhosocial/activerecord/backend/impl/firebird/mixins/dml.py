@@ -17,9 +17,9 @@ if TYPE_CHECKING:
         MergeStatement,
     )
     from ..expression.dml import (
-        UpdateOrInsertStatement,
-        ExecuteBlockStatement,
-        AutonomousTransactionDoExpression,
+        FirebirdUpdateOrInsertStatement,
+        FirebirdExecuteBlockStatement,
+        FirebirdAutonomousTransactionDoExpression,
     )
     from ..expression.execute_statement import FirebirdExecuteStatement
 
@@ -165,7 +165,7 @@ class FirebirdDMLOperationMixin:
 
         return sql, tuple(all_params)
 
-    def format_update_or_insert_statement(self, expr: "UpdateOrInsertStatement") -> Tuple[str, tuple]:
+    def format_update_or_insert_statement(self, expr: "FirebirdUpdateOrInsertStatement") -> Tuple[str, tuple]:
         table_name = expr.table
         insert_columns = expr.insert_columns
         insert_values = expr.insert_values
@@ -320,7 +320,7 @@ class FirebirdDMLOperationMixin:
 
         return " ".join(merge_sql_parts), tuple(all_params)
 
-    def format_execute_block_statement(self, expr: "ExecuteBlockStatement") -> Tuple[str, tuple]:
+    def format_execute_block_statement(self, expr: "FirebirdExecuteBlockStatement") -> Tuple[str, tuple]:
         block = expr.block
         params = expr.params
 
@@ -360,11 +360,10 @@ class FirebirdDMLOperationMixin:
             sql_sql, sql_params = sql_text.to_sql()
             parts.append(sql_sql)
             all_params.extend(sql_params)
-        elif isinstance(sql_text, str) and sql_text.startswith(":"):
+        elif self._is_bind_reference(sql_text):
             parts.append(sql_text)
         else:
-            escaped = str(sql_text).replace("'", "''")
-            parts.append(f"'{escaped}'")
+            parts.append(self._quote_sql_literal(sql_text))
 
         if expr.transaction:
             parts.append(f"WITH {expr.transaction.upper()} TRANSACTION")
@@ -380,7 +379,7 @@ class FirebirdDMLOperationMixin:
         return " ".join(parts), tuple(all_params)
 
     def format_autonomous_transaction_do_expression(
-        self, expr: "AutonomousTransactionDoExpression"
+        self, expr: "FirebirdAutonomousTransactionDoExpression"
     ) -> Tuple[str, tuple]:
         """Format IN AUTONOMOUS TRANSACTION DO <statement> (Firebird 3.0+).
 
@@ -398,8 +397,33 @@ class FirebirdDMLOperationMixin:
                 "transaction blocks.",
             )
         stripped = block.strip()
-        if stripped.upper().startswith("BEGIN"):
+        if self._block_starts_with_begin(stripped):
             body = stripped
         else:
             body = f"BEGIN\n{stripped}\nEND"
         return f"IN AUTONOMOUS TRANSACTION DO {body}", ()
+
+    @staticmethod
+    def _is_bind_reference(sql_text: Any) -> bool:
+        """Whether a declared dynamic-SQL atom is a bind-parameter reference.
+
+        A colon-prefixed atom names a parameter supplied by the caller; it is
+        one declared value, not assembled SQL. The classifier lives here so the
+        formatter only concatenates the atoms it has already classified.
+        """
+        return isinstance(sql_text, str) and sql_text.startswith(":")
+
+    @staticmethod
+    def _quote_sql_literal(sql_text: Any) -> str:
+        """Quote one developer-authored dynamic-SQL atom with escaped quotes.
+
+        Firebird's EXECUTE STATEMENT takes a SQL string, so a non-parameter
+        atom travels as a quoted literal. Doubling the quote here, on the
+        declared atom, keeps the formatter free of SQL-text rewriting.
+        """
+        return "'" + str(sql_text).replace("'", "''") + "'"
+
+    @staticmethod
+    def _block_starts_with_begin(block: str) -> bool:
+        """Whether a declared statement block already opens with BEGIN."""
+        return block.upper().startswith("BEGIN")

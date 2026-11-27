@@ -11,18 +11,18 @@ if TYPE_CHECKING:
 
 class FirebirdTriggerMixin:
 
-    def format_create_trigger(
+    def _render_create_trigger(
         self,
         expr: "CreateTriggerStatement",
     ) -> Tuple[str, tuple]:
         """Render CREATE TRIGGER over the two objects the statement names.
 
-        Nothing dispatches here today: :class:`CreateTriggerStatement` names
+        This is a private renderer, not a dispatch target: the statement names
         ``format_create_trigger_statement`` and that resolves to the core
         ``TriggerMixin`` renderer, whose SQL:1999 shape is what this backend
-        currently emits. The method is kept in step with the statement's
-        declared contract rather than deleted, so the day this backend grows
-        its own trigger DDL it starts from a renderer that reads real fields.
+        currently emits. Keeping a dispatch-shaped ``format_*`` name here
+        claimed a kind Firebird does not own, so the helper is private until
+        this backend really grows its own trigger node.
 
         Raises:
             TypeError: ``CreateTriggerStatement.trigger`` is not a Trigger, or

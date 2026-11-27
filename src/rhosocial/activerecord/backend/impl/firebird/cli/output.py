@@ -38,13 +38,13 @@ def render_table(rows: List[Dict[str, Any]], columns: Optional[List[str]] = None
     return "\n".join(lines)
 
 
-def format_json(expr: List[Dict[str, Any]]) -> str:
+def render_json(expr: List[Dict[str, Any]]) -> str:
     """Format query results as JSON."""
     import json
     return json.dumps(expr, indent=2, default=str)
 
 
-def format_csv(expr: List[Dict[str, Any]]) -> str:
+def render_csv(expr: List[Dict[str, Any]]) -> str:
     """Format query results as CSV."""
     if not expr:
         return ""

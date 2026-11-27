@@ -36,8 +36,6 @@ from rhosocial.activerecord.backend.expression.statements import (
     DropDomainDefaultAction,
     DropDomainStatement,
     DropDomainNotNullAction,
-    RenameDomainAction,
-    SetDomainDefaultAction,
     SetDomainNotNullAction,
 )
 from rhosocial.activerecord.backend.expression.types import (
@@ -69,7 +67,7 @@ from rhosocial.activerecord.backend.impl.firebird.expression.types import (
 from rhosocial.activerecord.backend.impl.firebird.mixins.domain import FirebirdDomainMixin
 from rhosocial.activerecord.backend.impl.firebird.protocols import FirebirdDomainSupport
 from rhosocial.activerecord.backend.impl.firebird.registry import backend_registry
-from rhosocial.activerecord.backend.impl.sqlite.dialect import SQLiteDialect
+from rhosocial.activerecord.backend.impl.dummy.dialect import DummyDialect
 
 
 def trusted_registry():
@@ -152,11 +150,11 @@ class TestCreateDomain:
 
     def test_create_rebinds_cross_dialect_data_type(self):
         dialect = FirebirdDialect((4, 0, 0))
-        sqlite = SQLiteDialect(version=(3, 45, 0))
+        foreign = DummyDialect()
         expression = FirebirdCreateDomainExpression(
             dialect,
             Domain(dialect, "ratio"),
-            FirebirdDecFloatType(sqlite, precision=16),
+            FirebirdDecFloatType(foreign, precision=16),
         )
 
         assert expression.to_sql() == ('CREATE DOMAIN "RATIO" AS DECFLOAT(16)', ())
@@ -253,22 +251,22 @@ class TestAlterDomain:
 
     def test_cross_dialect_data_type_is_rebound_to_firebird(self):
         dialect = FirebirdDialect((4, 0, 0))
-        sqlite = SQLiteDialect(version=(3, 45, 0))
+        foreign = DummyDialect()
         action = FirebirdSetDomainDataTypeAction(
             dialect,
-            FirebirdDecFloatType(sqlite, precision=16),
+            FirebirdDecFloatType(foreign, precision=16),
         )
 
         assert action.to_sql() == ("TYPE DECFLOAT(16)", ())
 
     def test_unsupported_cross_dialect_data_type_fails(self):
         dialect = FirebirdDialect((4, 0, 0))
-        sqlite = SQLiteDialect(version=(3, 45, 0))
+        foreign = DummyDialect()
         action = FirebirdSetDomainDataTypeAction(
             dialect,
             # ``element_type`` is keyword-only in the core's constructor; the
             # positional spelling this test used predates that change.
-            ArrayType(sqlite, element_type=IntegerType(sqlite), dimensions=1),
+            ArrayType(foreign, element_type=IntegerType(foreign), dimensions=1),
         )
 
         with pytest.raises(TypeError, match="generic type 'array'"):

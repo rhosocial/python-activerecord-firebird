@@ -4,12 +4,12 @@
 from typing import Tuple, TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from ..expression.blob import BlobColumnExpression, BlobLiteralExpression
+    from ..expression.blob import FirebirdBlobColumnExpression, FirebirdBlobLiteralExpression
 
 
 class FirebirdBlobMixin:
 
-    def format_blob_column_expression(self, expr: "BlobColumnExpression") -> Tuple[str, tuple]:
+    def format_blob_column_expression(self, expr: "FirebirdBlobColumnExpression") -> Tuple[str, tuple]:
         column_name = expr.column_name
         sub_type = expr.sub_type
         segment_size = expr.segment_size
@@ -35,6 +35,6 @@ class FirebirdBlobMixin:
         """Whether ``BLOB SUB_TYPE 1`` (text) is supported."""
         return True
 
-    def format_blob_literal_expression(self, expr: "BlobLiteralExpression") -> Tuple[str, tuple]:
+    def format_blob_literal_expression(self, expr: "FirebirdBlobLiteralExpression") -> Tuple[str, tuple]:
         escaped = expr.value.hex()
         return f"X'{escaped}'", ()

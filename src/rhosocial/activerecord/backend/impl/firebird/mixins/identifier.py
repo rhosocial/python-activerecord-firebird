@@ -22,5 +22,14 @@ class FirebirdIdentifierMixin:
                     stacklevel=2,
                 )
             return identifier
-        escaped = identifier.upper().replace('"', '""')
-        return f'"{escaped}"'
+        return f'"{self._escape_identifier_atom(identifier)}"'
+
+    @staticmethod
+    def _escape_identifier_atom(identifier: str) -> str:
+        """Escape one declared identifier atom; the formatter only concatenates.
+
+        Firebird folds unquoted identifiers to upper case, so the declared atom
+        is folded here, next to the quote doubling, before the formatter wraps
+        it. No assembled SQL is inspected or rewritten.
+        """
+        return identifier.upper().replace('"', '""')

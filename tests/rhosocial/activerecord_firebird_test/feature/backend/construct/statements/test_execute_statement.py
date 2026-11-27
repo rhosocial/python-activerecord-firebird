@@ -13,7 +13,7 @@ import pytest
 from rhosocial.activerecord.backend.dialect.exceptions import UnsupportedFeatureError
 from rhosocial.activerecord.backend.impl.firebird.dialect import FirebirdDialect
 from rhosocial.activerecord.backend.impl.firebird.expression import (
-    AutonomousTransactionDoExpression,
+    FirebirdAutonomousTransactionDoExpression,
     FirebirdExecuteStatement,
 )
 
@@ -69,7 +69,7 @@ class TestExecuteStatement:
 class TestAutonomousTransactionDo:
     def test_autonomous_transaction_do_wraps_block(self):
         dialect = FirebirdDialect((4, 0, 0))
-        sql, params = AutonomousTransactionDoExpression(
+        sql, params = FirebirdAutonomousTransactionDoExpression(
             dialect, "EXECUTE PROCEDURE do_thing;"
         ).to_sql()
         assert sql == "IN AUTONOMOUS TRANSACTION DO BEGIN\nEXECUTE PROCEDURE do_thing;\nEND"
@@ -77,7 +77,7 @@ class TestAutonomousTransactionDo:
 
     def test_autonomous_transaction_do_preserves_begin(self):
         dialect = FirebirdDialect((4, 0, 0))
-        sql, params = AutonomousTransactionDoExpression(
+        sql, params = FirebirdAutonomousTransactionDoExpression(
             dialect, "BEGIN\n  EXECUTE PROCEDURE do_thing;\nEND"
         ).to_sql()
         assert sql == "IN AUTONOMOUS TRANSACTION DO BEGIN\n  EXECUTE PROCEDURE do_thing;\nEND"
@@ -95,7 +95,7 @@ class TestExecuteStatementVersionGating:
 
     def test_autonomous_transaction_do_raises_on_fb2_5(self):
         dialect = FirebirdDialect((2, 5, 0))
-        expr = AutonomousTransactionDoExpression(dialect, "EXECUTE PROCEDURE do_thing;")
+        expr = FirebirdAutonomousTransactionDoExpression(dialect, "EXECUTE PROCEDURE do_thing;")
         with pytest.raises(UnsupportedFeatureError):
             expr.to_sql()
 

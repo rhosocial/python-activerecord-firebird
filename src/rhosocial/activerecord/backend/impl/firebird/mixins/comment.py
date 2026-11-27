@@ -15,7 +15,7 @@ else.
 """
 
 from enum import Enum
-from typing import Tuple
+from typing import Tuple, TYPE_CHECKING
 
 from .version_boundaries import _norm_version
 from rhosocial.activerecord.backend.dialect.exceptions import UnsupportedFeatureError
@@ -29,6 +29,9 @@ from rhosocial.activerecord.backend.expression.objects import (
 )
 
 from ..expression.comment import FirebirdCommentObjectType
+
+if TYPE_CHECKING:  # pragma: no cover
+    from ..expression.comment import FirebirdCommentOnStatement
 
 
 class FirebirdCommentMixin:
@@ -56,7 +59,9 @@ class FirebirdCommentMixin:
     def supports_comment_on(self) -> bool:
         return self.version_at_least((2, 5, 0))
 
-    def format_comment_on_statement(self, expr) -> Tuple[str, tuple]:
+    def format_comment_on_statement(
+        self, expr: "FirebirdCommentOnStatement"
+    ) -> Tuple[str, tuple]:
         """Format COMMENT ON <object> IS 'text' (or IS NULL to remove).
 
         Accepts any comment expression carrying ``object_type``,

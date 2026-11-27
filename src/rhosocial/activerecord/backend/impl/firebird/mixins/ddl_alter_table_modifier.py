@@ -26,10 +26,19 @@ vendor column-rename spelling ``ALTER COLUMN oldname TO newname`` (Firebird
 has no ``RENAME COLUMN`` clause).
 """
 
-from typing import Any, Tuple
+from typing import Any, Tuple, TYPE_CHECKING
 
 from .version_boundaries import _norm_version
 from rhosocial.activerecord.backend.dialect.exceptions import UnsupportedFeatureError
+
+if TYPE_CHECKING:  # pragma: no cover
+    from ..expression.alter_table import (
+        FirebirdDropIdentityAction,
+        FirebirdRestartIdentityAction,
+        FirebirdSetGeneratedAction,
+        FirebirdSetIncrementAction,
+        FirebirdSetPositionAction,
+    )
 
 
 class FirebirdAlterTableModifierMixin:
@@ -208,7 +217,9 @@ class FirebirdAlterTableModifierMixin:
             return f"ALTER COLUMN {col} TYPE {type_sql}", ()
         return super().format_alter_column_action(expr)
 
-    def format_set_generated_action(self, expr: Any) -> Tuple[str, tuple]:
+    def format_set_generated_action(
+        self, expr: "FirebirdSetGeneratedAction"
+    ) -> Tuple[str, tuple]:
         """Format ALTER COLUMN ... SET GENERATED {ALWAYS | BY DEFAULT}.
 
         Identity column clause, available since Firebird 3.0.
@@ -220,20 +231,24 @@ class FirebirdAlterTableModifierMixin:
             (),
         )
 
-    def format_restart_identity_action(self, expr: Any) -> Tuple[str, tuple]:
+    def format_restart_identity_action(
+        self, expr: "FirebirdRestartIdentityAction"
+    ) -> Tuple[str, tuple]:
         """Format ALTER COLUMN ... RESTART [WITH value].
 
         Resets the current value of an identity column; Firebird 3.0+.
         """
         self._check_identity_version("RESTART")
         col = self.format_identifier(expr.column_name)
-        # ``restart_with`` is RestartIdentityAction's declared field; the
+        # ``restart_with`` is FirebirdRestartIdentityAction's declared field; the
         # renderer reads it under its own name rather than probing for it.
         if expr.restart_with is not None:
             return f"ALTER COLUMN {col} RESTART WITH {expr.restart_with}", ()
         return f"ALTER COLUMN {col} RESTART", ()
 
-    def format_set_increment_action(self, expr: Any) -> Tuple[str, tuple]:
+    def format_set_increment_action(
+        self, expr: "FirebirdSetIncrementAction"
+    ) -> Tuple[str, tuple]:
         """Format ALTER COLUMN ... SET INCREMENT [BY] n.
 
         Changes the identity increment; Firebird 3.0+.
@@ -245,7 +260,9 @@ class FirebirdAlterTableModifierMixin:
             (),
         )
 
-    def format_drop_identity_action(self, expr: Any) -> Tuple[str, tuple]:
+    def format_drop_identity_action(
+        self, expr: "FirebirdDropIdentityAction"
+    ) -> Tuple[str, tuple]:
         """Format ALTER COLUMN ... DROP IDENTITY.
 
         Converts an identity column to a plain column; Firebird 3.0+.
@@ -253,7 +270,9 @@ class FirebirdAlterTableModifierMixin:
         self._check_identity_version("DROP IDENTITY")
         return f"ALTER COLUMN {self.format_identifier(expr.column_name)} DROP IDENTITY", ()
 
-    def format_set_position_action(self, expr: Any) -> Tuple[str, tuple]:
+    def format_set_position_action(
+        self, expr: "FirebirdSetPositionAction"
+    ) -> Tuple[str, tuple]:
         """Format ALTER COLUMN ... POSITION n.
 
         Reorders a column within the table; Firebird 3.0+ (the 3.0 Language

@@ -34,7 +34,7 @@ class FirebirdExceptionMixin:
         self._check_exception_version("CREATE EXCEPTION")
         return (
             f"CREATE EXCEPTION {self.format_identifier(expr.exception_name)} "
-            f"'{expr.message.replace(chr(39), chr(39) * 2)}'",
+            f"'{self._escape_exception_message(expr.message)}'",
             (),
         )
 
@@ -43,7 +43,7 @@ class FirebirdExceptionMixin:
         self._check_exception_version("ALTER EXCEPTION")
         return (
             f"ALTER EXCEPTION {self.format_identifier(expr.exception_name)} "
-            f"'{expr.message.replace(chr(39), chr(39) * 2)}'",
+            f"'{self._escape_exception_message(expr.message)}'",
             (),
         )
 
@@ -51,6 +51,15 @@ class FirebirdExceptionMixin:
         """Format DROP EXCEPTION name."""
         self._check_exception_version("DROP EXCEPTION")
         return f"DROP EXCEPTION {self.format_identifier(expr.exception_name)}", ()
+
+    @staticmethod
+    def _escape_exception_message(message: str) -> str:
+        """Escape the declared message atom before the formatter concatenates it.
+
+        EXCEPTION's message is one developer-authored value; doubling its
+        single quotes here keeps the ``format_*`` bodies pure concatenation.
+        """
+        return message.replace(chr(39), chr(39) * 2)
 
     def _check_exception_version(self, feature: str) -> None:
         version = getattr(self, 'version', (2, 5, 0))

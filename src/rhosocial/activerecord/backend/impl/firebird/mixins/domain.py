@@ -1,7 +1,7 @@
 # src/rhosocial/activerecord/backend/impl/firebird/mixins/domain.py
 """Firebird DOMAIN statement formatting mixin."""
 
-from typing import Optional, Tuple, TYPE_CHECKING
+from typing import List, Optional, Tuple, TYPE_CHECKING
 
 from rhosocial.activerecord.backend.dialect.exceptions import UnsupportedFeatureError
 from rhosocial.activerecord.backend.dialect.mixins import DomainMixin
@@ -145,9 +145,7 @@ class FirebirdDomainMixin(DomainMixin):
         if expr.collation is not None:
             if not self.supports_domain_collation():
                 raise UnsupportedFeatureError(self.name, "DOMAIN COLLATE")
-            collation_parts = expr.collation.split(".")
-            if any(not part.strip() for part in collation_parts):
-                raise ValueError("collation must contain non-empty identifier segments")
+            collation_parts = self._collation_atoms(expr.collation)
             collation_sql = ".".join(
                 self.format_identifier(part) for part in collation_parts
             )
@@ -253,6 +251,19 @@ class FirebirdDomainMixin(DomainMixin):
             self.name,
             f"ALTER DOMAIN action {expr.action_kind}",
         )
+
+    @staticmethod
+    def _collation_atoms(collation: str) -> List[str]:
+        """Split one declared qualified collation name into its identifier atoms.
+
+        The collation is a declared attribute, not rendered SQL; splitting it
+        here lets the formatter concatenate already-escaped atoms and keeps
+        empty segments refused by name.
+        """
+        parts = collation.split(".")
+        if any(not part.strip() for part in parts):
+            raise ValueError("collation must contain non-empty identifier segments")
+        return parts
 
     def _can_spell_domain_action(self, action: DomainAlterAction) -> bool:
         """Whether this engine version has *action*'s ALTER DOMAIN spelling.

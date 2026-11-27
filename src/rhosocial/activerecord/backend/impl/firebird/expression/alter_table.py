@@ -27,7 +27,7 @@ if TYPE_CHECKING:  # pragma: no cover
     from rhosocial.activerecord.backend.dialect import SQLDialectBase
 
 
-class SetGeneratedAction(AlterTableAction):
+class FirebirdSetGeneratedAction(AlterTableAction):
     """ALTER TABLE ... ALTER COLUMN ... SET GENERATED {ALWAYS | BY DEFAULT}."""
 
     action_type = "SET GENERATED"
@@ -42,7 +42,7 @@ class SetGeneratedAction(AlterTableAction):
         return "format_set_generated_action"
 
 
-class RestartIdentityAction(AlterTableAction):
+class FirebirdRestartIdentityAction(AlterTableAction):
     """ALTER TABLE ... ALTER COLUMN ... RESTART [WITH value]."""
 
     action_type = "RESTART IDENTITY"
@@ -59,7 +59,7 @@ class RestartIdentityAction(AlterTableAction):
         return "format_restart_identity_action"
 
 
-class SetIncrementAction(AlterTableAction):
+class FirebirdSetIncrementAction(AlterTableAction):
     """ALTER TABLE ... ALTER COLUMN ... SET INCREMENT [BY] n."""
 
     action_type = "SET INCREMENT"
@@ -74,7 +74,7 @@ class SetIncrementAction(AlterTableAction):
         return "format_set_increment_action"
 
 
-class DropIdentityAction(AlterTableAction):
+class FirebirdDropIdentityAction(AlterTableAction):
     """ALTER TABLE ... ALTER COLUMN ... DROP IDENTITY."""
 
     action_type = "DROP IDENTITY"
@@ -88,7 +88,7 @@ class DropIdentityAction(AlterTableAction):
         return "format_drop_identity_action"
 
 
-class SetPositionAction(AlterTableAction):
+class FirebirdSetPositionAction(AlterTableAction):
     """ALTER TABLE ... ALTER COLUMN ... POSITION n."""
 
     action_type = "SET POSITION"
@@ -104,9 +104,9 @@ class SetPositionAction(AlterTableAction):
 
 
 __all__ = [
-    "SetGeneratedAction",
-    "RestartIdentityAction",
-    "SetIncrementAction",
-    "DropIdentityAction",
-    "SetPositionAction",
+    "FirebirdSetGeneratedAction",
+    "FirebirdRestartIdentityAction",
+    "FirebirdSetIncrementAction",
+    "FirebirdDropIdentityAction",
+    "FirebirdSetPositionAction",
 ]

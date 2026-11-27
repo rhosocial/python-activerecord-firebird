@@ -37,7 +37,7 @@ from rhosocial.activerecord.backend.expression.statements.ddl_table import (
     TableUniqueConstraint,
 )
 from rhosocial.activerecord.backend.impl.firebird.dialect import FirebirdDialect
-from rhosocial.activerecord.backend.impl.firebird.expression import SetPositionAction
+from rhosocial.activerecord.backend.impl.firebird.expression import FirebirdSetPositionAction
 from rhosocial.activerecord.backend.impl.firebird.suggestion.column_reorder_suggestion import (
     POSITION_VERSION_FLOOR,
 )
@@ -126,7 +126,7 @@ def test_column_reorder_chain_renders_native_firebird_position_statements():
     assert isinstance(operations, tuple) and len(operations) == 2
     assert all(isinstance(operation, AlterTableStatement) for operation in operations)
     assert all(operation.action is not None for operation in operations)
-    assert all(isinstance(operation.action, SetPositionAction) for operation in operations)
+    assert all(isinstance(operation.action, FirebirdSetPositionAction) for operation in operations)
     # Slots are filled from the left, so each step keeps the prefix fixed.
     assert _sql(operations) == [
         'ALTER TABLE "EVENTS" ALTER COLUMN "CREATED_AT" POSITION 1',
@@ -161,7 +161,7 @@ def test_position_version_floor_is_pinned_at_firebird_3(version):
         reordered_columns=("id", "created_at"),
     )
     answer = dialect.suggest_column_reorder(point)
-    action = SetPositionAction(dialect, "created_at", 1)
+    action = FirebirdSetPositionAction(dialect, "created_at", 1)
     if version is not None and version >= POSITION_VERSION_FLOOR:
         assert answer.state == "actions"
         assert action.to_sql() == ('ALTER COLUMN "CREATED_AT" POSITION 1', ())
