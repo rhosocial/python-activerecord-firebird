@@ -162,6 +162,7 @@ class PairCase:
         b_value=True,
         neither_error=None,
         capable=False,
+        error_type=ValueError,
     ):
         self.case_id = case_id
         self.builder = builder
@@ -177,6 +178,10 @@ class PairCase:
         self.b_value = b_value
         self.neither_error = neither_error
         self.capable = capable
+        #: The type the pair's own grammar refusal raises: ``TypeError`` where
+        #: the clause is judged at render time, ``ValueError`` where it is
+        #: still judged in ``__init__``.
+        self.error_type = error_type
 
     def render(self, dialect, **kwargs):
         sql, _params = self.builder(dialect, **kwargs).to_sql()
@@ -330,6 +335,8 @@ PAIR_CASES = (
         "ALTER CONSTRAINT ENFORCED/NOT ENFORCED",
         a_probe="supports_alter_constraint_enforced",
         neither_error="AlterConstraintAction requires exactly one of",
+        # Core judges this action's grammar at render time.
+        error_type=TypeError,
     ),
     PairCase(
         "BeginTransactionStatement.deferrable",
@@ -429,7 +436,7 @@ class TestFourStatesArePairwiseDistinguishable:
         if case.neither_error is not None:
             # Mandatory pair: the action *is* the keyword, so "neither" is
             # refused as well. That is its own state, distinct from both.
-            with pytest.raises(ValueError, match=case.neither_error):
+            with pytest.raises(case.error_type, match=case.neither_error):
                 case.render(_dialect())
             return
         sql = case.render(_dialect())
@@ -471,9 +478,9 @@ class TestFourStatesArePairwiseDistinguishable:
             case.render(_dialect(), **{case.b: case.b_value})
 
     @pytest.mark.parametrize("case", PAIR_CASES, ids=PAIR_IDS)
-    def test_both_set_is_refused_at_construction(self, case):
+    def test_both_set_is_refused(self, case):
         with pytest.raises(
-            ValueError, match=f"{case.a} and {case.b} are mutually exclusive options"
+            case.error_type, match=f"{case.a} and {case.b} are mutually exclusive options"
         ):
             case.render(_dialect(), **{case.a: case.a_value, case.b: case.b_value})
 
