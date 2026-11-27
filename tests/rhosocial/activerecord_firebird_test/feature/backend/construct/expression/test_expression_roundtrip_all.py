@@ -184,6 +184,7 @@ from rhosocial.activerecord.backend.expression.statements import (
     dml,
 )
 from rhosocial.activerecord.backend.expression.statements.ddl_domain import (
+    AddDomainCheckAction,
     DomainCheckConstraint,
     RenameDomainAction,
 )
@@ -453,6 +454,17 @@ def register_specials():
         "statements.ddl_alter.DropIndexAction",
         lambda d: ddl_alter.DropIndexAction(d, Index(d, "i")),
     )
+    # An ALTER CONSTRAINT action needs the enforcement keyword and the branch it
+    # rides on: both sit behind a defaulted positional and a keyword-only
+    # parameter, so the guess cannot fill them. A named CHECK with
+    # ``enforced=True`` is the complete shape; Firebird's probe then refuses the
+    # keyword at render, which the classifier accepts as a capability gap.
+    register_special_constructor(
+        "statements.ddl_alter.AlterConstraintAction",
+        lambda d: ddl_alter.AlterConstraintAction(
+            d, "chk", enforced=True, constraint_kind=TableCheckConstraint
+        ),
+    )
 
     # -- schemas, sequences, databases, domains, types ---------------------
     register_special_constructor(
@@ -498,6 +510,15 @@ def register_specials():
     register_special_constructor(
         "statements.ddl_domain.DomainCheckConstraint",
         lambda d: DomainCheckConstraint(d, _column_predicate(d), name="chk"),
+    )
+    # An ADD DOMAIN CHECK action needs the constraint node built just above; the
+    # guess supplies a bare string, which the constructor collects and the
+    # render-time check refuses.
+    register_special_constructor(
+        "statements.ddl_domain.AddDomainCheckAction",
+        lambda d: AddDomainCheckAction(
+            d, DomainCheckConstraint(d, _column_predicate(d), name="chk")
+        ),
     )
     # Firebird has no user-defined types -- a DOMAIN is its nearest equivalent --
     # so there is no TypeDefinition to register. CREATE TYPE / ALTER TYPE reach
@@ -971,30 +992,13 @@ register_specials()
 #: class that starts failing to build fails CI too. Nothing here is a ceiling:
 #: every entry is a named class with a named reason, and there is no test that
 #: passes when the list is *at most* some number.
-UNCONSTRUCTIBLE = {
-    # -- core: keyword-only parameters the introspective constructor skips ----
-    # `name` and `constraint_type` sit behind defaulted positionals and are
-    # keyword-only, so the constructor skips them and the class refuses an
-    # incomplete action.  (Same shape the classes had before the plain-JSON
-    # rewrite settled the ``*Action`` suffix on their names.)
-    "rhosocial.activerecord.backend.expression.statements.ddl_alter.AlterConstraintAction":
-        "`name` and `constraint_type` are keyword-only behind defaulted positionals.",
-    # Widens a SQLPredicate into a DomainCheckConstraint and needs one; the guess
-    # supplies a bare comparison whose literal would have to render as a bind
-    # parameter, which DDL cannot carry.
-    "rhosocial.activerecord.backend.expression.statements.ddl_domain.AddDomainCheckAction":
-        "needs a SQLPredicate that renders without bind parameters.",
-    # XMLTABLE and the three XML constructors below used to be pinned here. None
-    # of the four had a construction gap: each takes its item list as
-    # `Sequence[...]`, and the introspective guess read the annotation's own
-    # __name__ -- "Sequence" -- matched that against the Table/View/Sequence
-    # relation pattern, and handed the parameter a catalogue Sequence object
-    # instead of a list. The guess now decides a parameterised alias before
-    # testing for a relation name, so all four build and move to
-    # LEGITIMATE_NON_RENDERS -- against the `format_xml*` methods Firebird
-    # declares no name for, which was the second half of each old reason and is
-    # still the reason none of them can render.
-}
+#:
+#: Empty, and it must stay empty: every collected class builds once its required
+#: payload is supplied, and each former gap now gets that payload from a
+#: registered special constructor above. ``XMLTABLE`` and the other three XML
+#: constructors record the precedent -- a ``Sequence[...]`` annotation the guess
+#: misread as a catalogue object, not a defect in the class.
+UNCONSTRUCTIBLE = {}
 
 
 #: Classes that construct but cannot render, for a reason belonging to their own
