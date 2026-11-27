@@ -994,21 +994,6 @@ UNCONSTRUCTIBLE = {
     # LEGITIMATE_NON_RENDERS -- against the `format_xml*` methods Firebird
     # declares no name for, which was the second half of each old reason and is
     # still the reason none of them can render.
-
-    # UUIDCastFunction refuses in __init__, not in to_sql(). Firebird has no
-    # cast from text to a UUID, so the refusal is the same whatever the
-    # argument, and no registered constructor can hand it something that
-    # changes the answer.
-    "rhosocial.activerecord.backend.expression.uuid.UUIDCastFunction":
-        "refuses in __init__ -- Firebird has no cast from text to a UUID.",
-    # The nil/max constant and the generation node refuse the same way, and for
-    # the same reason: Firebird spells no UUID SQL, so each says so from
-    # __init__ whatever it is handed. Measured with valid arguments -- an
-    # invalid ``which`` raises ValueError first and would have hidden this.
-    "rhosocial.activerecord.backend.expression.uuid.UUIDConstantExpression":
-        "refuses in __init__ -- Firebird spells no UUID constants.",
-    "rhosocial.activerecord.backend.expression.uuid.UUIDGenerationExpression":
-        "refuses in __init__ -- Firebird has no server-side UUID generator.",
 }
 
 
@@ -1458,6 +1443,13 @@ UNMODELLED_FORMATTERS = {
         "format_xml_serialize_expression",
         "format_xml_table_expression",
         "format_passing_clause",
+    ),
+    "the UUID value nodes (this dialect composes no UUID support mixin: "
+    "Firebird spells no UUID generation, constant or text-to-UUID cast, so "
+    "all three nodes reach the dispatch and find no base method declared)": (
+        "format_uuid_generation_expression",
+        "format_uuid_constant_expression",
+        "format_uuid_cast",
     ),
 }
 
