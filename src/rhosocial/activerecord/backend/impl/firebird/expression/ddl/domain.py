@@ -209,7 +209,7 @@ class FirebirdAlterDomainExpression(AlterDomainStatement):
         constraint_name: Optional[str] = None,
         constraint_sql: Optional[str] = None,
         *,
-        actions: Optional[Sequence[DomainAlterAction]] = None,
+        action: Optional[DomainAlterAction] = None,
         data_type_name: Optional[str] = None,
     ) -> None:
         legacy_fields = {
@@ -233,7 +233,9 @@ class FirebirdAlterDomainExpression(AlterDomainStatement):
         if mode is None:
             if any(field is not None for field in legacy_fields.values()):
                 raise ValueError("legacy ALTER DOMAIN fields require mode")
-            selected_actions = list(actions) if actions is not None else []
+            if action is None:
+                raise ValueError("ALTER DOMAIN requires an action")
+            selected_action = action
         else:
             expected_action = self._legacy_action(
                 dialect,
@@ -244,16 +246,13 @@ class FirebirdAlterDomainExpression(AlterDomainStatement):
                 constraint_sql=constraint_sql,
                 data_type_name=data_type_name,
             )
-            if actions is None:
-                selected_actions = [expected_action]
+            if action is None:
+                selected_action = expected_action
             else:
-                selected_actions = list(actions)
-                if (
-                    len(selected_actions) != 1
-                    or not self._actions_equivalent(expected_action, selected_actions[0])
-                ):
-                    raise ValueError("mode and actions describe different ALTER DOMAIN changes")
-        super().__init__(dialect, domain, selected_actions)
+                selected_action = action
+                if not self._actions_equivalent(expected_action, selected_action):
+                    raise ValueError("mode and action describe different ALTER DOMAIN changes")
+        super().__init__(dialect, domain, selected_action)
         self.mode = mode
         self.value = value
         self.data_type = data_type

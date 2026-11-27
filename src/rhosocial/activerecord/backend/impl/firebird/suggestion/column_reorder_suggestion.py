@@ -70,7 +70,7 @@ class FirebirdColumnReorderSuggestionMixin:
                 AlterTableStatement(
                     self,
                     table,
-                    [SetPositionAction(self, wanted, final_position)],
+                    SetPositionAction(self, wanted, final_position),
                 )
             )
             at = current.index(wanted)

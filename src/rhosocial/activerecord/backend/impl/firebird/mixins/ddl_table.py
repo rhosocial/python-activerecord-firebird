@@ -91,27 +91,9 @@ class FirebirdTableMixin:
                 f"AlterTableStatement.table must be a Table, "
                 f"got {type(expr.table).__name__}"
             )
-        all_params: List[Any] = []
-        action_parts: List[str] = []
-        for action in expr.actions:
-            action_sql, action_params = action.to_sql()
-            action_parts.append(action_sql)
-            all_params.extend(action_params)
-
+        action_sql, action_params = expr.action.to_sql()
         table_sql, _ = expr.table.to_sql()
-        if not action_parts:
-            return f"ALTER TABLE {table_sql}", ()
-
-        if len(action_parts) > 1:
-            from rhosocial.activerecord.backend.dialect.exceptions import UnsupportedFeatureError
-
-            raise UnsupportedFeatureError(
-                self.name,
-                "ALTER TABLE with multiple actions",
-                f"{self.name} renders one action per statement. Emit one "
-                f"AlterTableStatement per action and order them in the caller.",
-            )
-        return f"ALTER TABLE {table_sql} {action_parts[0]}", tuple(all_params)
+        return f"ALTER TABLE {table_sql} {action_sql}", tuple(action_params)
 
     def format_create_table_statement(self, expr: "CreateTableStatement") -> Tuple[str, tuple]:
         """Render CREATE TABLE, naming the relation through a schema object.

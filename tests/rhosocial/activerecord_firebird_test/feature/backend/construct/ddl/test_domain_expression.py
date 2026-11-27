@@ -412,34 +412,15 @@ class TestAlterDomain:
                 data_type_name=data_type_name,
             )
 
-    def test_multiple_actions_use_firebird_order(self):
-        dialect = FirebirdDialect((4, 0, 0))
-        actions = [
-            SetDomainNotNullAction(dialect),
-            RenameDomainAction(dialect, "d_v2"),
-            FirebirdSetDomainDataTypeAction(dialect, VarCharType(length=12)),
-            SetDomainDefaultAction(dialect, 7),
-        ]
-        expression = FirebirdAlterDomainExpression(dialect, Domain(dialect, "d"), actions=actions)
-
-        assert expression.to_sql() == (
-            'ALTER DOMAIN "D" TO "D_V2" TYPE VARCHAR(12) '
-            'SET DEFAULT 7 SET NOT NULL',
-            (),
-        )
-
     def test_core_alter_expression_uses_same_formatter(self):
         dialect = FirebirdDialect((4, 0, 0))
         expression = AlterDomainStatement(
             dialect,
             Domain(dialect, "d"),
-            [
-                DropDomainDefaultAction(dialect),
-                RenameDomainAction(dialect, "d_v2"),
-            ],
+            DropDomainDefaultAction(dialect),
         )
 
-        assert expression.to_sql() == ('ALTER DOMAIN "D" TO "D_V2" DROP DEFAULT', ())
+        assert expression.to_sql() == ('ALTER DOMAIN "D" DROP DEFAULT', ())
 
     def test_named_check_actions_fail_fast(self):
         dialect = FirebirdDialect((4, 0, 0))
@@ -451,12 +432,12 @@ class TestAlterDomain:
         add_expression = AlterDomainStatement(
             dialect,
             Domain(dialect, "d"),
-            [AddDomainCheckAction(dialect, named_check)],
+            AddDomainCheckAction(dialect, named_check),
         )
         drop_expression = AlterDomainStatement(
             dialect,
             Domain(dialect, "d"),
-            [DropDomainCheckAction(dialect, name="positive_check")],
+            DropDomainCheckAction(dialect, name="positive_check"),
         )
 
         with pytest.raises(UnsupportedFeatureError, match="named DOMAIN CHECK"):
@@ -484,20 +465,6 @@ class TestAlterDomain:
             add_expression.to_sql()
         with pytest.raises(UnsupportedFeatureError, match="named DOMAIN CHECK drop"):
             drop_expression.to_sql()
-
-    def test_only_one_check_action_is_rendered(self):
-        dialect = FirebirdDialect((4, 0, 0))
-        expression = AlterDomainStatement(
-            dialect,
-            Domain(dialect, "d"),
-            [
-                AddDomainCheckAction(dialect, _positive_check(dialect)),
-                AddDomainCheckAction(dialect, _positive_check(dialect)),
-            ],
-        )
-
-        with pytest.raises(UnsupportedFeatureError, match="multiple ALTER DOMAIN CHECK"):
-            expression.to_sql()
 
     def test_missing_legacy_action_fields_fail_fast(self):
         dialect = FirebirdDialect((4, 0, 0))
@@ -530,7 +497,7 @@ class TestAlterDomain:
                 Domain(dialect, "d"),
                 FirebirdDomainAlterMode.SET_DEFAULT,
                 value=7,
-                actions=[DropDomainDefaultAction(dialect)],
+                action=DropDomainDefaultAction(dialect),
             )
 
 
@@ -546,7 +513,7 @@ class TestVersionBoundaries:
         alter = AlterDomainStatement(
             dialect,
             Domain(dialect, "positive"),
-            [FirebirdSetDomainDataTypeAction(dialect, IntegerType(dialect))],
+            FirebirdSetDomainDataTypeAction(dialect, IntegerType(dialect)),
         )
         drop = FirebirdDropDomainExpression(dialect, Domain(dialect, "positive"))
 
@@ -558,7 +525,7 @@ class TestVersionBoundaries:
     def test_not_null_actions_require_firebird_30(self, action_type):
         dialect = FirebirdDialect((2, 5, 0))
         action = action_type(dialect)
-        expression = AlterDomainStatement(dialect, Domain(dialect, "positive"), [action])
+        expression = AlterDomainStatement(dialect, Domain(dialect, "positive"), action)
 
         with pytest.raises(UnsupportedFeatureError, match="ALTER DOMAIN action"):
             expression.to_sql()
@@ -609,7 +576,6 @@ class TestCapabilities:
         assert dialect.supports_named_domain_checks() is False
         assert dialect.supports_multiple_domain_checks() is False
         assert dialect.supports_domain_collation() is True
-        assert dialect.supports_multiple_domain_alter_actions() is True
         assert dialect.supports_drop_domain_if_exists() is False
         assert dialect.supports_drop_domain_cascade() is False
         assert dialect.supports_drop_domain_restrict() is False
@@ -626,7 +592,6 @@ class TestCapabilities:
             "supports_create_type_or_replace",
             "supports_alter_type_if_exists",
             "supports_drop_type_if_exists",
-            "supports_multiple_type_alter_actions",
         )
 
         for name in capability_names:
@@ -789,12 +754,10 @@ class TestDispatchAndSerialization:
             FirebirdAlterDomainExpression(
                 dialect,
                 Domain(dialect, "positive"),
-                actions=[
-                    FirebirdSetDomainDataTypeAction(
+                action=FirebirdSetDomainDataTypeAction(
                         dialect,
                         FirebirdDecFloatType(precision=16),
-                    )
-                ],
+                    ),
             ),
             FirebirdDropDomainExpression(dialect, Domain(dialect, "positive")),
             FirebirdSetDomainDataTypeAction(

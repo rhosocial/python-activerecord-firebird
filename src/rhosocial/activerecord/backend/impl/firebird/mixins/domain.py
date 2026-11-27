@@ -71,9 +71,6 @@ class FirebirdDomainMixin(DomainMixin):
     def supports_domain_collation(self) -> bool:
         return self.supports_domains()
 
-    def supports_multiple_domain_alter_actions(self) -> bool:
-        return self.supports_alter_domain()
-
     def supports_drop_domain_if_exists(self) -> bool:
         return False
 
@@ -177,47 +174,16 @@ class FirebirdDomainMixin(DomainMixin):
                 f"AlterDomainStatement.domain must be a Domain, "
                 f"got {type(expr.domain).__name__}"
             )
-        if len(expr.actions) > 1 and not self.supports_multiple_domain_alter_actions():
-            raise UnsupportedFeatureError(self.name, "multiple ALTER DOMAIN actions")
-        action_groups = {
-            "rename": "rename",
-            "type": "TYPE",
-            "default": "DEFAULT",
-            "nullability": "NOT NULL",
-            "check": "CHECK",
-        }
-        action_order = {
-            "rename": 0,
-            "type": 1,
-            "default": 2,
-            "nullability": 3,
-            "check": 4,
-        }
-        action_groups_seen = set()
-        ordered_actions = []
-        for action in expr.actions:
-            group = self._domain_action_group(action)
-            if group is None or not self._can_spell_domain_action(action):
-                raise UnsupportedFeatureError(
-                    self.name,
-                    f"ALTER DOMAIN action {action.action_kind}",
-                )
-            if group in action_groups_seen:
-                raise UnsupportedFeatureError(
-                    self.name,
-                    f"multiple ALTER DOMAIN {action_groups[group]} actions",
-                )
-            action_groups_seen.add(group)
-            ordered_actions.append((action_order[group], action))
-        ordered_actions.sort(key=lambda item: item[0])
-        action_parts = []
-        action_params = []
-        for _, action in ordered_actions:
-            action_sql, params = action.to_sql()
-            action_parts.append(action_sql)
-            action_params.extend(params)
+        action = expr.action
+        group = self._domain_action_group(action)
+        if group is None or not self._can_spell_domain_action(action):
+            raise UnsupportedFeatureError(
+                self.name,
+                f"ALTER DOMAIN action {action.action_kind}",
+            )
+        action_sql, action_params = action.to_sql()
         return (
-            f'ALTER DOMAIN {expr.domain.to_sql()[0]} {" ".join(action_parts)}',
+            f'ALTER DOMAIN {expr.domain.to_sql()[0]} {action_sql}',
             tuple(action_params),
         )
 

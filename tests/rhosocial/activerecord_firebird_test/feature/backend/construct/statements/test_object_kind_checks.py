@@ -93,13 +93,6 @@ WRONG_KIND_CASES = [
         "CreateTableStatement.table",
     ),
     (
-        "alter_table",
-        lambda d, obj: ddl_alter.AlterTableStatement(d, obj, []),
-        lambda d: Table(d, "users"),
-        lambda d: Sequence(d, "gen"),
-        "AlterTableStatement.table",
-    ),
-    (
         "insert",
         lambda d, obj: dml.InsertStatement(
             d, into=obj, source=dml.ValuesSource(d, [[Literal(d, 1)]])
@@ -144,7 +137,7 @@ WRONG_KIND_CASES = [
     (
         "alter_domain",
         lambda d, obj: ddl_domain.AlterDomainStatement(
-            d, obj, [RenameDomainAction(d, "other")]
+            d, obj, RenameDomainAction(d, "other")
         ),
         lambda d: Domain(d, "dom"),
         lambda d: Table(d, "users"),
@@ -302,8 +295,10 @@ class TestRightObjectKindStillRenders:
         assert sql == 'CREATE TABLE "USERS" ("ID" INTEGER)'
 
     def test_alter_table(self, dialect):
-        sql, _ = ddl_alter.AlterTableStatement(dialect, Table(dialect, "users"), []).to_sql()
-        assert sql == 'ALTER TABLE "USERS"'
+        sql, _ = ddl_alter.AlterTableStatement(
+            dialect, Table(dialect, "users"), ddl_alter.DropColumnAction(dialect, "age")
+        ).to_sql()
+        assert sql == 'ALTER TABLE "USERS" DROP COLUMN "AGE"'
 
     def test_insert(self, dialect):
         sql, params = dml.InsertStatement(
@@ -333,7 +328,7 @@ class TestRightObjectKindStillRenders:
 
     def test_alter_domain(self, dialect):
         sql, _ = ddl_domain.AlterDomainStatement(
-            dialect, Domain(dialect, "dom"), [RenameDomainAction(dialect, "other")]
+            dialect, Domain(dialect, "dom"), RenameDomainAction(dialect, "other")
         ).to_sql()
         assert sql == 'ALTER DOMAIN "DOM" TO "OTHER"'
 

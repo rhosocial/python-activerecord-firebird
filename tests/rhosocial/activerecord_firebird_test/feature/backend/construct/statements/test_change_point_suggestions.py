@@ -125,8 +125,8 @@ def test_column_reorder_chain_renders_native_firebird_position_statements():
     operations = dialect.suggest_column_reorder(point).operations
     assert isinstance(operations, tuple) and len(operations) == 2
     assert all(isinstance(operation, AlterTableStatement) for operation in operations)
-    assert all(len(operation.actions) == 1 for operation in operations)
-    assert all(isinstance(operation.actions[0], SetPositionAction) for operation in operations)
+    assert all(operation.action is not None for operation in operations)
+    assert all(isinstance(operation.action, SetPositionAction) for operation in operations)
     # Slots are filled from the left, so each step keeps the prefix fixed.
     assert _sql(operations) == [
         'ALTER TABLE "EVENTS" ALTER COLUMN "CREATED_AT" POSITION 1',
@@ -210,8 +210,8 @@ def test_constraint_drop_chain_renders_alter_table_drop_constraint():
     assert isinstance(operations, tuple) and len(operations) == 1
     statement = operations[0]
     assert isinstance(statement, AlterTableStatement)
-    assert len(statement.actions) == 1
-    assert isinstance(statement.actions[0], DropTableConstraintAction)
+    assert statement.action is not None
+    assert isinstance(statement.action, DropTableConstraintAction)
     # Firebird has no DROP CONSTRAINT IF EXISTS on any supported release.
     assert dialect.supports_drop_constraint_if_exists() is False
     assert _sql(operations) == ['ALTER TABLE "EVENTS" DROP CONSTRAINT "UQ_CREATED"']
@@ -225,8 +225,8 @@ def test_constraint_add_reuses_live_table_constraint_node():
     )
     operations = dialect.suggest_table_constraint_change(point).operations
     assert isinstance(operations, tuple) and len(operations) == 1
-    assert isinstance(operations[0].actions[0], AddTableConstraintAction)
-    assert operations[0].actions[0].constraint is live
+    assert isinstance(operations[0].action, AddTableConstraintAction)
+    assert operations[0].action.constraint is live
     assert _sql(operations) == [
         'ALTER TABLE "EVENTS" ADD CONSTRAINT "UQ_CREATED" UNIQUE ("CREATED_AT")'
     ]

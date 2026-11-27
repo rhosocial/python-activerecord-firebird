@@ -36,7 +36,7 @@ class TestRenameColumnRendering:
         stmt = AlterTableStatement(
             dialect,
             Table(dialect, "t"),
-            [RenameColumnAction(dialect, "a", "b")],
+            RenameColumnAction(dialect, "a", "b"),
         )
         sql, params = stmt.to_sql()
         assert sql == 'ALTER TABLE "T" ALTER COLUMN "A" TO "B"'

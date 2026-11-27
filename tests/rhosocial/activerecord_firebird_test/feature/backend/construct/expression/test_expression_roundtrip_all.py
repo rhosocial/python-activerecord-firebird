@@ -490,7 +490,7 @@ def register_specials():
     register_special_constructor(
         "statements.ddl_domain.AlterDomainStatement",
         lambda d: ddl_domain.AlterDomainStatement(
-            d, Domain(d, "dom"), [RenameDomainAction(d, "other")]
+            d, Domain(d, "dom"), RenameDomainAction(d, "other")
         ),
     )
     # A DOMAIN CHECK is DDL: it must render without bind parameters, so its
@@ -863,7 +863,7 @@ def register_specials():
     register_special_constructor(
         "impl.firebird.expression.ddl.domain.FirebirdAlterDomainExpression",
         lambda d: FirebirdAlterDomainExpression(
-            d, Domain(d, "dom"), actions=[RenameDomainAction(d, "other")]
+            d, Domain(d, "dom"), action=RenameDomainAction(d, "other")
         ),
     )
     # A SET DOMAIN TYPE action with no data type has nothing to render.
