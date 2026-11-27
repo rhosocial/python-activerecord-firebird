@@ -71,11 +71,11 @@ class FirebirdTableMixin:
         ``FirebirdAlterTableModifierMixin``, which are action text without a
         table -- is appended after it.
 
-        The action-combination rule is the core's: one comma-separated statement
-        when ``supports_multi_action_alter_table()``, otherwise a single action
-        on its own. What changes here is only where the table name comes from: a
-        :class:`Table` schema object rather than a bare ``format_identifier``,
-        so a name carrying a namespace slot is reported.
+        The one-action rule is the core's: one expression renders one action, so
+        a statement carrying several fails fast regardless of whether the engine
+        could parse a comma-separated list. What changes here is only where the
+        table name comes from: a :class:`Table` schema object rather than a bare
+        ``format_identifier``, so a name carrying a namespace slot is reported.
 
         Raises:
             TypeError: ``AlterTableStatement.table`` is not a Table. Another
@@ -102,21 +102,14 @@ class FirebirdTableMixin:
         if not action_parts:
             return f"ALTER TABLE {table_sql}", ()
 
-        if self.supports_multi_action_alter_table():
-            return f"ALTER TABLE {table_sql} {', '.join(action_parts)}", tuple(all_params)
-
-        # One expression produces one SQL statement (expression <-> SQL is 1:1).
-        # On a dialect that cannot combine actions, semicolon-joining would emit
-        # two statements from one expression, which cursor.execute() cannot run.
-        # Fail fast and require the caller to split into one statement per action.
         if len(action_parts) > 1:
             from rhosocial.activerecord.backend.dialect.exceptions import UnsupportedFeatureError
 
             raise UnsupportedFeatureError(
                 self.name,
                 "ALTER TABLE with multiple actions",
-                f"{self.name} cannot combine {len(action_parts)} actions in one "
-                f"ALTER TABLE. Emit one AlterTableStatement per action instead.",
+                f"{self.name} renders one action per statement. Emit one "
+                f"AlterTableStatement per action and order them in the caller.",
             )
         return f"ALTER TABLE {table_sql} {action_parts[0]}", tuple(all_params)
 
