@@ -101,6 +101,7 @@ class FirebirdSequenceMixin:
                 f"CreateSequenceStatement.sequence must be a Sequence, "
                 f"got {type(expr.sequence).__name__}"
             )
+        expr.validate()
         if not self.supports_sequence():
             raise UnsupportedFeatureError(
                 self.name, "CREATE SEQUENCE",
