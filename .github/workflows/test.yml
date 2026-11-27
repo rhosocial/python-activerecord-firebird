@@ -48,6 +48,31 @@ jobs:
           pip install -r requirements.txt
           pip install -r requirements-dev.txt
 
+      # No database service here, but the root conftest imports support.firebird
+      # at collection time and that module opens this file unconditionally. Only
+      # the YAML needs to exist and parse; no connection is ever made.
+      - name: Create Firebird scenario config
+        run: |
+          cat > firebird_scenarios.yaml << EOF
+          scenarios:
+            firebird_default:
+              host: 127.0.0.1
+              port: 3055
+              database: /var/lib/firebird/data/test_db
+              username: SYSDBA
+              password: password
+              charset: UTF8
+              autocommit: false
+              timezone: UTC
+          EOF
+          echo "FIREBIRD_SCENARIOS_CONFIG_PATH=$(pwd)/firebird_scenarios.yaml" >> $GITHUB_ENV
+          echo "FIREBIRD_HOST=127.0.0.1" >> $GITHUB_ENV
+          echo "FIREBIRD_PORT=3055" >> $GITHUB_ENV
+          echo "FIREBIRD_DATABASE=/var/lib/firebird/data/test_db" >> $GITHUB_ENV
+          echo "FIREBIRD_USERNAME=SYSDBA" >> $GITHUB_ENV
+          echo "FIREBIRD_PASSWORD=password" >> $GITHUB_ENV
+          echo "FIREBIRD_CHARSET=UTF8" >> $GITHUB_ENV
+
       # Isolated from the full suite: these are source-shape contracts, so they
       # must not inherit a database scenario or a worker from the test matrix.
       - name: Formal rules contracts
