@@ -223,12 +223,12 @@ from rhosocial.activerecord.backend.expression.types import IntegerType
 from rhosocial.activerecord.backend.expression.types.custom import CustomType
 from rhosocial.activerecord.backend.expression.values import LiteralKind
 from expression_roundtrip_harness import (
+    SpecialConstructorRegistry,
     assert_params_equal,
     assert_render_survives,
     codec_registry,
     collect_expression_classes,
     make_instance,
-    register_special_constructor,
     roundtrip_expression,
 )
 
@@ -340,17 +340,22 @@ def _integer_column(dialect, name="col"):
     return ddl_table.ColumnDefinition(dialect, name, IntegerType(dialect))
 
 
-def register_specials():
-    """Replace every introspective guess that would cost a real assertion."""
+def register_specials(registry):
+    """Replace every introspective guess that would cost a real assertion.
+
+    Registrations go onto the caller's registry; nothing is written at import
+    time, so the sweep's results no longer depend on which module imported it
+    first.
+    """
     # -- nodes whose ``op`` is a closed word set, not a free string ----------
     # Both refuse an ``op`` outside their set at construction, so the
     # introspective guess (which supplies a placeholder string) cannot build
     # them at all. Naming one real word is what lets the matrix exercise them.
-    register_special_constructor(
+    registry.register(
         "operators.ArithmeticOperation",
         lambda d: ArithmeticOperation(d, "add", Column(d, "a"), Literal(d, 1)),
     )
-    register_special_constructor(
+    registry.register(
         "query_sources.SetOperation",
         lambda d: SetOperation(
             d,
@@ -362,7 +367,7 @@ def register_specials():
     # The statement half of the same pair: the word-form enum refuses the
     # guess's bare string at construction, and Firebird spells a compound
     # SELECT, so a factory turns it into an instance the matrix can assert.
-    register_special_constructor(
+    registry.register(
         "statements.dql.SetOperationStatement",
         lambda d: SetOperationStatement(
             d, op="union_all", parts=_compound_arms(d)
@@ -370,11 +375,11 @@ def register_specials():
     )
 
     # -- the FROM side ------------------------------------------------------
-    register_special_constructor(
+    registry.register(
         "sources.relation.NamedRelationRef",
         lambda d: NamedRelationRef(d, _table_obj(d)),
     )
-    register_special_constructor(
+    registry.register(
         "query_parts.JoinClause",
         lambda d: JoinClause(
             d,
@@ -385,63 +390,63 @@ def register_specials():
     )
 
     # -- tables -------------------------------------------------------------
-    register_special_constructor(
+    registry.register(
         "statements.ddl_table.CreateTableStatement",
         lambda d: ddl_table.CreateTableStatement(d, _table_obj(d), [_integer_column(d)]),
     )
-    register_special_constructor(
+    registry.register(
         "statements.ddl_table.DropTableStatement",
         lambda d: ddl_table.DropTableStatement(d, _table_obj(d)),
     )
-    register_special_constructor(
+    registry.register(
         "statements.ddl_table.CreateTableLikeStatement",
         lambda d: ddl_table.CreateTableLikeStatement(
             d, _table_obj(d), Table(d, "other")
         ),
     )
-    register_special_constructor(
+    registry.register(
         "statements.ddl_table.CreateTableCloneStatement",
         lambda d: ddl_table.CreateTableCloneStatement(
             d, _table_obj(d), Table(d, "other")
         ),
     )
-    register_special_constructor(
+    registry.register(
         "statements.ddl_table.CreateTableAsStatement",
         lambda d: ddl_table.CreateTableAsStatement(d, _table_obj(d), _one_column_query(d)),
     )
-    register_special_constructor(
+    registry.register(
         "statements.ddl_table.CreateTableFromTemplateStatement",
         lambda d: ddl_table.CreateTableFromTemplateStatement(
             d, _table_obj(d), _one_column_query(d)
         ),
     )
-    register_special_constructor(
+    registry.register(
         "statements.ddl_truncate.TruncateStatement",
         lambda d: ddl_truncate.TruncateStatement(d, _table_obj(d)),
     )
     # Overrides the shared testsuite factory, which binds no dialect to its type.
-    register_special_constructor(
+    registry.register(
         "statements.ddl_table.ColumnDefinition", _integer_column
     )
 
     # -- indexes ------------------------------------------------------------
-    register_special_constructor(
+    registry.register(
         "statements.ddl_index.CreateIndexStatement",
         lambda d: ddl_index.CreateIndexStatement(
             d, index=Index(d, "i"), table=_table_obj(d), columns=["a"]
         ),
     )
-    register_special_constructor(
+    registry.register(
         "statements.ddl_index.DropIndexStatement",
         lambda d: ddl_index.DropIndexStatement(d, index=Index(d, "i")),
     )
-    register_special_constructor(
+    registry.register(
         "statements.ddl_index.CreateFulltextIndexStatement",
         lambda d: ddl_index.CreateFulltextIndexStatement(
             d, index=Index(d, "i"), table=_table_obj(d), columns=["a"]
         ),
     )
-    register_special_constructor(
+    registry.register(
         "statements.ddl_index.DropFulltextIndexStatement",
         lambda d: ddl_index.DropFulltextIndexStatement(
             d, index=Index(d, "i"), table=_table_obj(d)
@@ -450,7 +455,7 @@ def register_specials():
     # The ALTER index actions carry the *Action suffix now (core settled the
     # renames); the old ``AddIndex`` / ``DropIndex`` keys matched nothing at
     # all -- a renamed key is a factory that silently stopped firing.
-    register_special_constructor(
+    registry.register(
         "statements.ddl_alter.DropIndexAction",
         lambda d: ddl_alter.DropIndexAction(d, Index(d, "i")),
     )
@@ -459,7 +464,7 @@ def register_specials():
     # parameter, so the guess cannot fill them. A named CHECK with
     # ``enforced=True`` is the complete shape; Firebird's probe then refuses the
     # keyword at render, which the classifier accepts as a capability gap.
-    register_special_constructor(
+    registry.register(
         "statements.ddl_alter.AlterConstraintAction",
         lambda d: ddl_alter.AlterConstraintAction(
             d, "chk", enforced=True, constraint_kind=TableCheckConstraint
@@ -467,39 +472,39 @@ def register_specials():
     )
 
     # -- schemas, sequences, databases, domains, types ---------------------
-    register_special_constructor(
+    registry.register(
         "statements.ddl_schema.CreateSchemaStatement",
         lambda d: ddl_schema.CreateSchemaStatement(d, Schema(d, "s")),
     )
-    register_special_constructor(
+    registry.register(
         "statements.ddl_schema.DropSchemaStatement",
         lambda d: ddl_schema.DropSchemaStatement(d, Schema(d, "s")),
     )
-    register_special_constructor(
+    registry.register(
         "statements.ddl_sequence.CreateSequenceStatement",
         lambda d: ddl_sequence.CreateSequenceStatement(d, Sequence(d, "s")),
     )
-    register_special_constructor(
+    registry.register(
         "statements.ddl_sequence.AlterSequenceStatement",
         lambda d: ddl_sequence.AlterSequenceStatement(d, Sequence(d, "s"), restart=1),
     )
-    register_special_constructor(
+    registry.register(
         "statements.ddl_sequence.DropSequenceStatement",
         lambda d: ddl_sequence.DropSequenceStatement(d, Sequence(d, "s")),
     )
-    register_special_constructor(
+    registry.register(
         "statements.ddl_database.DropDatabaseStatement",
         lambda d: ddl_database.DropDatabaseStatement(d, Database(d, "db")),
     )
-    register_special_constructor(
+    registry.register(
         "statements.ddl_domain.CreateDomainStatement",
         lambda d: ddl_domain.CreateDomainStatement(d, Domain(d, "dom"), IntegerType(d)),
     )
-    register_special_constructor(
+    registry.register(
         "statements.ddl_domain.DropDomainStatement",
         lambda d: ddl_domain.DropDomainStatement(d, Domain(d, "dom")),
     )
-    register_special_constructor(
+    registry.register(
         "statements.ddl_domain.AlterDomainStatement",
         lambda d: ddl_domain.AlterDomainStatement(
             d, Domain(d, "dom"), RenameDomainAction(d, "other")
@@ -507,14 +512,14 @@ def register_specials():
     )
     # A DOMAIN CHECK is DDL: it must render without bind parameters, so its
     # condition compares two columns rather than a column and a literal.
-    register_special_constructor(
+    registry.register(
         "statements.ddl_domain.DomainCheckConstraint",
         lambda d: DomainCheckConstraint(d, _column_predicate(d), name="chk"),
     )
     # An ADD DOMAIN CHECK action needs the constraint node built just above; the
     # guess supplies a bare string, which the constructor collects and the
     # render-time check refuses.
-    register_special_constructor(
+    registry.register(
         "statements.ddl_domain.AddDomainCheckAction",
         lambda d: AddDomainCheckAction(
             d, DomainCheckConstraint(d, _column_predicate(d), name="chk")
@@ -526,11 +531,11 @@ def register_specials():
     # the classifier accepts for any class; no pin is needed.
 
     # -- routines, triggers, comments --------------------------------------
-    register_special_constructor(
+    registry.register(
         "statements.ddl_function.DropFunctionStatement",
         lambda d: ddl_function.DropFunctionStatement(d, Function(d, "fn")),
     )
-    register_special_constructor(
+    registry.register(
         "statements.ddl_trigger.CreateTriggerStatement",
         lambda d: ddl_trigger.CreateTriggerStatement(
             d,
@@ -541,31 +546,31 @@ def register_specials():
             function=Function(d, "fn"),
         ),
     )
-    register_special_constructor(
+    registry.register(
         "statements.ddl_trigger.DropTriggerStatement",
         lambda d: ddl_trigger.DropTriggerStatement(d, trigger=Trigger(d, "trg")),
     )
-    register_special_constructor(
+    registry.register(
         "statements.ddl_comment.CommentOnStatement",
         lambda d: ddl_comment.CommentOnStatement(d, "table", _table_obj(d), comment="c"),
     )
 
     # -- views --------------------------------------------------------------
-    register_special_constructor(
+    registry.register(
         "statements.ddl_view.DropViewStatement",
         lambda d: ddl_view.DropViewStatement(d, View(d, "v")),
     )
-    register_special_constructor(
+    registry.register(
         "statements.ddl_view.CreateMaterializedViewStatement",
         lambda d: ddl_view.CreateMaterializedViewStatement(
             d, MaterializedView(d, "mv"), _one_column_query(d)
         ),
     )
-    register_special_constructor(
+    registry.register(
         "statements.ddl_view.DropMaterializedViewStatement",
         lambda d: ddl_view.DropMaterializedViewStatement(d, MaterializedView(d, "mv")),
     )
-    register_special_constructor(
+    registry.register(
         "statements.ddl_view.RefreshMaterializedViewStatement",
         lambda d: ddl_view.RefreshMaterializedViewStatement(
             d, MaterializedView(d, "mv")
@@ -573,17 +578,17 @@ def register_specials():
     )
 
     # -- DML ----------------------------------------------------------------
-    register_special_constructor(
+    registry.register(
         "statements.dml.InsertStatement",
         lambda d: dml.InsertStatement(
             d, into=_table_obj(d), source=dml.ValuesSource(d, [[Literal(d, 1)]])
         ),
     )
-    register_special_constructor(
+    registry.register(
         "statements.dml.DeleteStatement",
         lambda d: dml.DeleteStatement(d, _table_obj(d)),
     )
-    register_special_constructor(
+    registry.register(
         "statements.dml.MergeStatement",
         lambda d: dml.MergeStatement(
             d,
@@ -601,7 +606,7 @@ def register_specials():
             ],
         ),
     )
-    register_special_constructor(
+    registry.register(
         "statements.dml.MergeAction",
         lambda d: MergeAction(
             d,
@@ -613,17 +618,17 @@ def register_specials():
     )
 
     # -- constraints and column pieces --------------------------------------
-    register_special_constructor(
+    registry.register(
         "statements.ddl_table.ColumnConstraint",
         lambda d: ColumnConstraint(d, branch=ColumnNotNullConstraint(d), name="c"),
     )
-    register_special_constructor(
+    registry.register(
         "statements.ddl_table.TableConstraint",
         lambda d: TableConstraint(
             d, branch=TablePrimaryKeyConstraint(d, ["a"]), name="c"
         ),
     )
-    register_special_constructor(
+    registry.register(
         "statements.ddl_table.ForeignKeyConstraint",
         lambda d: ForeignKeyConstraint(
             d,
@@ -633,7 +638,7 @@ def register_specials():
             name="fk",
         ),
     )
-    register_special_constructor(
+    registry.register(
         "statements.ddl_table.ReferencesClause",
         lambda d: ReferencesClause(d, Table(d, "other"), ["b"]),
     )
@@ -642,15 +647,15 @@ def register_specials():
     # ``AddColumnAction`` / ``AddIndexAction`` / ``AddTableConstraintAction``,
     # and a factory keyed by the old name is dead code that still reads as if
     # it covered the class.
-    register_special_constructor(
+    registry.register(
         "statements.ddl_alter.AddColumnAction",
         lambda d: ddl_alter.AddColumnAction(d, column=_integer_column(d)),
     )
-    register_special_constructor(
+    registry.register(
         "statements.ddl_alter.AddIndexAction",
         lambda d: ddl_alter.AddIndexAction(d, IndexDefinition(d, "i", ["a"])),
     )
-    register_special_constructor(
+    registry.register(
         "statements.ddl_alter.AddTableConstraintAction",
         lambda d: ddl_alter.AddTableConstraintAction(
             d,
@@ -664,7 +669,7 @@ def register_specials():
     # a declaration -- which the formatter refuses as an unaddressable drop.
     # Supplying a name is what keeps this class on the same "renders" branch it
     # was on before the parameter gained its default: Firebird drops by name.
-    register_special_constructor(
+    registry.register(
         "statements.ddl_alter.DropTableConstraintAction",
         lambda d: ddl_alter.DropTableConstraintAction(d, constraint_name="c"),
     )
@@ -673,11 +678,11 @@ def register_specials():
     # The introspective guess builds the condition from a literal, and the
     # formatter refuses any bind parameter in a DDL position.  A
     # column-to-column comparison is the condition a CHECK actually has.
-    register_special_constructor(
+    registry.register(
         "statements.ddl_table.ColumnCheckConstraint",
         lambda d: ddl_table.ColumnCheckConstraint(d, _column_predicate(d)),
     )
-    register_special_constructor(
+    registry.register(
         "statements.ddl_table.TableCheckConstraint",
         lambda d: ddl_table.TableCheckConstraint(d, _column_predicate(d)),
     )
@@ -685,7 +690,7 @@ def register_specials():
     # params whatever the expression does -- the refusal for that is pinned
     # in ARTIFACT_REFUSALS below; the expression here is what lets the
     # render half of the row be exercised at all.
-    register_special_constructor(
+    registry.register(
         "statements.ddl_table.ColumnGeneratedConstraint",
         lambda d: ddl_table.ColumnGeneratedConstraint(d, _column_predicate(d)),
     )
@@ -695,15 +700,15 @@ def register_specials():
     # checks the value only when it is a literal, and a word returned by the
     # artifact arrives as a literal whose value is not comparable.  A number
     # is what the position means.
-    register_special_constructor(
+    registry.register(
         "functions.string.LeftFunction",
         lambda d: LeftFunction(d, Column(d, "a"), Literal(d, 1)),
     )
-    register_special_constructor(
+    registry.register(
         "functions.string.RightFunction",
         lambda d: RightFunction(d, Column(d, "a"), Literal(d, 1)),
     )
-    register_special_constructor(
+    registry.register(
         "functions.string.SubstringExpression",
         lambda d: SubstringExpression(d, Column(d, "a"), Literal(d, 1), Literal(d, 2)),
     )
@@ -712,11 +717,11 @@ def register_specials():
     # ``_ExtractBase`` and the field-named spelling are new nodes; the guess
     # supplies a word the field validation refuses.  ``YEAR`` names a real
     # field, and the field-named spelling must agree with it.
-    register_special_constructor(
+    registry.register(
         "datetime._ExtractBase",
         lambda d: _ExtractBase(d, "YEAR", Column(d, "created_at")),
     )
-    register_special_constructor(
+    registry.register(
         "datetime.ExtractFieldExpression",
         lambda d: ExtractFieldExpression(
             d, "YEAR", Column(d, "created_at"), spelling="YEAR"
@@ -740,7 +745,7 @@ def register_specials():
         UUIDAnnotation,
         XMLAnnotation,
     ):
-        register_special_constructor(
+        registry.register(
             f"declared.{_declared_cls.__name__}",
             lambda d, _cls=_declared_cls: _cls(d, Column(d, "a")),
         )
@@ -752,14 +757,14 @@ def register_specials():
     # formatter calls ``.to_sql()`` on it. Both LIKE and ILIKE need the operand
     # spelled as a node, and LIKE additionally carries its operator as a
     # parameter, which the guess would fill with the operand.
-    register_special_constructor(
+    registry.register(
         "predicates.ILikePredicate",
         lambda d: ILikePredicate(d, Column(d, "a"), "%x%"),
     )
     # Firebird has no ILIKE (``-104 Token unknown - ILIKE``); the factory is
     # still what builds the node, so the constructor table has to cover it and
     # the round trip then classifies it as Firebird's own UnsupportedFeatureError.
-    register_special_constructor(
+    registry.register(
         "predicates.LikePredicate",
         lambda d: LikePredicate(d, LikeOperator.LIKE, Column(d, "a"), Literal(d, "%x%")),
     )
@@ -769,12 +774,12 @@ def register_specials():
     # artifact reads back as an array, changing the rendered bind parameters.
     # A one-row SELECT over the catalogue table every Firebird database has is
     # the shape EXISTS actually takes, and it binds nothing.
-    register_special_constructor(
+    registry.register(
         "advanced_functions.ExistsPredicate",
         lambda d: ExistsPredicate(d, Subquery(d, "SELECT 1 FROM RDB$DATABASE")),
     )
 
-    register_special_constructor(
+    registry.register(
         "advanced_functions.CaseExpression",
         lambda d: CaseExpression(
             d,
@@ -782,15 +787,15 @@ def register_specials():
             else_result=Literal(d, 0),
         ),
     )
-    register_special_constructor(
+    registry.register(
         "advanced_functions.WindowSpecification",
         lambda d: WindowSpecification(d, partition_by=["a"]),
     )
-    register_special_constructor(
+    registry.register(
         "advanced_functions.WindowDefinition",
         lambda d: WindowDefinition(d, "w", WindowSpecification(d, partition_by=["a"])),
     )
-    register_special_constructor(
+    registry.register(
         "advanced_functions.WindowClause",
         lambda d: WindowClause(
             d, [WindowDefinition(d, "w", WindowSpecification(d, partition_by=["a"]))]
@@ -798,7 +803,7 @@ def register_specials():
     )
     # An empty options dict is refused by the formatter, so a time-travel clause
     # needs an actual option.
-    register_special_constructor(
+    registry.register(
         "datetime.TemporalOptionsExpression",
         lambda d: TemporalOptionsExpression(d, {"as_of": "2020-01-01"}),
     )
@@ -815,31 +820,31 @@ def register_specials():
             d, graph_mod.GraphVertex(d, "n", node_table(d))
         )
 
-    register_special_constructor(
+    registry.register(
         "graph.GraphVertex", lambda d: graph_mod.GraphVertex(d, "n", node_table(d))
     )
-    register_special_constructor(
+    registry.register(
         "graph.GraphEdge", lambda d: graph_mod.GraphEdge(d, "e", edge_table(d))
     )
-    register_special_constructor(
+    registry.register(
         "graph.VertexTable",
         lambda d: graph_mod.VertexTable(d, node_table(d), key_columns=["id"]),
     )
-    register_special_constructor(
+    registry.register(
         "graph.EdgeTable",
         lambda d: graph_mod.EdgeTable(d, edge_table(d), ["src"], ["dst"]),
     )
-    register_special_constructor(
+    registry.register(
         "graph.QuantifiedPath",
         lambda d: graph_mod.QuantifiedPath(
             d, graph_mod.GraphEdge(d, "e", edge_table(d)), min_repeats=1, max_repeats=3
         ),
     )
-    register_special_constructor("graph.PathPattern", path_pattern)
-    register_special_constructor(
+    registry.register("graph.PathPattern", path_pattern)
+    registry.register(
         "graph.MatchClause", lambda d: graph_mod.MatchClause(d, path_pattern(d))
     )
-    register_special_constructor(
+    registry.register(
         "graph.CreatePropertyGraphStatement",
         lambda d: graph_mod.CreatePropertyGraphStatement(
             d, graph=PropertyGraph(d, "g"),
@@ -848,7 +853,7 @@ def register_specials():
     )
     # The formatter accepts "add"/"drop" against "vertex tables"/"edge tables"/
     # "tables"; anything else is refused.
-    register_special_constructor(
+    registry.register(
         "graph.AlterPropertyGraphStatement",
         lambda d: graph_mod.AlterPropertyGraphStatement(
             d,
@@ -858,7 +863,7 @@ def register_specials():
             vertex_tables=[graph_mod.VertexTable(d, node_table(d))],
         ),
     )
-    register_special_constructor(
+    registry.register(
         "graph.DropPropertyGraphStatement",
         lambda d: graph_mod.DropPropertyGraphStatement(d, graph=PropertyGraph(d, "g")),
     )
@@ -875,33 +880,33 @@ def register_specials():
     # and the column cannot render a type. Firebird columns are its own class
     # rather than the core ColumnDefinition, and its ``computed_by`` /
     # ``character_set`` / ``collation`` keyword-only slots are Firebird-only.
-    register_special_constructor(
+    registry.register(
         "impl.firebird.expression.column.FirebirdColumnDefinition",
         lambda d: FirebirdColumnDefinition(d, "col", IntegerType(d)),
     )
     # ALTER DOMAIN needs the actions list; the guess supplies nothing, and the
     # class refuses an action-less ALTER.
-    register_special_constructor(
+    registry.register(
         "impl.firebird.expression.ddl.domain.FirebirdAlterDomainExpression",
         lambda d: FirebirdAlterDomainExpression(
             d, Domain(d, "dom"), action=RenameDomainAction(d, "other")
         ),
     )
     # A SET DOMAIN TYPE action with no data type has nothing to render.
-    register_special_constructor(
+    registry.register(
         "impl.firebird.expression.ddl.domain.FirebirdSetDomainDataTypeAction",
         lambda d: FirebirdSetDomainDataTypeAction(d, IntegerType(d)),
     )
     # The blob literal holds raw bytes and renders them as a hex literal; the
     # guess supplies an int.
-    register_special_constructor(
+    registry.register(
         "impl.firebird.expression.blob.FirebirdBlobLiteralExpression",
         lambda d: FirebirdBlobLiteralExpression(d, b"\x01\x02"),
     )
     # COLLATE names a collation Firebird actually declares; the guess's "x" is
     # not one and is refused by name. Firebird's whitelist is UNICODE /
     # UNICODE_CI / UNICODE_CI_AI.
-    register_special_constructor(
+    registry.register(
         "collation.CollateFunction",
         lambda d: CollateFunction(d, Column(d, "a"), "UNICODE_CI"),
     )
@@ -912,19 +917,19 @@ def register_specials():
     # node. Naming a real operation is the fix rather than a pin -- the class
     # is constructible and renders, so it belongs in the matrix, not in
     # UNCONSTRUCTIBLE.
-    register_special_constructor(
+    registry.register(
         "predicates.ComparisonPredicate",
         lambda d: ComparisonPredicate(d, "gte", Column(d, "a"), Literal(d, 1)),
     )
     # This backend's own CREATE PROCEDURE / CREATE FUNCTION carry a PSQL ``mode``
     # and render through the same formatter names as the core statements.
-    register_special_constructor(
+    registry.register(
         "impl.firebird.expression.ddl.routine.FirebirdCreateProcedureStatement",
         lambda d: FirebirdCreateProcedureStatement(
             d, "proc", params=[("a", "INTEGER")], body="SELECT 1"
         ),
     )
-    register_special_constructor(
+    registry.register(
         "impl.firebird.expression.ddl.routine.FirebirdCreateFunctionStatement",
         lambda d: FirebirdCreateFunctionStatement(
             d, "fn", params=[("a", "INTEGER")], returns="INTEGER", body="SELECT 1"
@@ -933,14 +938,14 @@ def register_specials():
     # This backend's own CREATE SEQUENCE carries the legacy GENERATOR spelling
     # as a declared field; the standard spelling renders, and the legacy one
     # is exercised in the dialect-branch tests with a live field read.
-    register_special_constructor(
+    registry.register(
         "impl.firebird.expression.ddl.sequence.FirebirdCreateSequenceStatement",
         lambda d: FirebirdCreateSequenceStatement(d, Sequence(d, "s")),
     )
     # COMMENT ON names one of the object kinds this backend declares; the
     # guess's word for ``object_type`` is refused by the normalization the
     # artifact round-trip needs, so the factory names a real kind.
-    register_special_constructor(
+    registry.register(
         "impl.firebird.expression.comment.FirebirdCommentOnStatement",
         lambda d: FirebirdCommentOnStatement(
             d, FirebirdCommentObjectType.TABLE, "t", comment="c"
@@ -952,7 +957,7 @@ def register_specials():
     # refuses that empty name while constructing -- so it builds fine once it
     # is handed a real one, and there is nothing to skip.  The slot is
     # keyword-only now, so the name arrives by keyword.
-    register_special_constructor(
+    registry.register(
         "types.custom.CustomType", lambda d: CustomType(d, raw="VARCHAR(10)")
     )
 
@@ -963,21 +968,56 @@ def register_specials():
     # classified as Firebird's own UnsupportedFeatureError -- the same shape the
     # MySQL matrix uses. Naming one real key is the fix rather than a pin: the
     # classes are constructible and belong in the matrix, not in UNCONSTRUCTIBLE.
-    register_special_constructor(
+    registry.register(
         "statements.ddl_partition.PartitionByRangeClause",
         lambda d: PartitionByRangeClause(d, [Column(d, "id")]),
     )
-    register_special_constructor(
+    registry.register(
         "statements.ddl_partition.PartitionByListClause",
         lambda d: PartitionByListClause(d, [Column(d, "id")]),
     )
-    register_special_constructor(
+    registry.register(
         "statements.ddl_partition.PartitionByHashClause",
         lambda d: PartitionByHashClause(d, [Column(d, "id")]),
     )
 
 
-register_specials()
+@pytest.fixture(scope="session")
+def special_registry():
+    """This module's special constructors, injected into each construction.
+
+    A registry is built per session and filled here rather than at import, so a
+    consumer that imports this module in either order sees exactly its own
+    registrations and no others.
+    """
+    registry = SpecialConstructorRegistry()
+    register_specials(registry)
+    return registry
+
+
+def test_special_registry_is_import_order_independent():
+    """A registry built before and after importing the sibling consumer agrees.
+
+    ``test_type_protocol`` uses :func:`parse_roundtrip_failures`, which used to
+    consult a module-level table populated as this module was imported. With
+    explicit injection, importing that consumer in either order must leave this
+    module's registry keys unchanged.
+    """
+    import importlib.util
+    from pathlib import Path
+
+    def build_keys():
+        registry = SpecialConstructorRegistry()
+        register_specials(registry)
+        return set(registry.entries)
+
+    before = build_keys()
+    path = Path(__file__).parents[1] / "types" / "test_type_protocol.py"
+    spec = importlib.util.spec_from_file_location("firebird_type_protocol_order_probe", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    after = build_keys()
+    assert before == after
 
 
 # ---------------------------------------------------------------------------
@@ -1703,10 +1743,10 @@ def assert_sql_roundtrip_classified(fqn, instance, dialect, registry=None):
 
 
 @pytest.fixture(params=[fqn for fqn in sorted(REGISTERED)], ids=sorted(REGISTERED))
-def expr_case(request, fb4_dialect):
+def expr_case(request, fb4_dialect, special_registry):
     fqn = request.param
     cls = REGISTERED[fqn]
-    instance, source = make_instance(cls, fb4_dialect)
+    instance, source = make_instance(cls, fb4_dialect, special_registry)
     if instance is None:
         assert fqn in UNCONSTRUCTIBLE, (
             f"{fqn} cannot be built by the generic constructor ({source}) and is "
@@ -1737,7 +1777,7 @@ class TestExpressionRoundtripAll:
 class TestMatrixIntegrity:
     """Guards on the matrix and its lists, so neither can quietly change."""
 
-    def test_unconstructible_list_is_exact(self, fb4_dialect):
+    def test_unconstructible_list_is_exact(self, fb4_dialect, special_registry):
         """Pin the unconstructible mapping against what the constructor skips.
 
         Both directions are checked. A class named here that now builds has gained
@@ -1747,7 +1787,7 @@ class TestMatrixIntegrity:
         actual = {
             fqn
             for fqn in REGISTERED
-            if make_instance(REGISTERED[fqn], fb4_dialect)[0] is None
+            if make_instance(REGISTERED[fqn], fb4_dialect, special_registry)[0] is None
         }
         assert actual == set(UNCONSTRUCTIBLE), (
             "the set of expression classes the generic constructor cannot build "
@@ -1783,14 +1823,14 @@ class TestMatrixIntegrity:
             f"{sorted(unknown)}"
         )
 
-    def test_pinned_non_render_really_does_not_render(self, fb4_dialect):
+    def test_pinned_non_render_really_does_not_render(self, fb4_dialect, special_registry):
         """Each pinned entry still raises what it claims, for the stated reason.
 
         Without this, an entry could sit in the mapping for a class that renders
         perfectly well, and the matrix would assert nothing about it.
         """
         for fqn, (expected_type, fragment) in LEGITIMATE_NON_RENDERS.items():
-            instance, source = make_instance(REGISTERED[fqn], fb4_dialect)
+            instance, source = make_instance(REGISTERED[fqn], fb4_dialect, special_registry)
             assert instance is not None, (
                 f"{fqn} is pinned as a non-render but could not be constructed "
                 f"({source})"
@@ -1802,7 +1842,7 @@ class TestMatrixIntegrity:
                 f"{exc_info.value}"
             )
 
-    def test_unmodelled_formatter_list_is_exact(self, fb4_dialect):
+    def test_unmodelled_formatter_list_is_exact(self, fb4_dialect, special_registry):
         """Pin the unmodelled-formatter table against what the dialect lacks.
 
         Observed rather than assumed: for each class the matrix covers, either
@@ -1830,7 +1870,7 @@ class TestMatrixIntegrity:
         """
         observed = set()
         for fqn in sorted(REGISTERED):
-            instance, source = make_instance(REGISTERED[fqn], fb4_dialect)
+            instance, source = make_instance(REGISTERED[fqn], fb4_dialect, special_registry)
             if instance is None:
                 continue
             try:
@@ -1871,7 +1911,7 @@ class TestMatrixIntegrity:
         )
         assert not unnamed, f"ARTIFACT_REFUSALS entries without a reason: {unnamed}"
 
-    def test_unreadable_pins_still_refuse(self, fb4_dialect):
+    def test_unreadable_pins_still_refuse(self, fb4_dialect, special_registry):
         """Each pin still refuses on its channels, and travels clean on the rest.
 
         Without the second half, a pin could sit on a class whose other
@@ -1879,7 +1919,7 @@ class TestMatrixIntegrity:
         exactness test below would catch it only on the next edit.
         """
         for fqn, (channels, _) in sorted(ARTIFACT_REFUSALS.items()):
-            instance, source = make_instance(REGISTERED[fqn], fb4_dialect)
+            instance, source = make_instance(REGISTERED[fqn], fb4_dialect, special_registry)
             assert instance is not None, (
                 f"{fqn} is pinned as unreadable but cannot be constructed "
                 f"({source})"
@@ -1912,7 +1952,7 @@ class TestMatrixIntegrity:
                         f"artifact came back -- the pin is stale and must go"
                     )
 
-    def test_unreadable_set_is_exact(self, fb4_dialect):
+    def test_unreadable_set_is_exact(self, fb4_dialect, special_registry):
         """Pin the refusal table against what the channels actually refuse.
 
         Both directions.  For every constructible class in the matrix, each
@@ -1923,7 +1963,7 @@ class TestMatrixIntegrity:
         """
         observed = {}
         for fqn, cls in sorted(REGISTERED.items()):
-            instance, _ = make_instance(cls, fb4_dialect)
+            instance, _ = make_instance(cls, fb4_dialect, special_registry)
             if instance is None:
                 continue
             failing = set()
@@ -2042,7 +2082,7 @@ class TestMatrixIntegrity:
         )
         assert not foreign, f"a sibling backend's kinds leaked in: {foreign}"
 
-    def test_coverage_report(self, fb4_dialect):
+    def test_coverage_report(self, fb4_dialect, special_registry):
         """Surface the classification, so coverage stays transparent.
 
         Counts each branch the matrix actually took, in this process, with this
@@ -2050,7 +2090,7 @@ class TestMatrixIntegrity:
         """
         census: Dict[str, int] = {}
         for fqn, cls in sorted(REGISTERED.items()):
-            instance, _ = make_instance(cls, fb4_dialect)
+            instance, _ = make_instance(cls, fb4_dialect, special_registry)
             if instance is None:
                 branch = "pinned-unconstructible"
             else:

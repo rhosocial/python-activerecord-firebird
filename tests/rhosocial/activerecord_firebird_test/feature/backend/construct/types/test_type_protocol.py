@@ -1715,29 +1715,43 @@ class TestParseRoundTripSweep:
         "UUIDType": ("CharType", "CHAR(16)"),
     }
 
-    @pytest.fixture(scope="class")
-    def registry(self):
-        """The round-trip module's registry, loaded from beside this file.
-
-        Executing it also registers its special constructors, which the
-        sweep's ``make_instance`` consults -- the same registrations the
-        full suite performs at collection time.
-        """
+    @pytest.fixture(scope="session")
+    def roundtrip_module(self):
+        """The round-trip module, loaded from beside this file once per session."""
         import importlib.util
         from pathlib import Path
 
         path = Path(__file__).parents[1] / "expression" / "test_expression_roundtrip_all.py"
-        spec = importlib.util.spec_from_file_location(
-            "firebird_rt_registry",
-            path,
-        )
+        spec = importlib.util.spec_from_file_location("firebird_rt_registry", path)
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
-        registry = getattr(module, "ALL_CLASSES", None) or module.REGISTERED
+        return module
+
+    @pytest.fixture(scope="class")
+    def registry(self, roundtrip_module):
+        """The collected classes the round-trip module exposes."""
+        registry = getattr(roundtrip_module, "ALL_CLASSES", None) or roundtrip_module.REGISTERED
         assert registry, "the round-trip module exposes no registry"
         return registry
 
-    def test_every_rendered_type_parses_back_coherently(self, dialect, registry):
+    @pytest.fixture(scope="session")
+    def special_registry(self, roundtrip_module):
+        """The round-trip module's special constructors, injected explicitly.
+
+        The sweep's ``make_instance`` consults this registry. Importing the
+        round-trip module no longer registers anything globally, so this
+        consumer builds its own registry rather than depending on collection
+        order.
+        """
+        from expression_roundtrip_harness import SpecialConstructorRegistry
+
+        registry = SpecialConstructorRegistry()
+        roundtrip_module.register_specials(registry)
+        return registry
+
+    def test_every_rendered_type_parses_back_coherently(
+        self, dialect, registry, special_registry
+    ):
         # This repository's own harness, not the suite's ``parse_contract``:
         # that module imported ``make_instance`` from the ``utils/expression``
         # the suite deleted in ``e05edb0``, so importing it raises rather than
@@ -1747,6 +1761,7 @@ class TestParseRoundTripSweep:
         failures = parse_roundtrip_failures(
             dialect,
             registry,
+            special_registry=special_registry,
             widening=self.WIDENING_ANSWERS,
         )
         assert failures == [], "\n".join(failures)

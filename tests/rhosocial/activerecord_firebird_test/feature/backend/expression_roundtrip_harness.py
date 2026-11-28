@@ -288,12 +288,11 @@ def special_constructors():
     new names is not expressible, because ``endswith`` compares a suffix. A
     class that was split needs one entry per resulting class.
 
-    :func:`register_special_constructor` writes to the module-level
-    ``_SPECIAL_REGISTRY``, which is what :func:`make_instance` reads. Note that
-    this function rebuilds its dict on every call, so a registration made
-    elsewhere is **not** visible to a caller that invokes
-    ``special_constructors()`` directly — core's expression-contract test does
-    exactly that, and therefore sees only the literals below.
+    This function rebuilds its dict on every call, so it is the *default base*
+    of a :class:`SpecialConstructorRegistry`, not a process-global table. A
+    consumer registers its extra factories on its own registry instance and
+    passes that instance to :func:`make_instance`; one consumer's registrations
+    are never visible to another, whatever order their modules were imported.
     """
     return {
         "statements.ddl_table.ColumnDefinition": _column_definition,
@@ -928,36 +927,61 @@ def _datetime_add_expr(dialect):
     return DatetimeAddExpression(dialect, Column(dialect, "a"), IntervalExpression(dialect, 1, "day"))
 
 
-_SPECIAL_REGISTRY: Dict[str, Callable] = special_constructors()
+class SpecialConstructorRegistry:
+    """The explicit constructors one consumer uses, owned by that consumer.
 
-
-def register_special_constructor(fqn_suffix: str, factory: Callable) -> None:
-    """Register an explicit constructor for an expression class.
-
-    ``fqn_suffix`` must match the tail of the class's fully qualified name
-    (e.g. ``"ddl.sequence.FirebirdCreateSequenceStatement"``).
-    ``factory(dialect)`` must return an expression instance.
+    Each consumer creates a registry, adds whatever extra factories it needs
+    with :meth:`register`, and passes the registry to :func:`make_instance`.
+    There is no module-level table, so two consumers in one process cannot see
+    each other's registrations and import order cannot change what either of
+    them builds.
     """
-    _SPECIAL_REGISTRY[fqn_suffix] = factory
+
+    def __init__(self, base=None):
+        self.entries: Dict[str, Callable] = dict(
+            special_constructors() if base is None else base
+        )
+
+    def register(self, fqn_suffix: str, factory: Callable) -> None:
+        """Add one explicit constructor keyed by a class-name suffix.
+
+        ``fqn_suffix`` must match the tail of the class's fully qualified name
+        (e.g. ``"ddl.sequence.FirebirdCreateSequenceStatement"``).
+        ``factory(dialect)`` must return an expression instance.
+        """
+        self.entries[fqn_suffix] = factory
+
+    def make_instance(self, cls: Type[BaseExpression], dialect: Any):
+        """Best-effort construction for an expression class.
+
+        Returns (instance, source) where source is "special", "heuristic", or
+        (None, "failed").
+        """
+        full_name = f"{cls.__module__}.{cls.__name__}"
+        special = next((fn for s, fn in self.entries.items() if full_name.endswith(s)), None)
+        if special is not None:
+            try:
+                return special(dialect), "special"
+            except Exception:
+                return None, "special-failed"
+        instance = _try_construct(cls, dialect)
+        if instance is None:
+            return None, "failed"
+        return instance, "heuristic"
 
 
-def make_instance(cls: Type[BaseExpression], dialect: Any):
-    """Best-effort construction for an expression class.
+def register_special_constructor(
+    registry: SpecialConstructorRegistry, fqn_suffix: str, factory: Callable
+) -> None:
+    """Explicit-injection adapter for :meth:`SpecialConstructorRegistry.register`."""
+    registry.register(fqn_suffix, factory)
 
-    Returns (instance, source) where source is "special", "heuristic", or
-    (None, "failed").
-    """
-    full_name = f"{cls.__module__}.{cls.__name__}"
-    special = next((fn for s, fn in _SPECIAL_REGISTRY.items() if full_name.endswith(s)), None)
-    if special is not None:
-        try:
-            return special(dialect), "special"
-        except Exception:
-            return None, "special-failed"
-    instance = _try_construct(cls, dialect)
-    if instance is None:
-        return None, "failed"
-    return instance, "heuristic"
+
+def make_instance(
+    cls: Type[BaseExpression], dialect: Any, registry: SpecialConstructorRegistry
+):
+    """Explicit-injection adapter for :meth:`SpecialConstructorRegistry.make_instance`."""
+    return registry.make_instance(cls, dialect)
 
 
 def collect_expression_classes(package_path: str) -> Dict[str, Type[BaseExpression]]:
@@ -1226,10 +1250,15 @@ def parse_roundtrip_failures(
     dialect: Any,
     registry: Dict[str, Any],
     *,
+    special_registry: SpecialConstructorRegistry,
     widening: Optional[Dict[str, Any]] = None,
     skip: Any = (),
 ) -> Any:
     """Sweep *registry* and return the parse round-trip failures as text.
+
+    ``special_registry`` is the injected constructor table the sweep builds
+    each class with; it is required so a caller can never fall back to a
+    process-global registry.
 
     Vendored from the shared testsuite's ``utils/parse_contract.py``, which is
     unusable since ``e05edb0`` deleted the ``utils/expression.py`` it imports
@@ -1263,7 +1292,7 @@ def parse_roundtrip_failures(
             continue
         if cls.__name__ in skipped:
             continue
-        instance, _source = make_instance(cls, dialect)
+        instance, _source = make_instance(cls, dialect, special_registry)
         if instance is None:
             continue  # the matrix's UNCONSTRUCTIBLE list owns this class
         try:
@@ -1331,6 +1360,7 @@ def parse_roundtrip_failures(
 
 
 __all__ = [
+    "SpecialConstructorRegistry",
     "assert_params_equal",
     "codec_registry",
     "collect_expression_classes",
